@@ -54,6 +54,9 @@ struct CodeBlockInstruction
   bool is_branch_instruction : 1;
   bool is_unconditional_branch_instruction : 1;
   bool is_branch_delay_slot : 1;
+  bool is_direct_branch_instruction : 1;
+  bool is_direct_branch_target : 1;
+  bool is_direct_branch_in_block : 1;
   bool is_load_instruction : 1;
   bool is_store_instruction : 1;
   bool is_load_delay_slot : 1;
@@ -86,6 +89,7 @@ struct CodeBlock
   bool contains_loadstore_instructions = false;
   bool contains_double_branches = false;
   bool invalidated = false;
+  bool has_in_block_branches = false;
 
   const u32 GetPC() const { return key.GetPC(); }
   const u32 GetSizeInBytes() const { return static_cast<u32>(instructions.size()) * sizeof(Instruction); }

@@ -2,6 +2,7 @@
 #include <array>
 #include <initializer_list>
 #include <utility>
+#include <vector>
 
 #include "common/jit_code_buffer.h"
 
@@ -188,6 +189,8 @@ private:
   void* GetCurrentNearCodePointer() const;
   void* GetCurrentFarCodePointer() const;
 
+  LabelType* GetBranchTargetLabel(VirtualMemoryAddress pc);
+
   //////////////////////////////////////////////////////////////////////////
   // Code Generation Helpers
   //////////////////////////////////////////////////////////////////////////
@@ -202,6 +205,7 @@ private:
   Value GetCurrentInstructionPC(u32 offset = 0);
   void UpdateCurrentInstructionPC(bool commit);
   void WriteNewPC(const Value& value, bool commit);
+  void SyncPC();
 
   Value DoGTERegisterRead(u32 index);
   void DoGTERegisterWrite(u32 index, const Value& value);
@@ -238,6 +242,8 @@ private:
   CodeEmitter m_near_emitter;
   CodeEmitter m_far_emitter;
   CodeEmitter* m_emit;
+
+  std::vector<std::pair<VirtualMemoryAddress, LabelType>> m_branch_targets;
 
   TickCount m_delayed_cycles_add = 0;
   TickCount m_pc_offset = 0;

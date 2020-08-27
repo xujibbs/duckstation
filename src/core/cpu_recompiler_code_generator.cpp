@@ -30,17 +30,10 @@ bool CodeGenerator::CompileBlock(CodeBlock* block, CodeBlock::HostCodePointer* o
   EmitBeginBlock();
   BlockPrologue();
 
-  const CodeBlockInstruction* cbi = m_block_start;
-  while (cbi != m_block_end)
+  m_current_instruction = m_block_start;
+  while (m_current_instruction != m_block_end)
   {
-#ifdef _DEBUG
-    SmallString disasm;
-    DisassembleInstruction(&disasm, cbi->pc, cbi->instruction.bits);
-    Log_DebugPrintf("Compiling instruction '%s'", disasm.GetCharArray());
-#endif
-
-    m_current_instruction = cbi;
-    if (!CompileInstruction(*cbi))
+    if (!CompileInstruction(*m_current_instruction))
     {
       m_current_instruction = nullptr;
       m_block_end = nullptr;
@@ -49,7 +42,7 @@ bool CodeGenerator::CompileBlock(CodeBlock* block, CodeBlock::HostCodePointer* o
       return false;
     }
 
-    cbi++;
+    m_current_instruction++;
   }
 
   BlockEpilogue();
@@ -70,6 +63,12 @@ bool CodeGenerator::CompileBlock(CodeBlock* block, CodeBlock::HostCodePointer* o
 
 bool CodeGenerator::CompileInstruction(const CodeBlockInstruction& cbi)
 {
+#ifdef _DEBUG
+  SmallString disasm;
+  DisassembleInstruction(&disasm, cbi.pc, cbi.instruction.bits);
+  Log_DebugPrintf("Compiling instruction '%s'", disasm.GetCharArray());
+#endif
+
   bool result;
   switch (cbi.instruction.op)
   {
@@ -864,6 +863,17 @@ Value CodeGenerator::NotValue(const Value& val)
   return res;
 }
 
+LabelType* CodeGenerator::GetBranchTargetLabel(VirtualMemoryAddress pc)
+{
+  for (auto& it : m_branch_targets)
+  {
+    if (it.first == pc)
+      return &it.second;
+  }
+
+  return nullptr;
+}
+
 void CodeGenerator::GenerateExceptionExit(const CodeBlockInstruction& cbi, Exception excode,
                                           Condition condition /* = Condition::Always */)
 {
@@ -903,6 +913,8 @@ void CodeGenerator::BlockPrologue()
 {
   InitSpeculativeRegs();
 
+  // EmitFunctionCall(nullptr, &CPU::Recompiler::Thunks::templog);
+
   EmitStoreCPUStructField(offsetof(State, exception_raised), Value::FromConstantU8(0));
 
   if (m_block->uncached_fetch_ticks > 0)
@@ -939,6 +951,23 @@ void CodeGenerator::InstructionPrologue(const CodeBlockInstruction& cbi, TickCou
 #if defined(_DEBUG) && defined(CPU_X64)
   m_emit->nop();
 #endif
+
+  // flush and reload registers on branch targets since we'll be coming back here
+  if (cbi.is_direct_branch_target)
+  {
+    if (&cbi != m_block_start)
+    {
+      m_register_cache.FlushAllGuestRegisters(true, true);
+      if (m_register_cache.HasLoadDelay())
+        m_register_cache.WriteLoadDelayToCPU(true);
+      AddPendingCycles(true);
+      SyncPC();
+    }
+    LabelType label;
+    EmitBindLabel(&label);
+    m_branch_targets.emplace_back(cbi.pc, std::move(label));
+    m_load_delay_dirty = true;
+  }
 
   // move instruction offsets forward
   m_current_instruction_pc_offset = m_pc_offset;
@@ -1061,6 +1090,17 @@ void CodeGenerator::WriteNewPC(const Value& value, bool commit)
   EmitStoreGuestRegister(Reg::pc, value);
   if (commit)
     m_next_pc_offset = 0;
+}
+
+void CodeGenerator::SyncPC()
+{
+  if (m_pc_offset == 0)
+    return;
+
+  EmitAddCPUStructField(offsetof(State, regs.pc), Value::FromConstantU32(m_pc_offset));
+
+  m_pc_offset = 0;
+  m_next_pc_offset = 4;
 }
 
 bool CodeGenerator::Compile_Fallback(const CodeBlockInstruction& cbi)
@@ -1956,7 +1996,8 @@ bool CodeGenerator::Compile_Branch(const CodeBlockInstruction& cbi)
 {
   InstructionPrologue(cbi, 1);
 
-  auto DoBranch = [this](Condition condition, const Value& lhs, const Value& rhs, Reg lr_reg, Value&& branch_target) {
+  auto DoBranch = [this, &cbi](Condition condition, const Value& lhs, const Value& rhs, Reg lr_reg,
+                               Value&& branch_target) {
     // ensure the lr register is flushed, since we want it's correct value after the branch
     // we don't want to invalidate it yet because of "jalr r0, r0", branch_target could be the lr_reg.
     if (lr_reg != Reg::count && lr_reg != Reg::zero)
@@ -1967,16 +2008,62 @@ bool CodeGenerator::Compile_Branch(const CodeBlockInstruction& cbi)
     if (condition != Condition::Always || lr_reg != Reg::count)
       next_pc = CalculatePC(4);
 
-    LabelType branch_not_taken;
+    LabelType* in_block_target = nullptr;
+    if (cbi.is_direct_branch_in_block)
+      in_block_target = GetBranchTargetLabel(GetDirectBranchTarget(cbi.instruction, cbi.pc));
+
+    Value take_branch;
+    LabelType branch_taken, branch_not_taken;
     if (condition != Condition::Always)
     {
-      // condition is inverted because we want the case for skipping it
-      if (lhs.IsValid() && rhs.IsValid())
-        EmitConditionalBranch(condition, true, lhs.host_reg, rhs, &branch_not_taken);
-      else if (lhs.IsValid())
-        EmitConditionalBranch(condition, true, lhs.host_reg, lhs.size, &branch_not_taken);
+      if (!in_block_target)
+      {
+        // condition is inverted because we want the case for skipping it
+        if (lhs.IsValid() && rhs.IsValid())
+          EmitConditionalBranch(condition, true, lhs.host_reg, rhs, &branch_not_taken);
+        else if (lhs.IsValid())
+          EmitConditionalBranch(condition, true, lhs.host_reg, lhs.size, &branch_not_taken);
+        else
+          EmitConditionalBranch(condition, true, &branch_not_taken);
+      }
       else
-        EmitConditionalBranch(condition, true, &branch_not_taken);
+      {
+        take_branch = m_register_cache.AllocateScratch(RegSize_32);
+        switch (condition)
+        {
+          case Condition::NotEqual:
+          case Condition::Equal:
+          case Condition::Overflow:
+          case Condition::Greater:
+          case Condition::GreaterEqual:
+          case Condition::LessEqual:
+          case Condition::Less:
+          case Condition::Above:
+          case Condition::AboveEqual:
+          case Condition::Below:
+          case Condition::BelowEqual:
+          {
+            EmitCmp(lhs.GetHostRegister(), rhs);
+            EmitSetConditionResult(take_branch.GetHostRegister(), take_branch.size, condition);
+          }
+          break;
+
+          case Condition::Negative:
+          case Condition::PositiveOrZero:
+          case Condition::NotZero:
+          case Condition::Zero:
+          {
+            Assert(!rhs.IsValid() || (rhs.IsConstant() && rhs.GetS64ConstantValue() == 0));
+            EmitTest(lhs.GetHostRegister(), lhs);
+            EmitSetConditionResult(take_branch.GetHostRegister(), take_branch.size, condition);
+          }
+          break;
+
+          default:
+            UnreachableCode();
+            break;
+        }
+      }
     }
 
     // save the old PC if we want to
@@ -2024,9 +2111,54 @@ bool CodeGenerator::Compile_Branch(const CodeBlockInstruction& cbi)
       m_register_cache.PopState();
     }
 
+    if (in_block_target)
+    {
+      // if it's an in-block branch, compile the delay slot now
+      Assert((m_current_instruction + 1) != m_block_end);
+      InstructionEpilogue(cbi);
+      m_current_instruction++;
+      if (!CompileInstruction(*m_current_instruction))
+        return false;
+
+      // flush all regs since we're at the end of the block now
+      m_register_cache.FlushAllGuestRegisters(false, true);
+      if (m_register_cache.HasLoadDelay())
+        m_register_cache.WriteLoadDelayToCPU(true);
+      AddPendingCycles(true);
+
+      // branch not taken?
+      EmitConditionalBranch(Condition::NotZero, true, take_branch.GetHostRegister(), take_branch.size,
+                            &branch_not_taken);
+
+      m_register_cache.PushState();
+      {
+        // check downcount
+        {
+          Value pending_ticks = m_register_cache.AllocateScratch(RegSize_32);
+          Value downcount = m_register_cache.AllocateScratch(RegSize_32);
+          EmitLoadCPUStructField(pending_ticks.GetHostRegister(), RegSize_32, offsetof(State, pending_ticks));
+          EmitLoadCPUStructField(downcount.GetHostRegister(), RegSize_32, offsetof(State, downcount));
+
+          // pending < downcount
+          EmitConditionalBranch(Condition::GreaterEqual, false, pending_ticks.GetHostRegister(), downcount,
+                                &branch_taken);
+        }
+
+        // EmitFunctionCall(nullptr, &CPU::Recompiler::Thunks::templog);
+
+        // now, we can jump back in the block
+        // if it's an in-branch block, we can skip writing the PC since it's synced anyway
+        EmitBranch(in_block_target);
+      }
+
+      // restore back
+      m_register_cache.PopState();
+    }
+
     if (condition != Condition::Always)
     {
       // branch taken path - modify the next pc
+      EmitBindLabel(&branch_taken);
       EmitCopyValue(next_pc.GetHostRegister(), branch_target);
 
       // converge point
@@ -2042,6 +2174,11 @@ bool CodeGenerator::Compile_Branch(const CodeBlockInstruction& cbi)
     // now invalidate lr becuase it was possibly written in the branch
     if (lr_reg != Reg::count && lr_reg != Reg::zero)
       m_register_cache.InvalidateGuestRegister(lr_reg);
+
+    if (!in_block_target)
+      InstructionEpilogue(cbi);
+
+    return true;
   };
 
   // Compute the branch target.
@@ -2055,10 +2192,9 @@ bool CodeGenerator::Compile_Branch(const CodeBlockInstruction& cbi)
       Value branch_target = OrValues(AndValues(CalculatePC(), Value::FromConstantU32(0xF0000000)),
                                      Value::FromConstantU32(cbi.instruction.j.target << 2));
 
-      DoBranch(Condition::Always, Value(), Value(), (cbi.instruction.op == InstructionOp::jal) ? Reg::ra : Reg::count,
-               std::move(branch_target));
+      return DoBranch(Condition::Always, Value(), Value(),
+                      (cbi.instruction.op == InstructionOp::jal) ? Reg::ra : Reg::count, std::move(branch_target));
     }
-    break;
 
     case InstructionOp::funct:
     {
@@ -2066,9 +2202,9 @@ bool CodeGenerator::Compile_Branch(const CodeBlockInstruction& cbi)
       {
         // npc = rs, link to rt
         Value branch_target = m_register_cache.ReadGuestRegister(cbi.instruction.r.rs);
-        DoBranch(Condition::Always, Value(), Value(),
-                 (cbi.instruction.r.funct == InstructionFunct::jalr) ? cbi.instruction.r.rd : Reg::count,
-                 std::move(branch_target));
+        return DoBranch(Condition::Always, Value(), Value(),
+                        (cbi.instruction.r.funct == InstructionFunct::jalr) ? cbi.instruction.r.rd : Reg::count,
+                        std::move(branch_target));
       }
       else if (cbi.instruction.r.funct == InstructionFunct::syscall ||
                cbi.instruction.r.funct == InstructionFunct::break_)
@@ -2076,13 +2212,15 @@ bool CodeGenerator::Compile_Branch(const CodeBlockInstruction& cbi)
         const Exception excode =
           (cbi.instruction.r.funct == InstructionFunct::syscall) ? Exception::Syscall : Exception::BP;
         GenerateExceptionExit(cbi, excode);
+        InstructionEpilogue(cbi);
+        return true;
       }
       else
       {
         UnreachableCode();
+        return false;
       }
     }
-    break;
 
     case InstructionOp::beq:
     case InstructionOp::bne:
@@ -2094,7 +2232,7 @@ bool CodeGenerator::Compile_Branch(const CodeBlockInstruction& cbi)
       if (cbi.instruction.op == InstructionOp::beq && cbi.instruction.i.rs == Reg::zero &&
           cbi.instruction.i.rt == Reg::zero)
       {
-        DoBranch(Condition::Always, Value(), Value(), Reg::count, std::move(branch_target));
+        return DoBranch(Condition::Always, Value(), Value(), Reg::count, std::move(branch_target));
       }
       else
       {
@@ -2102,10 +2240,9 @@ bool CodeGenerator::Compile_Branch(const CodeBlockInstruction& cbi)
         Value lhs = m_register_cache.ReadGuestRegister(cbi.instruction.i.rs, true, true);
         Value rhs = m_register_cache.ReadGuestRegister(cbi.instruction.i.rt);
         const Condition condition = (cbi.instruction.op == InstructionOp::beq) ? Condition::Equal : Condition::NotEqual;
-        DoBranch(condition, lhs, rhs, Reg::count, std::move(branch_target));
+        return DoBranch(condition, lhs, rhs, Reg::count, std::move(branch_target));
       }
     }
-    break;
 
     case InstructionOp::bgtz:
     case InstructionOp::blez:
@@ -2118,9 +2255,8 @@ bool CodeGenerator::Compile_Branch(const CodeBlockInstruction& cbi)
 
       const Condition condition =
         (cbi.instruction.op == InstructionOp::bgtz) ? Condition::Greater : Condition::LessEqual;
-      DoBranch(condition, lhs, Value::FromConstantU32(0), Reg::count, std::move(branch_target));
+      return DoBranch(condition, lhs, Value::FromConstantU32(0), Reg::count, std::move(branch_target));
     }
-    break;
 
     case InstructionOp::b:
     {
@@ -2142,17 +2278,13 @@ bool CodeGenerator::Compile_Branch(const CodeBlockInstruction& cbi)
         m_register_cache.WriteGuestRegister(Reg::ra, CalculatePC(4));
       }
 
-      DoBranch(condition, lhs, Value(), Reg::count, std::move(branch_target));
+      return DoBranch(condition, lhs, Value(), Reg::count, std::move(branch_target));
     }
-    break;
 
     default:
       UnreachableCode();
-      break;
+      return false;
   }
-
-  InstructionEpilogue(cbi);
-  return true;
 }
 
 bool CodeGenerator::Compile_lui(const CodeBlockInstruction& cbi)

@@ -33,6 +33,7 @@ void UncheckedWriteMemoryHalfWord(u32 address, u16 value);
 void UncheckedWriteMemoryWord(u32 address, u32 value);
 
 void UpdateFastmemMapping();
+void templog();
 
 } // namespace Recompiler::Thunks
 

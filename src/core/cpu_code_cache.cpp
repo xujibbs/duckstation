@@ -321,8 +321,12 @@ void ExecuteRecompiler()
     {
       const u32 pc = g_state.regs.pc;
       g_state.current_instruction_pc = pc;
+#if 0
+      if (pc == 0xbfc0d444)
+        __debugbreak();
+#endif
       const u32 fast_map_index = GetFastMapIndex(pc);
-      s_single_block_asm_dispatcher[fast_map_index]();
+      s_single_block_asm_dispatcher(s_fast_map[fast_map_index]);
     }
 
     TimingEvents::RunEvents();
@@ -520,6 +524,23 @@ bool CompileBlock(CodeBlock* block)
     cbi.is_store_instruction = IsMemoryStoreInstruction(cbi.instruction);
     cbi.has_load_delay = InstructionHasLoadDelay(cbi.instruction);
     cbi.can_trap = CanInstructionTrap(cbi.instruction, InUserMode());
+    cbi.is_direct_branch_instruction = IsDirectBranchInstruction(cbi.instruction);
+    if (cbi.is_direct_branch_instruction && true)
+    {
+      // backwards branch?
+      VirtualMemoryAddress branch_pc = GetDirectBranchTarget(cbi.instruction, cbi.pc);
+      for (CodeBlockInstruction& other_cbi : block->instructions)
+      {
+        if (other_cbi.pc == branch_pc)
+        {
+          other_cbi.is_direct_branch_target = true;
+          cbi.is_direct_branch_in_block = true;
+          block->has_in_block_branches = true;
+          Log_InfoPrintf("Found reverse branch from %08X to %08X", cbi.pc, branch_pc);
+          break;
+        }
+      }
+    }
 
     if (g_settings.cpu_recompiler_icache)
     {
@@ -552,7 +573,7 @@ bool CompileBlock(CodeBlock* block)
 
       // change the pc for the second branch's delay slot, it comes from the first branch
       const CodeBlockInstruction& prev_cbi = block->instructions.back();
-      pc = GetBranchInstructionTarget(prev_cbi.instruction, prev_cbi.pc);
+      pc = GetDirectBranchTarget(prev_cbi.instruction, prev_cbi.pc);
       Log_DevPrintf("Double branch at %08X, using delay slot from %08X -> %08X", cbi.pc, prev_cbi.pc, pc);
     }
 
@@ -590,6 +611,17 @@ bool CompileBlock(CodeBlock* block)
                       cbi.is_load_delay_slot ? "LD" : "  ", cbi.pc, cbi.instruction.bits, disasm.GetCharArray());
     }
 #endif
+
+    if (block->instructions.size() >= 2)
+    {
+      Log_InfoPrintf("%08X -> %08X", block->instructions.front().pc, block->instructions.back().pc);
+
+      const auto& cbi = block->instructions[block->instructions.size() - 2];
+      SmallString disasm;
+      CPU::DisassembleInstruction(&disasm, cbi.pc, cbi.instruction.bits);
+      Log_InfoPrintf("[%s %s 0x%08X] %08X %s", cbi.is_branch_delay_slot ? "BD" : "  ",
+        cbi.is_load_delay_slot ? "LD" : "  ", cbi.pc, cbi.instruction.bits, disasm.GetCharArray());
+    }
   }
   else
   {
@@ -899,3 +931,8 @@ Common::PageFaultHandler::HandlerResult LUTPageFaultHandler(void* exception_pc, 
 #endif // WITH_RECOMPILER
 
 } // namespace CPU::CodeCache
+
+void CPU::Recompiler::Thunks::templog()
+{
+  // CPU::CodeCache::LogCurrentState();
+}
