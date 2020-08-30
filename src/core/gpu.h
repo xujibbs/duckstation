@@ -710,7 +710,7 @@ protected:
     u16 display_vram_height;
 
     u16 horizontal_total;
-    u16 horizontal_sync_start; // <- not currently saved to state, so we don't have to bump the version
+    u16 horizontal_sync_start;
     u16 horizontal_active_start;
     u16 horizontal_active_end;
     u16 horizontal_display_start;
@@ -724,6 +724,8 @@ protected:
     TickCount fractional_ticks;
     TickCount current_tick_in_scanline;
     u32 current_scanline;
+
+    TickCount fractional_dot_ticks; // only used when timer0 is enabled
 
     bool in_hblank;
     bool in_vblank;
