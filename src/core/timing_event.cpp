@@ -12,10 +12,10 @@ static TimingEvent* s_active_events_head;
 static TimingEvent* s_active_events_tail;
 static TimingEvent* s_current_event = nullptr;
 static u32 s_active_event_count = 0;
-static u32 s_global_tick_counter = 0;
-static u32 s_last_event_run_time = 0;
+static u64 s_global_tick_counter = 0;
+static u64 s_last_event_run_time = 0;
 
-u32 GetGlobalTickCounter()
+u64 GetGlobalTickCounter()
 {
   return s_global_tick_counter;
 }
@@ -255,7 +255,8 @@ void RunEvents()
 {
   DebugAssert(!s_current_event);
 
-  TickCount pending_ticks = (s_global_tick_counter + CPU::GetPendingTicks()) - s_last_event_run_time;
+  TickCount pending_ticks =
+    static_cast<TickCount>((s_global_tick_counter + static_cast<u32>(CPU::GetPendingTicks())) - s_last_event_run_time);
   CPU::ResetPendingTicks();
   while (pending_ticks > 0)
   {
@@ -298,7 +299,16 @@ void RunEvents()
 
 bool DoState(StateWrapper& sw)
 {
-  sw.Do(&s_global_tick_counter);
+  if (sw.IsReading() && sw.GetVersion() < 43)
+  {
+    u32 global_tick_counter32;
+    sw.Do(&global_tick_counter32);
+    s_global_tick_counter = ZeroExtend64(global_tick_counter32);
+  }
+  else
+  {
+    sw.Do(&s_global_tick_counter);
+  }
 
   if (sw.IsReading())
   {
@@ -333,7 +343,16 @@ bool DoState(StateWrapper& sw)
       event->m_interval = interval;
     }
 
-    sw.Do(&s_last_event_run_time);
+    if (sw.GetVersion() < 43)
+    {
+      u32 last_event_run_time32;
+      sw.Do(&last_event_run_time32);
+      s_last_event_run_time = ZeroExtend64(last_event_run_time32);
+    }
+    else
+    {
+      sw.Do(&s_last_event_run_time);
+    }
 
     Log_DevPrintf("Loaded %u events from save state.", event_count);
     SortEvents();
