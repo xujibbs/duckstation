@@ -93,7 +93,7 @@ static float s_worst_frame_time = 0.0f;
 static float s_average_frame_time = 0.0f;
 static u32 s_last_frame_number = 0;
 static u32 s_last_internal_frame_number = 0;
-static u32 s_last_global_tick_counter = 0;
+static u64 s_last_global_tick_counter = 0;
 static Common::Timer s_fps_timer;
 static Common::Timer s_frame_timer;
 
@@ -1229,7 +1229,7 @@ void UpdatePerformanceCounters()
     return;
 
   const float frames_presented = static_cast<float>(s_frame_number - s_last_frame_number);
-  const u32 global_tick_counter = TimingEvents::GetGlobalTickCounter();
+  const u64 global_tick_counter = TimingEvents::GetGlobalTickCounter();
 
   s_worst_frame_time = s_worst_frame_time_accumulator;
   s_worst_frame_time_accumulator = 0.0f;
