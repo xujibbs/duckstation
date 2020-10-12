@@ -206,6 +206,11 @@ public:
   // Returns the video clock frequency.
   TickCount GetCRTCFrequency() const;
 
+  // Frame dumping.
+  virtual u32 GetFrameDumpWidth() const;
+  virtual u32 GetFrameDumpHeight() const;
+  virtual void DumpCurrentFrame(u64 timestamp);
+
 protected:
   TickCount CRTCTicksToSystemTicks(TickCount crtc_ticks, TickCount fractional_ticks) const;
   TickCount SystemTicksToCRTCTicks(TickCount sysclk_ticks, TickCount* fractional_ticks) const;

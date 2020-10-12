@@ -941,9 +941,8 @@ void SDLHostInterface::DrawQuickSettingsMenu()
                                         m_settings_copy.gpu_pgxp_enable);
     settings_changed |=
       ImGui::MenuItem("PGXP CPU Instructions", nullptr, &m_settings_copy.gpu_pgxp_cpu, m_settings_copy.gpu_pgxp_enable);
-    settings_changed |=
-      ImGui::MenuItem("PGXP Preserve Projection Precision", nullptr, &m_settings_copy.gpu_pgxp_preserve_proj_fp,
-                      m_settings_copy.gpu_pgxp_enable);
+    settings_changed |= ImGui::MenuItem("PGXP Preserve Projection Precision", nullptr,
+                                        &m_settings_copy.gpu_pgxp_preserve_proj_fp, m_settings_copy.gpu_pgxp_enable);
     ImGui::EndMenu();
   }
 
@@ -1017,6 +1016,14 @@ void SDLHostInterface::DrawQuickSettingsMenu()
       StartDumpingAudio();
     else
       StopDumpingAudio();
+  }
+
+  if (ImGui::MenuItem("Dump Frames", nullptr, IsDumpingFrames(), System::IsValid()))
+  {
+    if (!IsDumpingFrames())
+      StartDumpingFrames();
+    else
+      StopDumpingFrames();
   }
 
   if (ImGui::MenuItem("Save Screenshot"))

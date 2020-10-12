@@ -150,6 +150,15 @@ public:
   /// Stops dumping audio to file if it has been started.
   void StopDumpingAudio();
 
+  /// Returns true if currently dumping frames.
+  bool IsDumpingFrames() const;
+
+  /// Starts dumping frames to a file. If no file name is provided, one will be generated automatically.
+  bool StartDumpingFrames(const char* filename = nullptr);
+
+  /// Stops dumping audio to file if it has been started.
+  void StopDumpingFrames();
+
   /// Saves a screenshot to the specified file. IF no file name is provided, one will be generated automatically.
   bool SaveScreenshot(const char* filename = nullptr, bool full_resolution = true, bool apply_aspect_ratio = true);
 

@@ -17,6 +17,8 @@ class TimingEvent;
 class SPU
 {
 public:
+  static constexpr u32 SAMPLE_RATE = 44100;
+
   SPU();
   ~SPU();
 
@@ -55,7 +57,6 @@ private:
   static constexpr u32 NUM_VOICE_REGISTERS = 8;
   static constexpr u32 VOICE_ADDRESS_SHIFT = 3;
   static constexpr u32 NUM_SAMPLES_PER_ADPCM_BLOCK = 28;
-  static constexpr u32 SAMPLE_RATE = 44100;
   static constexpr u32 SYSCLK_TICKS_PER_SPU_TICK = System::MASTER_CLOCK / SAMPLE_RATE; // 0x300
   static constexpr s16 ENVELOPE_MIN_VOLUME = 0;
   static constexpr s16 ENVELOPE_MAX_VOLUME = 0x7FFF;

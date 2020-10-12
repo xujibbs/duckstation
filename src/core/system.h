@@ -10,6 +10,7 @@
 
 class ByteStream;
 class CDImage;
+class FrameDumper;
 class StateWrapper;
 
 class Controller;
@@ -55,6 +56,7 @@ enum class State
 };
 
 extern TickCount g_ticks_per_second;
+extern std::unique_ptr<FrameDumper> g_frame_dumper;
 
 /// Returns true if the filename is a PlayStation executable we can inject.
 bool IsExeFileName(const char* path);
@@ -208,5 +210,16 @@ void ApplyCheatCode(const CheatCode& code);
 
 /// Sets or clears the provided cheat list, applying every frame.
 void SetCheatList(std::unique_ptr<CheatList> cheats);
+
+// Frame dumping.
+ALWAYS_INLINE bool IsDumpingFrames()
+{
+  return static_cast<bool>(g_frame_dumper);
+}
+
+std::string GenerateFrameDumpFilename();
+bool StartDumpingFrames(const char* output_filename);
+bool CheckFrameDumpVideoSize(u32 expected_width, u32 expected_height);
+void StopDumpingFrames();
 
 } // namespace System

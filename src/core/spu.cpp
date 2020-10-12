@@ -1,6 +1,7 @@
 #include "spu.h"
 #include "cdrom.h"
 #include "common/audio_stream.h"
+#include "common/frame_dumper.h"
 #include "common/log.h"
 #include "common/state_wrapper.h"
 #include "common/wav_writer.h"
@@ -804,6 +805,8 @@ void SPU::Execute(TickCount ticks)
 
     if (m_dump_writer)
       m_dump_writer->WriteFrames(output_frame_start, frames_in_this_batch);
+    if (System::IsDumpingFrames())
+      System::g_frame_dumper->AddAudioFrames(output_frame_start, frames_in_this_batch, TimingEvents::GetGlobalTickCounter());
 
     output_stream->EndWrite(frames_in_this_batch);
     remaining_frames -= frames_in_this_batch;

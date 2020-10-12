@@ -1,5 +1,6 @@
 #include "gpu.h"
 #include "common/file_system.h"
+#include "common/frame_dumper.h"
 #include "common/heap_array.h"
 #include "common/log.h"
 #include "common/state_wrapper.h"
@@ -762,6 +763,9 @@ void GPU::CRTCTickEvent(TickCount ticks)
         // flush any pending draws and "scan out" the image
         FlushRender();
         UpdateDisplay();
+        if (System::IsDumpingFrames())
+          DumpCurrentFrame(TimingEvents::GetGlobalTickCounter());
+
         System::FrameDone();
 
         // switch fields early. this is needed so we draw to the correct one.
@@ -1376,6 +1380,41 @@ bool GPU::DumpVRAMToFile(const char* filename, u32 width, u32 height, u32 stride
     std::fwrite(data, 1, size, static_cast<std::FILE*>(context));
   };
   return (stbi_write_png_to_func(write_func, fp.get(), width, height, 4, rgba8_buf.get(), sizeof(u32) * width) != 0);
+}
+
+u32 GPU::GetFrameDumpWidth() const
+{
+  return m_crtc_state.display_vram_width;
+}
+
+u32 GPU::GetFrameDumpHeight() const
+{
+  return m_crtc_state.display_vram_height;
+}
+
+void GPU::DumpCurrentFrame(u64 timestamp)
+{
+  const u32 width = m_crtc_state.display_vram_width;
+  const u32 height = m_crtc_state.display_vram_height;
+  if (!System::CheckFrameDumpVideoSize(width, height))
+    return;
+
+  ReadVRAM(m_crtc_state.display_vram_left, m_crtc_state.display_vram_top, width, height);
+
+  auto rgba8_buf = std::make_unique<u32[]>(width * height);
+  const u16* ptr_in = &m_vram_ptr[m_crtc_state.display_vram_top * VRAM_WIDTH + m_crtc_state.display_vram_left];
+  u32* ptr_out = rgba8_buf.get();
+  for (u32 row = 0; row < height; row++)
+  {
+    const u16* row_ptr_in = ptr_in;
+
+    for (u32 col = 0; col < width; col++)
+      *(ptr_out++) = RGBA5551ToRGBA8888(*(row_ptr_in++) | u16(0x8000));
+
+    ptr_in += VRAM_WIDTH;
+  }
+
+  System::g_frame_dumper->AddVideoFrame(rgba8_buf.get(), timestamp);
 }
 
 void GPU::DrawDebugStateWindow()

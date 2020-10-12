@@ -5,6 +5,7 @@
 #include "cheats.h"
 #include "common/audio_stream.h"
 #include "common/file_system.h"
+#include "common/frame_dumper.h"
 #include "common/iso_reader.h"
 #include "common/log.h"
 #include "common/state_wrapper.h"
@@ -69,6 +70,7 @@ static State s_state = State::Shutdown;
 
 static ConsoleRegion s_region = ConsoleRegion::NTSC_U;
 TickCount g_ticks_per_second = MASTER_CLOCK;
+std::unique_ptr<FrameDumper> g_frame_dumper;
 static TickCount s_max_slice_ticks = MASTER_CLOCK / 10;
 static u32 s_frame_number = 1;
 static u32 s_internal_frame_number = 1;
@@ -763,6 +765,7 @@ void Shutdown()
   if (s_state == State::Shutdown)
     return;
 
+  StopDumpingFrames();
   g_sio.Shutdown();
   g_mdec.Shutdown();
   g_spu.Shutdown();
@@ -1719,6 +1722,57 @@ void SetCheatList(std::unique_ptr<CheatList> cheats)
 {
   Assert(!IsShutdown());
   s_cheat_list = std::move(cheats);
+}
+
+bool StartDumpingFrames(const char* output_filename)
+{
+  StopDumpingFrames();
+
+  const u32 video_bitrate = 5000 * 1000;
+  const u32 audio_bitrate = 128 * 1000;
+
+  const FrameDumper::Timestamp frequency =
+    static_cast<FrameDumper::Timestamp>(ScaleTicksToOverclock(static_cast<TickCount>(MASTER_CLOCK)));
+
+  g_frame_dumper = FrameDumper::CreateWMFFrameDumper();
+  if (!g_frame_dumper ||
+      !g_frame_dumper->Open(output_filename, video_bitrate, audio_bitrate, g_gpu->GetFrameDumpWidth(),
+                            g_gpu->GetFrameDumpHeight(), s_throttle_frequency, SPU::SAMPLE_RATE, 2, frequency,
+                            TimingEvents::GetGlobalTickCounter()))
+  {
+    g_host_interface->AddOSDMessage(
+      g_host_interface->TranslateStdString("OSDMessage", "Failed to start frame dumping."), 10.0f);
+    g_frame_dumper.reset();
+    return false;
+  }
+
+  g_host_interface->AddFormattedOSDMessage(
+    10.0f, g_host_interface->TranslateString("OSDMessage", "Started dumping frames to '%s' (%ux%u, %ukbps)"),
+    output_filename, g_frame_dumper->GetVideoWidth(), g_frame_dumper->GetVideoHeight(),
+    (video_bitrate + audio_bitrate) / 1000);
+
+  return true;
+}
+
+bool CheckFrameDumpVideoSize(u32 expected_width, u32 expected_height)
+{
+  if (!g_frame_dumper)
+    return false;
+
+  if (g_frame_dumper->GetVideoWidth() != expected_width || g_frame_dumper->GetVideoHeight() != expected_height)
+    return false;
+
+  return true;
+}
+
+void StopDumpingFrames()
+{
+  if (!g_frame_dumper)
+    return;
+
+  g_host_interface->AddOSDMessage(g_host_interface->TranslateStdString("OSDMessage", "Stopped dumping frames."), 10.0f);
+  g_frame_dumper->Close(TimingEvents::GetGlobalTickCounter());
+  g_frame_dumper.reset();
 }
 
 } // namespace System

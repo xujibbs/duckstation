@@ -2254,6 +2254,46 @@ void CommonHostInterface::StopDumpingAudio()
   AddOSDMessage("Stopped dumping audio.", 5.0f);
 }
 
+bool CommonHostInterface::IsDumpingFrames() const
+{
+  return System::IsDumpingFrames();
+}
+
+bool CommonHostInterface::StartDumpingFrames(const char* filename /* = nullptr */)
+{
+  if (!System::IsValid())
+    return false;
+
+  std::string auto_filename;
+  if (!filename)
+  {
+    const std::string& running_title = System::GetRunningTitle();
+    const char* extension = "mp4";
+    if (running_title.empty())
+    {
+      auto_filename = GetUserDirectoryRelativePath("dump" FS_OSPATH_SEPARATOR_STR "frames" FS_OSPATH_SEPARATOR_STR "%s.%s",
+                                                   GetTimestampStringForFileName().GetCharArray(), extension);
+    }
+    else
+    {
+      auto_filename = GetUserDirectoryRelativePath("dump" FS_OSPATH_SEPARATOR_STR "frames" FS_OSPATH_SEPARATOR_STR "%s_%s.%s", running_title.c_str(),
+                                                   GetTimestampStringForFileName().GetCharArray(), extension);
+    }
+
+    filename = auto_filename.c_str();
+  }
+
+  return System::StartDumpingFrames(filename);
+}
+
+void CommonHostInterface::StopDumpingFrames()
+{
+  if (!System::IsValid())
+    return;
+
+  System::StopDumpingFrames();
+}
+
 bool CommonHostInterface::SaveScreenshot(const char* filename /* = nullptr */, bool full_resolution /* = true */,
                                          bool apply_aspect_ratio /* = true */)
 {
