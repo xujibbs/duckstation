@@ -50,8 +50,8 @@ union CacheControl
 struct State
 {
   // ticks the CPU has executed
-  TickCount pending_ticks = 0;
-  TickCount downcount = 0;
+  u32 pending_ticks = 0;
+  u32 downcount = 0;
 
   Registers regs = {};
   Cop0Registers cop0_regs = {};
@@ -98,9 +98,9 @@ void Execute();
 
 ALWAYS_INLINE Registers& GetRegs() { return g_state.regs; }
 
-ALWAYS_INLINE TickCount GetPendingTicks() { return g_state.pending_ticks; }
+ALWAYS_INLINE u32 GetPendingTicks() { return g_state.pending_ticks; }
 ALWAYS_INLINE void ResetPendingTicks() { g_state.pending_ticks = 0; }
-ALWAYS_INLINE void AddPendingTicks(TickCount ticks) { g_state.pending_ticks += ticks; }
+ALWAYS_INLINE void AddPendingTicks(u32 ticks) { g_state.pending_ticks += ticks; }
 
 // state helpers
 ALWAYS_INLINE bool InUserMode() { return g_state.cop0_regs.sr.KUc; }

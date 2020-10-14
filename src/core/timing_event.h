@@ -23,7 +23,6 @@ public:
   // Returns the number of ticks between each event.
   ALWAYS_INLINE TickCount GetPeriod() const { return m_period; }
   ALWAYS_INLINE TickCount GetInterval() const { return m_interval; }
-  ALWAYS_INLINE TickCount GetDowncount() const { return m_downcount; }
 
   // Includes pending time.
   TickCount GetTicksSinceLastExecution() const;
@@ -59,8 +58,8 @@ public:
   TimingEvent* prev = nullptr;
   TimingEvent* next = nullptr;
 
-  TickCount m_downcount;
-  TickCount m_time_since_last_run;
+  u64 m_next_run_time;
+  u64 m_last_run_time;
   TickCount m_period;
   TickCount m_interval;
 
