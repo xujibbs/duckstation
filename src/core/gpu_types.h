@@ -230,6 +230,7 @@ static constexpr s32 DITHER_MATRIX[DITHER_MATRIX_SIZE][DITHER_MATRIX_SIZE] = { {
 
 enum class GPUBackendCommandType : u8
 {
+  Wraparound,
   Sync,
   FillVRAM,
   UpdateVRAM,
@@ -238,7 +239,7 @@ enum class GPUBackendCommandType : u8
   DrawPolygon,
   DrawRectangle,
   DrawLine,
-  FlushRender
+  StopThread
 };
 
 union GPUBackendCommandParameters
@@ -327,7 +328,7 @@ struct GPUBackendDrawCommand : public GPUBackendCommand
   GPUDrawModeReg draw_mode;
   GPUTexturePaletteReg palette;
   GPUTextureWindow window;
-  Common::Rectangle<u16> bounds;
+  // Common::Rectangle<u16> bounds;
 
   ALWAYS_INLINE bool IsDitheringEnabled() const { return rc.IsDitheringEnabled() && draw_mode.dither_enable; }
 };
@@ -338,7 +339,7 @@ struct GPUBackendDrawPolygonCommand : public GPUBackendDrawCommand
 
   struct Vertex
   {
-    float precise_x, precise_y, precise_w;
+    // float precise_x, precise_y, precise_w;
     s32 x, y;
     union
     {
@@ -393,16 +394,6 @@ struct GPUBackendDrawLineCommand : public GPUBackendDrawCommand
   Vertex vertices[0];
 
   ALWAYS_INLINE u32 Size() const { return sizeof(GPUBackendDrawLineCommand) + sizeof(Vertex) * num_vertices; }
-};
-
-struct GPUBackendClearDisplayCommand : public GPUBackendCommand
-{
-  ALWAYS_INLINE u32 Size() const { return sizeof(GPUBackendClearDisplayCommand); }
-};
-
-struct GPUBackendFlushRenderCommand : public GPUBackendCommand
-{
-  ALWAYS_INLINE u32 Size() const { return sizeof(GPUBackendFlushRenderCommand); }
 };
 
 #ifdef _MSC_VER
