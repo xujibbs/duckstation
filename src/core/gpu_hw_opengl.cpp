@@ -395,10 +395,10 @@ bool GPU_HW_OpenGL::CompilePrograms()
       {
         for (u8 interlacing = 0; interlacing < 2; interlacing++)
         {
-          const bool textured = (static_cast<TextureMode>(texture_mode) != TextureMode::Disabled);
+          const bool textured = (static_cast<GPUTextureMode>(texture_mode) != GPUTextureMode::Disabled);
           const std::string batch_vs = shadergen.GenerateBatchVertexShader(textured);
           const std::string fs = shadergen.GenerateBatchFragmentShader(
-            static_cast<BatchRenderMode>(render_mode), static_cast<TextureMode>(texture_mode),
+            static_cast<BatchRenderMode>(render_mode), static_cast<GPUTextureMode>(texture_mode),
             ConvertToBoolUnchecked(dithering), ConvertToBoolUnchecked(interlacing));
 
           const auto link_callback = [this, textured, use_binding_layout](GL::Program& prog) {
@@ -588,7 +588,7 @@ void GPU_HW_OpenGL::DrawBatchVertices(BatchRenderMode render_mode, u32 base_vert
 
 void GPU_HW_OpenGL::SetBlendMode()
 {
-  if (m_texture_filtering == GPUTextureFilter::Nearest && (m_current_transparency_mode == TransparencyMode::Disabled ||
+  if (m_texture_filtering == GPUTextureFilter::Nearest && (m_current_transparency_mode == GPUTransparencyMode::Disabled ||
                                                            m_current_render_mode == BatchRenderMode::OnlyOpaque))
   {
     glDisable(GL_BLEND);
@@ -596,7 +596,7 @@ void GPU_HW_OpenGL::SetBlendMode()
   else
   {
     glEnable(GL_BLEND);
-    glBlendEquationSeparate(m_current_transparency_mode == TransparencyMode::BackgroundMinusForeground ?
+    glBlendEquationSeparate(m_current_transparency_mode == GPUTransparencyMode::BackgroundMinusForeground ?
                               GL_FUNC_REVERSE_SUBTRACT :
                               GL_FUNC_ADD,
                             GL_FUNC_ADD);

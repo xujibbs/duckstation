@@ -94,8 +94,8 @@ protected:
 
   struct BatchConfig
   {
-    TextureMode texture_mode;
-    TransparencyMode transparency_mode;
+    GPUTextureMode texture_mode;
+    GPUTransparencyMode transparency_mode;
     bool dithering;
     bool interlacing;
     bool set_mask_while_drawing;
@@ -105,15 +105,15 @@ protected:
     // on a per-pixel basis, and the opaque pixels shouldn't be blended at all.
     bool NeedsTwoPassRendering() const
     {
-      return transparency_mode == GPU::TransparencyMode::BackgroundMinusForeground &&
-             texture_mode != TextureMode::Disabled;
+      return transparency_mode == GPUTransparencyMode::BackgroundMinusForeground &&
+             texture_mode != GPUTextureMode::Disabled;
     }
 
     // Returns the render mode for this batch.
     BatchRenderMode GetRenderMode() const
     {
-      return transparency_mode == TransparencyMode::Disabled ? BatchRenderMode::TransparencyDisabled :
-                                                               BatchRenderMode::TransparentAndOpaque;
+      return transparency_mode == GPUTransparencyMode::Disabled ? BatchRenderMode::TransparencyDisabled :
+                                                                  BatchRenderMode::TransparentAndOpaque;
     }
   };
 
