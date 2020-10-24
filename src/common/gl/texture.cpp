@@ -61,10 +61,10 @@ void Texture::SetLinearFilter(bool enabled)
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, enabled ? GL_LINEAR : GL_NEAREST);
 }
 
-bool Texture::CreateFramebuffer()
+u32 Texture::CreateAndReturnFramebuffer()
 {
   if (!IsValid())
-    return false;
+    return 0;
 
   glGetError();
 
@@ -75,8 +75,17 @@ bool Texture::CreateFramebuffer()
   if (glGetError() != GL_NO_ERROR || glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
   {
     glDeleteFramebuffers(1, &fbo_id);
-    return false;
+    return 0;
   }
+
+  return fbo_id;
+}
+
+bool Texture::CreateFramebuffer()
+{
+  GLuint fbo_id = CreateAndReturnFramebuffer();
+  if (fbo_id == 0)
+    return false;
 
   if (m_fbo_id != 0)
     glDeleteFramebuffers(1, &m_fbo_id);

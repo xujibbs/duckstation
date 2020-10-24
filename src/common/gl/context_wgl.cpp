@@ -1,6 +1,7 @@
 #include "context_wgl.h"
 #include "../assert.h"
 #include "../log.h"
+#include "../make_array.h"
 #include "glad.h"
 #include "glad_wgl.h"
 Log_SetChannel(GL::ContextWGL);
@@ -29,8 +30,17 @@ ContextWGL::~ContextWGL()
   if (m_rc)
     wglDeleteContext(m_rc);
 
-  if (m_dc)
-    ReleaseDC(GetHWND(), m_dc);
+  if (m_pbuffer)
+  {
+    if (m_dc)
+      wglReleasePbufferDCARB(m_pbuffer, m_dc);
+    wglDestroyPbufferARB(m_pbuffer);
+  }
+  else
+  {
+    if (m_dc)
+      ReleaseDC(GetHWND(), m_dc);
+  }
 }
 
 std::unique_ptr<Context> ContextWGL::Create(const WindowInfo& wi, const Version* versions_to_try,
@@ -153,7 +163,8 @@ std::unique_ptr<Context> ContextWGL::CreateSharedContext(const WindowInfo& wi)
   }
   else
   {
-    Panic("Create pbuffer");
+    if (!context->InitializePBuffer(m_dc, wi.surface_width, wi.surface_height))
+      return nullptr;
   }
 
   if (m_version.profile == Profile::NoProfile)
@@ -232,6 +243,47 @@ bool ContextWGL::InitializeDC()
   return true;
 }
 
+bool ContextWGL::InitializePBuffer(HDC onscreen_dc, u32 width, u32 height)
+{
+  if (!GLAD_WGL_ARB_pbuffer)
+  {
+    Log_ErrorPrintf("WGL_EXT_pbuffer not supported");
+    return false;
+  }
+
+  static constexpr auto attribs =
+    make_array(WGL_DRAW_TO_PBUFFER_ARB, 1, WGL_RED_BITS_ARB, 0, WGL_GREEN_BITS_ARB, 0, WGL_BLUE_BITS_ARB, 0,
+               WGL_DEPTH_BITS_ARB, 0, WGL_STENCIL_BITS_ARB, 0, 0, 0);
+
+  static constexpr auto fattribs = make_array(0.0f, 0.0f);
+
+  int pixel_format;
+  UINT num_pixel_formats;
+  if (!wglChoosePixelFormatARB(onscreen_dc, attribs.data(), fattribs.data(), 1, &pixel_format, &num_pixel_formats))
+  {
+    Log_ErrorPrintf("wglChoosePixelFormatARB() failed: %08X", GetLastError());
+    return false;
+  }
+
+  static constexpr auto pbattribs = make_array(0, 0);
+  m_pbuffer =
+    wglCreatePbufferARB(onscreen_dc, pixel_format, std::max<u32>(width, 1), std::max<u32>(height, 1), pbattribs.data());
+  if (!m_pbuffer)
+  {
+    Log_ErrorPrintf("wglCreatePbufferARB() failed: %08X", GetLastError());
+    return false;
+  }
+
+  m_dc = wglGetPbufferDCARB(m_pbuffer);
+  if (!m_dc)
+  {
+    Log_ErrorPrintf("wglGetPbufferDCARB() failed: %08X", GetLastError());
+    return false;
+  }
+
+  return true;
+}
+
 bool ContextWGL::CreateAnyContext(HGLRC share_context, bool make_current)
 {
   m_rc = wglCreateContext(m_dc);
@@ -294,7 +346,7 @@ bool ContextWGL::CreateVersionContext(const Version& version, HGLRC share_contex
                            0,
                            0};
 
-    new_rc = wglCreateContextAttribsARB(m_dc, share_context, attribs);
+    new_rc = wglCreateContextAttribsARB(m_dc, nullptr, attribs);
   }
   else if (version.profile == Profile::ES)
   {
@@ -308,11 +360,17 @@ bool ContextWGL::CreateVersionContext(const Version& version, HGLRC share_contex
       0,
       0};
 
-    new_rc = wglCreateContextAttribsARB(m_dc, share_context, attribs);
+    new_rc = wglCreateContextAttribsARB(m_dc, nullptr, attribs);
   }
   else
   {
     Log_ErrorPrintf("Unknown profile");
+    return false;
+  }
+
+  if (share_context && !wglShareLists(share_context, new_rc))
+  {
+    Log_ErrorPrintf("wglShareLists() failed: %08X", GetLastError());
     return false;
   }
 

@@ -124,12 +124,17 @@ bool OpenGLHostDisplay::DownloadTexture(const void* texture_handle, u32 x, u32 y
 
 void OpenGLHostDisplay::SetVSync(bool enabled)
 {
-  // Window framebuffer has to be bound to call SetSwapInterval.
-  GLint current_fbo = 0;
-  glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &current_fbo);
-  glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-  m_gl_context->SetSwapInterval(enabled ? 1 : 0);
-  glBindFramebuffer(GL_DRAW_FRAMEBUFFER, current_fbo);
+  if (!m_present_context)
+  {
+    // Window framebuffer has to be bound to call SetSwapInterval.
+    GLint current_fbo = 0;
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &current_fbo);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+    m_gl_context->SetSwapInterval(enabled ? 1 : 0);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, current_fbo);
+  }
+
+  m_vsync = enabled;
 }
 
 const char* OpenGLHostDisplay::GetGLSLVersionString() const
@@ -205,6 +210,11 @@ bool OpenGLHostDisplay::CreateRenderDevice(const WindowInfo& wi, std::string_vie
   m_window_info = wi;
   m_window_info.surface_width = m_gl_context->GetSurfaceWidth();
   m_window_info.surface_height = m_gl_context->GetSurfaceHeight();
+
+#ifndef LIBRETRO
+  InitializeAsyncPresentation();
+#endif
+
   return true;
 }
 
@@ -254,6 +264,11 @@ void OpenGLHostDisplay::DestroyRenderDevice()
 {
   if (!m_gl_context)
     return;
+
+#ifndef LIBRETRO
+  if (m_present_context)
+    StopPresentThread();
+#endif
 
 #ifdef WITH_IMGUI
   if (ImGui::GetCurrentContext())
@@ -443,8 +458,20 @@ void OpenGLHostDisplay::DestroyResources()
 
 bool OpenGLHostDisplay::Render()
 {
+#ifndef LIBRETRO
+  if (m_present_context)
+  {
+    if (!CheckPresentDrawFramebuffer())
+      return false;
+
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_present_draw_framebuffer->draw_fbo);
+  }
+  else
+  {
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+  }
+
   glDisable(GL_SCISSOR_TEST);
-  glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
   glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
   glClear(GL_COLOR_BUFFER_BIT);
 
@@ -457,13 +484,17 @@ bool OpenGLHostDisplay::Render()
 
   RenderSoftwareCursor();
 
-  m_gl_context->SwapBuffers();
+  if (m_present_context)
+    PresentDrawFramebuffer();
+  else
+    m_gl_context->SwapBuffers();
 
 #ifdef WITH_IMGUI
   if (ImGui::GetCurrentContext())
     ImGui_ImplOpenGL3_NewFrame();
 #endif
 
+#endif
   return true;
 }
 
@@ -486,16 +517,17 @@ void OpenGLHostDisplay::RenderDisplay()
 #ifndef LIBRETRO
   if (!m_post_processing_chain.IsEmpty())
   {
-    ApplyPostProcessingChain(0, left, GetWindowHeight() - top - height, width, height, m_display_texture_handle,
+    ApplyPostProcessingChain(m_present_context ? m_present_draw_framebuffer->draw_fbo : 0, left,
+                             GetWindowHeight() - top - height, width, height, m_display_texture_handle,
                              m_display_texture_width, m_display_texture_height, m_display_texture_view_x,
                              m_display_texture_view_y, m_display_texture_view_width, m_display_texture_view_height);
     return;
   }
 #endif
 
-  RenderDisplay(left, GetWindowHeight() - top - height, width, height, m_display_texture_handle, m_display_texture_width, m_display_texture_height,
-                m_display_texture_view_x, m_display_texture_view_y, m_display_texture_view_width,
-                m_display_texture_view_height, m_display_linear_filtering);
+  RenderDisplay(left, GetWindowHeight() - top - height, width, height, m_display_texture_handle,
+                m_display_texture_width, m_display_texture_height, m_display_texture_view_x, m_display_texture_view_y,
+                m_display_texture_view_width, m_display_texture_view_height, m_display_linear_filtering);
 }
 
 void OpenGLHostDisplay::RenderDisplay(s32 left, s32 bottom, s32 width, s32 height, void* texture_handle,
@@ -717,6 +749,197 @@ void OpenGLHostDisplay::ApplyPostProcessingChain(GLuint final_target, s32 final_
 
   glBindSampler(0, 0);
   m_post_processing_ubo->Unbind();
+}
+
+bool OpenGLHostDisplay::InitializeAsyncPresentation()
+{
+  WindowInfo shared_wi;
+  std::unique_ptr<GL::Context> shared_context = m_gl_context->CreateSharedContext(shared_wi);
+  if (!shared_context)
+    return false;
+
+  m_gl_context->MakeCurrent();
+
+  for (u32 i = 0; i < static_cast<u32>(m_present_framebuffers.size()); i++)
+  {
+    PresentFramebuffer& fb = m_present_framebuffers[i];
+
+    if (!fb.texture.Create(m_window_info.surface_width, m_window_info.surface_height, GL_RGBA8, GL_RGBA,
+                           GL_UNSIGNED_BYTE) ||
+        (fb.present_fbo = fb.texture.CreateAndReturnFramebuffer()) == 0)
+    {
+      // TODO: Leak fbo here
+      m_present_framebuffers = {};
+      m_gl_context->DoneCurrent();
+      return false;
+    }
+
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fb.present_fbo);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+  }
+
+  glFinish();
+
+  m_gl_context->DoneCurrent();
+
+  shared_context->MakeCurrent();
+
+  for (u32 i = 0; i < static_cast<u32>(m_present_framebuffers.size()); i++)
+  {
+    PresentFramebuffer& fb = m_present_framebuffers[i];
+    if ((fb.draw_fbo = fb.texture.CreateAndReturnFramebuffer()) == 0)
+    {
+      // TODO: Leak fbo here
+      m_present_framebuffers = {};
+      shared_context->DoneCurrent();
+      return false;
+    }
+  }
+
+  glFinish();
+  shared_context->DoneCurrent();
+
+  Log_InfoPrintf("Using shared context for async presentation");
+  m_present_context = std::move(m_gl_context);
+  m_gl_context = std::move(shared_context);
+  m_present_thread_stop.store(false);
+  m_present_thread = std::thread(&OpenGLHostDisplay::PresentThread, this);
+  return true;
+}
+
+bool OpenGLHostDisplay::CheckPresentDrawFramebuffer()
+{
+  PresentFramebuffer* fb = m_present_draw_framebuffer;
+  if (fb->texture.GetWidth() == m_window_info.surface_width && fb->texture.GetHeight() == m_window_info.surface_height)
+    return true;
+
+  fb->texture.Destroy();
+  if (fb->draw_fbo)
+  {
+    glDeleteFramebuffers(1, &fb->draw_fbo);
+    fb->draw_fbo = 0;
+  }
+
+  if (!fb->texture.Create(m_window_info.surface_width, m_window_info.surface_height, GL_RGBA8, GL_RGBA,
+                          GL_UNSIGNED_BYTE) ||
+      (fb->draw_fbo = fb->texture.CreateAndReturnFramebuffer()) == 0)
+  {
+    fb->texture.Destroy();
+    return false;
+  }
+
+  fb->changed = true;
+  return true;
+}
+
+void OpenGLHostDisplay::PresentDrawFramebuffer()
+{
+  m_present_draw_framebuffer->draw_sync_id = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+  glFlush();
+
+  {
+    std::unique_lock guard(m_present_lock);
+    m_present_draw_framebuffer->ready = true;
+    std::swap(m_present_draw_framebuffer, m_present_next_present_framebuffer);
+
+    if (m_vsync && !m_frame_presented.load())
+    {
+      // last frame not presented yet, we can wait
+      m_present_complete_cv.wait(guard, [this]() { return m_frame_presented.load(); });
+    }
+
+    m_frame_presented.store(false);
+  }
+
+  // block until the presenter thread is done with it
+  if (m_present_draw_framebuffer->present_sync_id)
+  {
+    glWaitSync(m_present_draw_framebuffer->present_sync_id, 0, GL_TIMEOUT_IGNORED);
+    m_present_draw_framebuffer->present_sync_id = {};
+  }
+
+  // if the last frame wasn't rendered, don't leak the sync
+  if (m_present_draw_framebuffer->draw_sync_id)
+  {
+    glDeleteSync(m_present_draw_framebuffer->draw_sync_id);
+    m_present_draw_framebuffer->draw_sync_id = {};
+  }
+}
+
+void OpenGLHostDisplay::PresentThread()
+{
+  if (!m_present_context->MakeCurrent())
+    Panic("Failed to make present context current");
+
+  if (!m_present_context->SetSwapInterval(1))
+    Log_ErrorPrint("Failed to set swap interval to 1");
+
+
+  glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+
+  while (!m_present_thread_stop.load())
+  {
+    {
+      std::unique_lock guard(m_present_lock);
+      if (m_present_next_present_framebuffer->ready)
+      {
+        std::swap(m_present_next_present_framebuffer, m_present_current_present_framebuffer);
+        m_present_current_present_framebuffer->ready = false;
+      }
+
+      PresentFramebuffer* fb = m_present_current_present_framebuffer;
+      if (fb->draw_sync_id)
+      {
+        glWaitSync(fb->draw_sync_id, 0, GL_TIMEOUT_IGNORED);
+        fb->draw_sync_id = {};
+      }
+
+      if (fb->changed)
+      {
+        glDeleteFramebuffers(1, &fb->present_fbo);
+        fb->present_fbo = fb->texture.CreateAndReturnFramebuffer();
+      }
+
+      if (fb->present_fbo != 0)
+      {
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, fb->present_fbo);
+        glBlitFramebuffer(0, 0, fb->texture.GetWidth(), fb->texture.GetHeight(), 0, 0, m_window_info.surface_width,
+                          m_window_info.surface_height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+      }
+
+      // this will be non-null if we're duplicating frames
+      if (fb->present_sync_id)
+        glDeleteSync(fb->present_sync_id);
+      fb->present_sync_id = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+      glFlush();
+
+      m_frame_presented.store(true);
+      m_present_complete_cv.notify_one();
+    }
+
+    m_present_context->SwapBuffers();
+  }
+
+  m_present_context->DoneCurrent();
+}
+
+void OpenGLHostDisplay::StopPresentThread()
+{
+  m_present_thread_stop.store(true);
+  m_present_thread.join();
+
+  for (PresentFramebuffer& fb : m_present_framebuffers)
+  {
+    if (fb.draw_sync_id)
+    {
+      glClientWaitSync(fb.draw_sync_id, GL_SYNC_FLUSH_COMMANDS_BIT, GL_TIMEOUT_IGNORED);
+      fb.draw_sync_id = {};
+    }
+
+    fb.texture.Destroy();
+  }
 }
 
 #else

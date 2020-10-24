@@ -279,12 +279,14 @@ private:
 std::unique_ptr<StreamBuffer> StreamBuffer::Create(GLenum target, u32 size)
 {
   std::unique_ptr<StreamBuffer> buf;
+#if 0
   if (GLAD_GL_VERSION_4_4 || GLAD_GL_ARB_buffer_storage || GLAD_GL_EXT_buffer_storage)
   {
     buf = detail::BufferStorageStreamBuffer::Create(target, size);
     if (buf)
       return buf;
   }
+#endif
 
   // BufferSubData is slower on all drivers except NVIDIA...
 #if 0

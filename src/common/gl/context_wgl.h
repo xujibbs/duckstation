@@ -2,6 +2,7 @@
 #include "../windows_headers.h"
 #include "context.h"
 #include <glad.h>
+#include <glad_wgl.h>
 
 namespace GL {
 
@@ -28,11 +29,13 @@ private:
 
   bool Initialize(const Version* versions_to_try, size_t num_versions_to_try);
   bool InitializeDC();
+  bool InitializePBuffer(HDC onscreen_dc, u32 width, u32 height);
   bool CreateAnyContext(HGLRC share_context, bool make_current);
   bool CreateVersionContext(const Version& version, HGLRC share_context, bool make_current);
 
   HDC m_dc = {};
   HGLRC m_rc = {};
+  HPBUFFERARB m_pbuffer = {};
 };
 
 } // namespace GL

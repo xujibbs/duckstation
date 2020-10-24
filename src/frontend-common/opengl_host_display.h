@@ -14,7 +14,10 @@
 #include "common/gl/texture.h"
 #include "common/window_info.h"
 #include "core/host_display.h"
+#include <atomic>
+#include <condition_variable>
 #include <memory>
+#include <mutex>
 
 #ifndef LIBRETRO
 #include "postprocessing_chain.h"
@@ -106,6 +109,35 @@ protected:
   GL::Texture m_post_processing_input_texture;
   std::unique_ptr<GL::StreamBuffer> m_post_processing_ubo;
   std::vector<PostProcessingStage> m_post_processing_stages;
+
+  struct PresentFramebuffer
+  {
+    GL::Texture texture;
+    GLuint draw_fbo;
+    GLuint present_fbo;
+    GLsync draw_sync_id;
+    GLsync present_sync_id;
+    bool changed = false;
+    bool ready = false;
+  };
+
+  bool InitializeAsyncPresentation();
+  bool CheckPresentDrawFramebuffer();
+  void PresentDrawFramebuffer();
+  void PresentThread();
+  void StopPresentThread();
+
+  std::unique_ptr<GL::Context> m_present_context;
+  std::array<PresentFramebuffer, 3> m_present_framebuffers{};
+  PresentFramebuffer* m_present_draw_framebuffer = &m_present_framebuffers[0];
+  PresentFramebuffer* m_present_next_present_framebuffer = &m_present_framebuffers[1];
+  PresentFramebuffer* m_present_current_present_framebuffer = &m_present_framebuffers[2];
+  std::thread m_present_thread;
+  std::mutex m_present_lock;
+  std::condition_variable m_present_complete_cv;
+  std::atomic_bool m_frame_presented{false};
+  std::atomic_bool m_present_thread_stop{false};
+  bool m_vsync = true;
 #endif
 };
 
