@@ -132,9 +132,10 @@ void HostDisplay::ClearSoftwareCursor()
   m_cursor_texture_scale = 1.0f;
 }
 
-void HostDisplay::CalculateDrawRect(s32 window_width, s32 window_height, s32* out_left, s32* out_top, s32* out_width,
-                                    s32* out_height, s32* out_left_padding, s32* out_top_padding, float* out_scale,
-                                    float* out_y_scale, bool apply_aspect_ratio) const
+void HostDisplay::CalculateDrawRect(s32 window_width, s32 window_height, float window_ratio, s32* out_left,
+                                    s32* out_top, s32* out_width, s32* out_height, s32* out_left_padding,
+                                    s32* out_top_padding, float* out_scale, float* out_y_scale,
+                                    bool apply_aspect_ratio /* = true */) const
 {
   apply_aspect_ratio = (m_display_aspect_ratio > 0) ? apply_aspect_ratio : false;
   const float y_scale =
@@ -151,8 +152,6 @@ void HostDisplay::CalculateDrawRect(s32 window_width, s32 window_height, s32* ou
     *out_y_scale = y_scale;
 
   // now fit it within the window
-  const float window_ratio = static_cast<float>(window_width) / static_cast<float>(window_height);
-
   float scale;
   if ((display_width / display_height) >= window_ratio)
   {
@@ -231,9 +230,10 @@ void HostDisplay::CalculateDrawRect(s32 window_width, s32 window_height, s32* ou
 std::tuple<s32, s32, s32, s32> HostDisplay::CalculateDrawRect(s32 window_width, s32 window_height, s32 top_margin,
                                                               bool apply_aspect_ratio /* = true */) const
 {
+  const float window_ratio = static_cast<float>(window_width) / static_cast<float>(window_height);
   s32 left, top, width, height, left_padding, top_padding;
-  CalculateDrawRect(window_width, window_height - top_margin, &left, &top, &width, &height, &left_padding, &top_padding,
-                    nullptr, nullptr, apply_aspect_ratio);
+  CalculateDrawRect(window_width, window_height - top_margin, window_ratio, &left, &top, &width, &height, &left_padding,
+                    &top_padding, nullptr, nullptr, apply_aspect_ratio);
   return std::make_tuple(left + left_padding, top + top_padding + top_margin, width, height);
 }
 
@@ -260,10 +260,11 @@ std::tuple<s32, s32> HostDisplay::ConvertWindowCoordinatesToDisplayCoordinates(s
                                                                                s32 window_width, s32 window_height,
                                                                                s32 top_margin) const
 {
+  const float window_ratio = static_cast<float>(window_width) / static_cast<float>(window_height);
   s32 left, top, width, height, left_padding, top_padding;
   float scale, y_scale;
-  CalculateDrawRect(window_width, window_height - top_margin, &left, &top, &width, &height, &left_padding, &top_padding,
-                    &scale, &y_scale);
+  CalculateDrawRect(window_width, window_height - top_margin, window_ratio, &left, &top, &width, &height, &left_padding,
+                    &top_padding, &scale, &y_scale);
 
   // convert coordinates to active display region, then to full display region
   const float scaled_display_x = static_cast<float>(window_x - (left_padding));
