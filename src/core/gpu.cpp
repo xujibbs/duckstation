@@ -74,6 +74,12 @@ void GPU::Reset()
   SoftReset();
   m_set_texture_disable_mask = false;
   m_GPUREAD_latch = 0;
+
+  if (g_settings.bios_patch_fast_boot)
+  {
+    // Some games don't turn the display on (e.g. SaGa Frontier), so they break with fast boot on. Work around it.
+    m_GPUSTAT.display_disable = false;
+  }
 }
 
 void GPU::SoftReset()
