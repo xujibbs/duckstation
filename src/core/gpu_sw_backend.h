@@ -105,16 +105,15 @@ protected:
   //////////////////////////////////////////////////////////////////////////
   // Rasterization
   //////////////////////////////////////////////////////////////////////////
-  template<bool texture_enable, bool raw_texture_enable, bool transparency_enable, bool dithering_enable>
+  template<GPUTextureMode texture_mode, bool transparency_enable, bool dithering_enable>
   void ShadePixel(const GPUBackendDrawCommand* cmd, u32 x, u32 y, u8 color_r, u8 color_g, u8 color_b, u8 texcoord_x,
                   u8 texcoord_y);
 
-  template<bool texture_enable, bool raw_texture_enable, bool transparency_enable>
+  template<GPUTextureMode texture_mode, bool transparency_enable>
   void DrawRectangle(const GPUBackendDrawRectangleCommand* cmd);
 
   using DrawRectangleFunction = void (GPU_SW_Backend::*)(const GPUBackendDrawRectangleCommand* cmd);
-  DrawRectangleFunction GetDrawRectangleFunction(bool texture_enable, bool raw_texture_enable,
-                                                 bool transparency_enable);
+  DrawRectangleFunction GetDrawRectangleFunction(GPUTextureMode texture_mode, bool transparency_enable);
 
   //////////////////////////////////////////////////////////////////////////
   // Polygon and line rasterization ported from Mednafen
@@ -144,13 +143,11 @@ protected:
   template<bool shading_enable, bool texture_enable>
   void AddIDeltas_DY(i_group& ig, const i_deltas& idl, u32 count = 1);
 
-  template<bool shading_enable, bool texture_enable, bool raw_texture_enable, bool transparency_enable,
-           bool dithering_enable>
+  template<bool shading_enable, GPUTextureMode texture_mode, bool transparency_enable, bool dithering_enable>
   void DrawSpan(const GPUBackendDrawPolygonCommand* cmd, s32 y, s32 x_start, s32 x_bound, i_group ig,
                 const i_deltas& idl);
 
-  template<bool shading_enable, bool texture_enable, bool raw_texture_enable, bool transparency_enable,
-           bool dithering_enable>
+  template<bool shading_enable, GPUTextureMode texture_mode, bool transparency_enable, bool dithering_enable>
   void DrawTriangle(const GPUBackendDrawPolygonCommand* cmd, const GPUBackendDrawPolygonCommand::Vertex* v0,
                     const GPUBackendDrawPolygonCommand::Vertex* v1, const GPUBackendDrawPolygonCommand::Vertex* v2);
 
@@ -158,7 +155,7 @@ protected:
                                                         const GPUBackendDrawPolygonCommand::Vertex* v0,
                                                         const GPUBackendDrawPolygonCommand::Vertex* v1,
                                                         const GPUBackendDrawPolygonCommand::Vertex* v2);
-  DrawTriangleFunction GetDrawTriangleFunction(bool shading_enable, bool texture_enable, bool raw_texture_enable,
+  DrawTriangleFunction GetDrawTriangleFunction(bool shading_enable, GPUTextureMode texture_mode,
                                                bool transparency_enable, bool dithering_enable);
 
   template<bool shading_enable, bool transparency_enable, bool dithering_enable>

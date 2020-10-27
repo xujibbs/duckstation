@@ -31,9 +31,13 @@ void GPU_SW_Backend::DrawPolygon(const GPUBackendDrawPolygonCommand* cmd)
 {
   const GPURenderCommand rc{cmd->rc.bits};
   const bool dithering_enable = rc.IsDitheringEnabled() && cmd->draw_mode.dither_enable;
+  const GPUTextureMode texture_mode =
+    rc.texture_enable ? (cmd->draw_mode.texture_mode |
+                         (rc.raw_texture_enable ? GPUTextureMode::RawTextureBit : static_cast<GPUTextureMode>(0))) :
+                        GPUTextureMode::Disabled;
 
-  const DrawTriangleFunction DrawFunction = GetDrawTriangleFunction(
-    rc.shading_enable, rc.texture_enable, rc.raw_texture_enable, rc.transparency_enable, dithering_enable);
+  const DrawTriangleFunction DrawFunction =
+    GetDrawTriangleFunction(rc.shading_enable, texture_mode, rc.transparency_enable, dithering_enable);
 
   (this->*DrawFunction)(cmd, &cmd->vertices[0], &cmd->vertices[1], &cmd->vertices[2]);
   if (rc.quad_polygon)
@@ -44,9 +48,12 @@ void GPU_SW_Backend::DrawRectangle(const GPUBackendDrawRectangleCommand* cmd)
 {
   const GPURenderCommand rc{cmd->rc.bits};
   const bool dithering_enable = rc.IsDitheringEnabled() && cmd->draw_mode.dither_enable;
+  const GPUTextureMode texture_mode =
+    rc.texture_enable ? (cmd->draw_mode.texture_mode |
+                         (rc.raw_texture_enable ? GPUTextureMode::RawTextureBit : static_cast<GPUTextureMode>(0))) :
+                        GPUTextureMode::Disabled;
 
-  const DrawRectangleFunction DrawFunction =
-    GetDrawRectangleFunction(rc.texture_enable, rc.raw_texture_enable, rc.transparency_enable);
+  const DrawRectangleFunction DrawFunction = GetDrawRectangleFunction(texture_mode, rc.transparency_enable);
 
   (this->*DrawFunction)(cmd);
 }
@@ -79,13 +86,13 @@ constexpr GPU_SW_Backend::DitherLUT GPU_SW_Backend::ComputeDitherLUT()
 
 static constexpr GPU_SW_Backend::DitherLUT s_dither_lut = GPU_SW_Backend::ComputeDitherLUT();
 
-template<bool texture_enable, bool raw_texture_enable, bool transparency_enable, bool dithering_enable>
+template<GPUTextureMode texture_mode, bool transparency_enable, bool dithering_enable>
 void ALWAYS_INLINE_RELEASE GPU_SW_Backend::ShadePixel(const GPUBackendDrawCommand* cmd, u32 x, u32 y, u8 color_r,
                                                       u8 color_g, u8 color_b, u8 texcoord_x, u8 texcoord_y)
 {
   VRAMPixel color;
   bool transparent;
-  if constexpr (texture_enable)
+  if constexpr (texture_mode != GPUTextureMode::Disabled)
   {
     // Apply texture window
     // TODO: Precompute the second half
@@ -96,6 +103,7 @@ void ALWAYS_INLINE_RELEASE GPU_SW_Backend::ShadePixel(const GPUBackendDrawComman
     switch (cmd->draw_mode.texture_mode)
     {
       case GPUTextureMode::Palette4Bit:
+      case GPUTextureMode::RawPalette4Bit:
       {
         const u16 palette_value =
           GetPixel((cmd->draw_mode.GetTexturePageBaseX() + ZeroExtend32(texcoord_x / 4)) % VRAM_WIDTH,
@@ -110,6 +118,7 @@ void ALWAYS_INLINE_RELEASE GPU_SW_Backend::ShadePixel(const GPUBackendDrawComman
       break;
 
       case GPUTextureMode::Palette8Bit:
+      case GPUTextureMode::RawPalette8Bit:
       {
         const u16 palette_value =
           GetPixel((cmd->draw_mode.GetTexturePageBaseX() + ZeroExtend32(texcoord_x / 2)) % VRAM_WIDTH,
@@ -133,7 +142,7 @@ void ALWAYS_INLINE_RELEASE GPU_SW_Backend::ShadePixel(const GPUBackendDrawComman
 
     transparent = texture_color.c;
 
-    if constexpr (raw_texture_enable)
+    if constexpr (texture_mode >= GPUTextureMode::RawPalette4Bit)
     {
       color.bits = texture_color.bits;
     }
@@ -212,7 +221,7 @@ void ALWAYS_INLINE_RELEASE GPU_SW_Backend::ShadePixel(const GPUBackendDrawComman
   SetPixel(static_cast<u32>(x), static_cast<u32>(y), color.bits | cmd->params.GetMaskOR());
 }
 
-template<bool texture_enable, bool raw_texture_enable, bool transparency_enable>
+template<GPUTextureMode texture_mode, bool transparency_enable>
 void GPU_SW_Backend::DrawRectangle(const GPUBackendDrawRectangleCommand* cmd)
 {
   const s32 origin_x = cmd->x;
@@ -239,8 +248,8 @@ void GPU_SW_Backend::DrawRectangle(const GPUBackendDrawRectangleCommand* cmd)
 
       const u8 texcoord_x = Truncate8(ZeroExtend32(origin_texcoord_x) + offset_x);
 
-      ShadePixel<texture_enable, raw_texture_enable, transparency_enable, false>(
-        cmd, static_cast<u32>(x), static_cast<u32>(y), r, g, b, texcoord_x, texcoord_y);
+      ShadePixel<texture_mode, transparency_enable, false>(cmd, static_cast<u32>(x), static_cast<u32>(y), r, g, b,
+                                                           texcoord_x, texcoord_y);
     }
   }
 }
@@ -351,8 +360,7 @@ void ALWAYS_INLINE_RELEASE GPU_SW_Backend::AddIDeltas_DY(i_group& ig, const i_de
   }
 }
 
-template<bool shading_enable, bool texture_enable, bool raw_texture_enable, bool transparency_enable,
-         bool dithering_enable>
+template<bool shading_enable, GPUTextureMode texture_mode, bool transparency_enable, bool dithering_enable>
 void GPU_SW_Backend::DrawSpan(const GPUBackendDrawPolygonCommand* cmd, s32 y, s32 x_start, s32 x_bound, i_group ig,
                               const i_deltas& idl)
 {
@@ -377,6 +385,7 @@ void GPU_SW_Backend::DrawSpan(const GPUBackendDrawPolygonCommand* cmd, s32 y, s3
   if (w <= 0)
     return;
 
+  constexpr bool texture_enable = (texture_mode != GPUTextureMode::Disabled);
   AddIDeltas_DX<shading_enable, texture_enable>(ig, idl, x_ig_adjust);
   AddIDeltas_DY<shading_enable, texture_enable>(ig, idl, y);
 
@@ -388,17 +397,16 @@ void GPU_SW_Backend::DrawSpan(const GPUBackendDrawPolygonCommand* cmd, s32 y, s3
     const u32 u = ig.u >> (COORD_FBS + COORD_POST_PADDING);
     const u32 v = ig.v >> (COORD_FBS + COORD_POST_PADDING);
 
-    ShadePixel<texture_enable, raw_texture_enable, transparency_enable, dithering_enable>(
-      cmd, static_cast<u32>(x), static_cast<u32>(y), Truncate8(r), Truncate8(g), Truncate8(b), Truncate8(u),
-      Truncate8(v));
+    ShadePixel<texture_mode, transparency_enable, dithering_enable>(cmd, static_cast<u32>(x), static_cast<u32>(y),
+                                                                    Truncate8(r), Truncate8(g), Truncate8(b),
+                                                                    Truncate8(u), Truncate8(v));
 
     x++;
     AddIDeltas_DX<shading_enable, texture_enable>(ig, idl);
   } while (--w > 0);
 }
 
-template<bool shading_enable, bool texture_enable, bool raw_texture_enable, bool transparency_enable,
-         bool dithering_enable>
+template<bool shading_enable, GPUTextureMode texture_mode, bool transparency_enable, bool dithering_enable>
 void GPU_SW_Backend::DrawTriangle(const GPUBackendDrawPolygonCommand* cmd,
                                   const GPUBackendDrawPolygonCommand::Vertex* v0,
                                   const GPUBackendDrawPolygonCommand::Vertex* v1,
@@ -475,6 +483,7 @@ void GPU_SW_Backend::DrawTriangle(const GPUBackendDrawPolygonCommand* cmd,
     bound_coord_ls = MakePolyXFPStep((v2->x - v1->x), (v2->y - v1->y));
 
   i_deltas idl;
+  constexpr bool texture_enable = (texture_mode != GPUTextureMode::Disabled);
   if (!CalcIDeltas<shading_enable, texture_enable>(idl, v0, v1, v2))
     return;
 
@@ -563,8 +572,8 @@ void GPU_SW_Backend::DrawTriangle(const GPUBackendDrawPolygonCommand* cmd,
         if (y > static_cast<s32>(m_drawing_area.bottom))
           continue;
 
-        DrawSpan<shading_enable, texture_enable, raw_texture_enable, transparency_enable, dithering_enable>(
-          cmd, yi, GetPolyXFP_Int(lc), GetPolyXFP_Int(rc), ig, idl);
+        DrawSpan<shading_enable, texture_mode, transparency_enable, dithering_enable>(cmd, yi, GetPolyXFP_Int(lc),
+                                                                                      GetPolyXFP_Int(rc), ig, idl);
       }
     }
     else
@@ -579,8 +588,8 @@ void GPU_SW_Backend::DrawTriangle(const GPUBackendDrawPolygonCommand* cmd,
         if (y >= static_cast<s32>(m_drawing_area.top))
         {
 
-          DrawSpan<shading_enable, texture_enable, raw_texture_enable, transparency_enable, dithering_enable>(
-            cmd, yi, GetPolyXFP_Int(lc), GetPolyXFP_Int(rc), ig, idl);
+          DrawSpan<shading_enable, texture_mode, transparency_enable, dithering_enable>(cmd, yi, GetPolyXFP_Int(lc),
+                                                                                        GetPolyXFP_Int(rc), ig, idl);
         }
 
         yi++;
@@ -591,36 +600,99 @@ void GPU_SW_Backend::DrawTriangle(const GPUBackendDrawPolygonCommand* cmd,
   }
 }
 
-GPU_SW_Backend::DrawTriangleFunction GPU_SW_Backend::GetDrawTriangleFunction(bool shading_enable, bool texture_enable,
-                                                                             bool raw_texture_enable,
+GPU_SW_Backend::DrawTriangleFunction GPU_SW_Backend::GetDrawTriangleFunction(bool shading_enable,
+                                                                             GPUTextureMode texture_mode,
                                                                              bool transparency_enable,
                                                                              bool dithering_enable)
 {
-#define F(SHADING, TEXTURE, RAW_TEXTURE, TRANSPARENCY, DITHERING)                                                      \
-  &GPU_SW_Backend::DrawTriangle<SHADING, TEXTURE, RAW_TEXTURE, TRANSPARENCY, DITHERING>
+#define F(SHADING, TEXTURE, TRANSPARENCY, DITHERING)                                                                   \
+  &GPU_SW_Backend::DrawTriangle<SHADING, TEXTURE, TRANSPARENCY, DITHERING>
 
-  static constexpr DrawTriangleFunction funcs[2][2][2][2][2] = {
-    {{{{F(false, false, false, false, false), F(false, false, false, false, true)},
-       {F(false, false, false, true, false), F(false, false, false, true, true)}},
-      {{F(false, false, true, false, false), F(false, false, true, false, true)},
-       {F(false, false, true, true, false), F(false, false, true, true, true)}}},
-     {{{F(false, true, false, false, false), F(false, true, false, false, true)},
-       {F(false, true, false, true, false), F(false, true, false, true, true)}},
-      {{F(false, true, true, false, false), F(false, true, true, false, true)},
-       {F(false, true, true, true, false), F(false, true, true, true, true)}}}},
-    {{{{F(true, false, false, false, false), F(true, false, false, false, true)},
-       {F(true, false, false, true, false), F(true, false, false, true, true)}},
-      {{F(true, false, true, false, false), F(true, false, true, false, true)},
-       {F(true, false, true, true, false), F(true, false, true, true, true)}}},
-     {{{F(true, true, false, false, false), F(true, true, false, false, true)},
-       {F(true, true, false, true, false), F(true, true, false, true, true)}},
-      {{F(true, true, true, false, false), F(true, true, true, false, true)},
-       {F(true, true, true, true, false), F(true, true, true, true, true)}}}}};
+  static constexpr DrawTriangleFunction funcs[2][9][2][2] = {
+    {
+      {
+        {F(false, GPUTextureMode::Palette4Bit, false, false), F(false, GPUTextureMode::Palette4Bit, false, true)},
+        {F(false, GPUTextureMode::Palette4Bit, true, false), F(false, GPUTextureMode::Palette4Bit, true, true)},
+      },
+      {
+        {F(false, GPUTextureMode::Palette8Bit, false, false), F(false, GPUTextureMode::Palette8Bit, false, true)},
+        {F(false, GPUTextureMode::Palette8Bit, true, false), F(false, GPUTextureMode::Palette8Bit, true, true)},
+      },
+      {
+        {F(false, GPUTextureMode::Direct16Bit, false, false), F(false, GPUTextureMode::Direct16Bit, false, true)},
+        {F(false, GPUTextureMode::Direct16Bit, true, false), F(false, GPUTextureMode::Direct16Bit, true, true)},
+      },
+      {
+        {F(false, GPUTextureMode::Reserved_Direct16Bit, false, false),
+         F(false, GPUTextureMode::Reserved_Direct16Bit, false, true)},
+        {F(false, GPUTextureMode::Reserved_Direct16Bit, true, false),
+         F(false, GPUTextureMode::Reserved_Direct16Bit, true, true)},
+      },
+      {
+        {F(false, GPUTextureMode::RawPalette4Bit, false, false), F(false, GPUTextureMode::RawPalette4Bit, false, true)},
+        {F(false, GPUTextureMode::RawPalette4Bit, true, false), F(false, GPUTextureMode::RawPalette4Bit, true, true)},
+      },
+      {
+        {F(false, GPUTextureMode::RawPalette8Bit, false, false), F(false, GPUTextureMode::RawPalette8Bit, false, true)},
+        {F(false, GPUTextureMode::RawPalette8Bit, true, false), F(false, GPUTextureMode::RawPalette8Bit, true, true)},
+      },
+      {
+        {F(false, GPUTextureMode::RawDirect16Bit, false, false), F(false, GPUTextureMode::RawDirect16Bit, false, true)},
+        {F(false, GPUTextureMode::RawDirect16Bit, true, false), F(false, GPUTextureMode::RawDirect16Bit, true, true)},
+      },
+      {
+        {F(false, GPUTextureMode::Reserved_RawDirect16Bit, false, false),
+         F(false, GPUTextureMode::Reserved_RawDirect16Bit, false, true)},
+        {F(false, GPUTextureMode::Reserved_RawDirect16Bit, true, false),
+         F(false, GPUTextureMode::Reserved_RawDirect16Bit, true, true)},
+      },
+      {
+        {F(false, GPUTextureMode::Disabled, false, false), F(false, GPUTextureMode::Disabled, false, true)},
+        {F(false, GPUTextureMode::Disabled, true, false), F(false, GPUTextureMode::Disabled, true, true)},
+      },
+    },
+    {{
+       {F(true, GPUTextureMode::Palette4Bit, false, false), F(true, GPUTextureMode::Palette4Bit, false, true)},
+       {F(true, GPUTextureMode::Palette4Bit, true, false), F(true, GPUTextureMode::Palette4Bit, true, true)},
+     },
+     {
+       {F(true, GPUTextureMode::Palette8Bit, false, false), F(true, GPUTextureMode::Palette8Bit, false, true)},
+       {F(true, GPUTextureMode::Palette8Bit, true, false), F(true, GPUTextureMode::Palette8Bit, true, true)},
+     },
+     {
+       {F(true, GPUTextureMode::Direct16Bit, false, false), F(true, GPUTextureMode::Direct16Bit, false, true)},
+       {F(true, GPUTextureMode::Direct16Bit, true, false), F(true, GPUTextureMode::Direct16Bit, true, true)},
+     },
+     {
+       {F(true, GPUTextureMode::Reserved_Direct16Bit, false, false),
+        F(true, GPUTextureMode::Reserved_Direct16Bit, false, true)},
+       {F(true, GPUTextureMode::Reserved_Direct16Bit, true, false),
+        F(true, GPUTextureMode::Reserved_Direct16Bit, true, true)},
+     },
+     {
+       {F(true, GPUTextureMode::RawPalette4Bit, false, false), F(true, GPUTextureMode::RawPalette4Bit, false, true)},
+       {F(true, GPUTextureMode::RawPalette4Bit, true, false), F(true, GPUTextureMode::RawPalette4Bit, true, true)},
+     },
+     {
+       {F(true, GPUTextureMode::RawPalette8Bit, false, false), F(true, GPUTextureMode::RawPalette8Bit, false, true)},
+       {F(true, GPUTextureMode::RawPalette8Bit, true, false), F(true, GPUTextureMode::RawPalette8Bit, true, true)},
+     },
+     {
+       {F(true, GPUTextureMode::RawDirect16Bit, false, false), F(true, GPUTextureMode::RawDirect16Bit, false, true)},
+       {F(true, GPUTextureMode::RawDirect16Bit, true, false), F(true, GPUTextureMode::RawDirect16Bit, true, true)},
+     },
+     {
+       {F(true, GPUTextureMode::Reserved_RawDirect16Bit, false, false),
+        F(true, GPUTextureMode::Reserved_RawDirect16Bit, false, true)},
+       {F(true, GPUTextureMode::Reserved_RawDirect16Bit, true, false),
+        F(true, GPUTextureMode::Reserved_RawDirect16Bit, true, true)},
+     },
+     {{F(true, GPUTextureMode::Disabled, false, false), F(true, GPUTextureMode::Disabled, false, true)},
+      {F(true, GPUTextureMode::Disabled, true, false), F(true, GPUTextureMode::Disabled, true, true)}}}};
 
 #undef F
 
-  return funcs[u8(shading_enable)][u8(texture_enable)][u8(raw_texture_enable)][u8(transparency_enable)]
-              [u8(dithering_enable)];
+  return funcs[u8(shading_enable)][u8(texture_mode)][u8(transparency_enable)][u8(dithering_enable)];
 }
 
 enum
@@ -725,8 +797,8 @@ void GPU_SW_Backend::DrawLine(const GPUBackendDrawLineCommand* cmd, const GPUBac
       const u8 g = shading_enable ? static_cast<u8>(cur_point.g >> Line_RGB_FractBits) : p0->g;
       const u8 b = shading_enable ? static_cast<u8>(cur_point.b >> Line_RGB_FractBits) : p0->b;
 
-      ShadePixel<false, false, transparency_enable, dithering_enable>(cmd, static_cast<u32>(x), static_cast<u32>(y), r,
-                                                                      g, b, 0, 0);
+      ShadePixel<GPUTextureMode::Disabled, transparency_enable, dithering_enable>(cmd, static_cast<u32>(x),
+                                                                                  static_cast<u32>(y), r, g, b, 0, 0);
     }
 
     cur_point.x += step.dx_dk;
@@ -755,18 +827,25 @@ GPU_SW_Backend::DrawLineFunction GPU_SW_Backend::GetDrawLineFunction(bool shadin
   return funcs[u8(shading_enable)][u8(transparency_enable)][u8(dithering_enable)];
 }
 
-GPU_SW_Backend::DrawRectangleFunction
-GPU_SW_Backend::GetDrawRectangleFunction(bool texture_enable, bool raw_texture_enable, bool transparency_enable)
+GPU_SW_Backend::DrawRectangleFunction GPU_SW_Backend::GetDrawRectangleFunction(GPUTextureMode texture_mode,
+                                                                               bool transparency_enable)
 {
-#define F(TEXTURE, RAW_TEXTURE, TRANSPARENCY) &GPU_SW_Backend::DrawRectangle<TEXTURE, RAW_TEXTURE, TRANSPARENCY>
+#define F(TEXTURE, TRANSPARENCY) &GPU_SW_Backend::DrawRectangle<TEXTURE, TRANSPARENCY>
 
-  static constexpr DrawRectangleFunction funcs[2][2][2] = {
-    {{F(false, false, false), F(false, false, true)}, {F(false, true, false), F(false, true, true)}},
-    {{F(true, false, false), F(true, false, true)}, {F(true, true, false), F(true, true, true)}}};
+  static constexpr DrawRectangleFunction funcs[9][2] = {
+    {F(GPUTextureMode::Palette4Bit, false), F(GPUTextureMode::Palette4Bit, true)},
+    {F(GPUTextureMode::Palette8Bit, false), F(GPUTextureMode::Palette8Bit, true)},
+    {F(GPUTextureMode::Direct16Bit, false), F(GPUTextureMode::Direct16Bit, true)},
+    {F(GPUTextureMode::Reserved_Direct16Bit, false), F(GPUTextureMode::Reserved_Direct16Bit, true)},
+    {F(GPUTextureMode::RawPalette4Bit, false), F(GPUTextureMode::RawPalette4Bit, true)},
+    {F(GPUTextureMode::RawPalette8Bit, false), F(GPUTextureMode::RawPalette8Bit, true)},
+    {F(GPUTextureMode::RawDirect16Bit, false), F(GPUTextureMode::RawDirect16Bit, true)},
+    {F(GPUTextureMode::Reserved_RawDirect16Bit, false), F(GPUTextureMode::Reserved_RawDirect16Bit, true)},
+    {F(GPUTextureMode::Disabled, false), F(GPUTextureMode::Disabled, true)}};
 
 #undef F
 
-  return funcs[u8(texture_enable)][u8(raw_texture_enable)][u8(transparency_enable)];
+  return funcs[u8(texture_mode)][u8(transparency_enable)];
 }
 
 void GPU_SW_Backend::FillVRAM(u32 x, u32 y, u32 width, u32 height, u32 color, GPUBackendCommandParameters params)
