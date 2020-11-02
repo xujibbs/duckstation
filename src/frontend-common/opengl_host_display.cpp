@@ -572,6 +572,11 @@ void OpenGLHostDisplay::RenderSoftwareCursor(s32 left, s32 bottom, s32 width, s3
 
 #ifndef LIBRETRO
 
+bool OpenGLHostDisplay::SetScalingShader(const std::string_view& config)
+{
+  return false;
+}
+
 bool OpenGLHostDisplay::SetPostProcessingChain(const std::string_view& config)
 {
   if (config.empty())
@@ -741,6 +746,11 @@ void OpenGLHostDisplay::ApplyPostProcessingChain(GLuint final_target, s32 final_
 }
 
 #else
+
+bool OpenGLHostDisplay::SetScalingShader(const std::string_view& config)
+{
+  return false;
+}
 
 bool OpenGLHostDisplay::SetPostProcessingChain(const std::string_view& config)
 {

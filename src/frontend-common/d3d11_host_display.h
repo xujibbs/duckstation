@@ -8,6 +8,7 @@
 #include <d3d11.h>
 #include <dxgi.h>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -49,6 +50,7 @@ public:
   virtual bool SetFullscreen(bool fullscreen, u32 width, u32 height, float refresh_rate) override;
   virtual void DestroyRenderSurface() override;
 
+  virtual bool SetScalingShader(const std::string_view& config) override;
   virtual bool SetPostProcessingChain(const std::string_view& config) override;
 
   std::unique_ptr<HostDisplayTexture> CreateTexture(u32 width, u32 height, const void* initial_data,
@@ -108,6 +110,7 @@ protected:
   };
 
   bool CheckPostProcessingRenderTargets(u32 target_width, u32 target_height);
+  bool CompilePostProcessingStage(const PostProcessingShader& shader, PostProcessingStage* stage);
   void ApplyPostProcessingChain(ID3D11RenderTargetView* final_target, s32 final_left, s32 final_top, s32 final_width,
                                 s32 final_height, void* texture_handle, u32 texture_width, s32 texture_height,
                                 s32 texture_view_x, s32 texture_view_y, s32 texture_view_width,
@@ -142,6 +145,8 @@ protected:
   bool m_using_allow_tearing = false;
   bool m_vsync = true;
 
+  std::optional<PostProcessingShader> m_scale_shader;
+  std::optional<PostProcessingStage> m_scale_stage;
   PostProcessingChain m_post_processing_chain;
   D3D11::Texture m_post_processing_input_texture;
   std::vector<PostProcessingStage> m_post_processing_stages;

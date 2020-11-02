@@ -28,6 +28,7 @@ public:
   bool CreateFromString(const std::string_view& chain_config);
 
   static std::vector<std::string> GetAvailableShaderNames();
+  static bool CreateSingleShader(PostProcessingShader* shader, const std::string_view& shader_config);
 
 private:
   std::vector<PostProcessingShader> m_shaders;

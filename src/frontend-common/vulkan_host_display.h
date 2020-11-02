@@ -46,6 +46,7 @@ public:
   virtual bool SetFullscreen(bool fullscreen, u32 width, u32 height, float refresh_rate) override;
   virtual void DestroyRenderSurface() override;
 
+  virtual bool SetScalingShader(const std::string_view& config) override;
   virtual bool SetPostProcessingChain(const std::string_view& config) override;
 
   std::unique_ptr<HostDisplayTexture> CreateTexture(u32 width, u32 height, const void* initial_data,

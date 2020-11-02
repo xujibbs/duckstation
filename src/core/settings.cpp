@@ -175,6 +175,7 @@ void Settings::Load(SettingsInterface& si)
   display_show_speed = si.GetBoolValue("Display", "ShowSpeed", false);
   display_show_resolution = si.GetBoolValue("Display", "ShowResolution", false);
   video_sync_enabled = si.GetBoolValue("Display", "VSync", true);
+  display_scale_shader = si.GetStringValue("Display", "ScaleShader", "");
   display_post_process_chain = si.GetStringValue("Display", "PostProcessChain", "");
 
   cdrom_read_thread = si.GetBoolValue("CDROM", "ReadThread", true);
@@ -298,6 +299,11 @@ void Settings::Save(SettingsInterface& si) const
   si.SetBoolValue("Display", "ShowSpeed", display_show_speed);
   si.SetBoolValue("Display", "ShowResolution", display_show_speed);
   si.SetBoolValue("Display", "VSync", video_sync_enabled);
+  if (display_scale_shader.empty())
+    si.DeleteValue("Display", "ScaleShader");
+  else
+    si.SetStringValue("Display", "ScaleShader", display_scale_shader.c_str());
+
   if (display_post_process_chain.empty())
     si.DeleteValue("Display", "PostProcessChain");
   else

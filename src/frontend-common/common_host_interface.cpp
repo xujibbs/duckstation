@@ -177,6 +177,7 @@ void CommonHostInterface::DestroySystem()
   SetTimerResolutionIncreased(false);
   m_save_state_selector_ui->Close();
   m_display->SetPostProcessingChain({});
+  m_display->SetScalingShader({});
 
   HostInterface::DestroySystem();
 }
@@ -714,6 +715,9 @@ void CommonHostInterface::SetUserDirectory()
 void CommonHostInterface::OnSystemCreated()
 {
   HostInterface::OnSystemCreated();
+
+  if (!g_settings.display_scale_shader.empty() && !m_display->SetScalingShader(g_settings.display_scale_shader))
+    AddOSDMessage(TranslateStdString("OSDMessage", "Failed to load scaling shader."), 20.0f);
 
   if (g_settings.display_post_processing && !m_display->SetPostProcessingChain(g_settings.display_post_process_chain))
     AddOSDMessage(TranslateStdString("OSDMessage", "Failed to load post processing shader chain."), 20.0f);
@@ -2082,6 +2086,12 @@ void CommonHostInterface::CheckForSettingsChanges(const Settings& old_settings)
       UpdateSpeedLimiterState();
     }
 
+    if (g_settings.display_scale_shader != old_settings.display_scale_shader)
+    {
+      if (!m_display->SetScalingShader(g_settings.display_post_process_chain))
+        AddOSDMessage(TranslateStdString("OSDMessage", "Failed to load scaling shader."), 20.0f);
+    }
+
     if (g_settings.display_post_processing != old_settings.display_post_processing ||
         g_settings.display_post_process_chain != old_settings.display_post_process_chain)
     {
@@ -2469,13 +2479,24 @@ void CommonHostInterface::TogglePostProcessing()
 
 void CommonHostInterface::ReloadPostProcessingShaders()
 {
-  if (!m_display || !g_settings.display_post_processing)
+  if (!m_display)
     return;
 
-  if (!m_display->SetPostProcessingChain(g_settings.display_post_process_chain))
-    AddOSDMessage(TranslateStdString("OSDMessage", "Failed to load post-processing shader chain."), 20.0f);
-  else
-    AddOSDMessage(TranslateStdString("OSDMessage", "Post-processing shaders reloaded."), 10.0f);
+  if (!g_settings.display_scale_shader.empty())
+  {
+    if (!m_display->SetScalingShader(g_settings.display_scale_shader))
+      AddOSDMessage(TranslateStdString("OSDMessage", "Failed to load scaling shader."), 20.0f);
+    else
+      AddOSDMessage(TranslateStdString("OSDMessage", "Scaling shader reloaded."), 10.0f);
+  }
+
+  if (g_settings.display_post_processing)
+  {
+    if (!m_display->SetPostProcessingChain(g_settings.display_post_process_chain))
+      AddOSDMessage(TranslateStdString("OSDMessage", "Failed to load post-processing shader chain."), 20.0f);
+    else
+      AddOSDMessage(TranslateStdString("OSDMessage", "Post-processing shaders reloaded."), 10.0f);
+  }
 }
 
 bool CommonHostInterface::ParseFullscreenMode(const std::string_view& mode, u32* width, u32* height,

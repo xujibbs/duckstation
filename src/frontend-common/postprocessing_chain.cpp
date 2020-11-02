@@ -128,6 +128,25 @@ bool PostProcessingChain::CreateFromString(const std::string_view& chain_config)
   return true;
 }
 
+bool PostProcessingChain::CreateSingleShader(PostProcessingShader* shader, const std::string_view& shader_config)
+{
+  size_t first_shader_sep = shader_config.find(';');
+  if (first_shader_sep == std::string::npos)
+    first_shader_sep = shader_config.size();
+
+  const std::string_view shader_name = shader_config.substr(0, first_shader_sep);
+  if (shader_name.empty())
+    return false;
+
+  if (!TryLoadingShader(shader, shader_name))
+    return false;
+
+  if (first_shader_sep < shader_config.size())
+    shader->SetConfigString(shader_config.substr(first_shader_sep + 1));
+
+  return true;
+}
+
 std::vector<std::string> PostProcessingChain::GetAvailableShaderNames()
 {
   std::vector<std::string> names;

@@ -91,6 +91,7 @@ struct Settings
 
   GPURenderer gpu_renderer = GPURenderer::Software;
   std::string gpu_adapter;
+  std::string display_scale_shader;
   std::string display_post_process_chain;
   u32 gpu_resolution_scale = 1;
   u32 gpu_multisamples = 1;

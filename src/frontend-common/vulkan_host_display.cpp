@@ -750,6 +750,11 @@ VulkanHostDisplay::PostProcessingStage::~PostProcessingStage()
     g_vulkan_context->DeferPipelineDestruction(pipeline);
 }
 
+bool VulkanHostDisplay::SetScalingShader(const std::string_view& config)
+{
+  return false;
+}
+
 bool VulkanHostDisplay::SetPostProcessingChain(const std::string_view& config)
 {
   g_vulkan_context->ExecuteCommandBuffer(true);
@@ -990,6 +995,11 @@ void VulkanHostDisplay::ApplyPostProcessingChain(s32 final_left, s32 final_top, 
 }
 
 #else // LIBRETRO
+
+bool VulkanHostDisplay::SetScalingShader(const std::string_view& config)
+{
+  return false;
+}
 
 bool VulkanHostDisplay::SetPostProcessingChain(const std::string_view& config)
 {

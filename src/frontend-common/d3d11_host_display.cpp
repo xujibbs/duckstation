@@ -724,19 +724,38 @@ void D3D11HostDisplay::RenderDisplay(s32 left, s32 top, s32 width, s32 height, v
                                      s32 texture_view_height, bool linear_filter)
 {
   m_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-  m_context->VSSetShader(m_display_vertex_shader.Get(), nullptr, 0);
-  m_context->PSSetShader(m_display_pixel_shader.Get(), nullptr, 0);
   m_context->PSSetShaderResources(0, 1, reinterpret_cast<ID3D11ShaderResourceView**>(&texture_handle));
-  m_context->PSSetSamplers(0, 1, linear_filter ? m_linear_sampler.GetAddressOf() : m_point_sampler.GetAddressOf());
+  m_context->PSSetSamplers(0, 1,
+                           (linear_filter && !m_scale_stage.has_value()) ? m_linear_sampler.GetAddressOf() :
+                                                                           m_point_sampler.GetAddressOf());
 
-  const float uniforms[4] = {static_cast<float>(texture_view_x) / static_cast<float>(texture_width),
-                             static_cast<float>(texture_view_y) / static_cast<float>(texture_height),
-                             (static_cast<float>(texture_view_width) - 0.5f) / static_cast<float>(texture_width),
-                             (static_cast<float>(texture_view_height) - 0.5f) / static_cast<float>(texture_height)};
-  const auto map = m_display_uniform_buffer.Map(m_context.Get(), m_display_uniform_buffer.GetSize(), sizeof(uniforms));
-  std::memcpy(map.pointer, uniforms, sizeof(uniforms));
-  m_display_uniform_buffer.Unmap(m_context.Get(), sizeof(uniforms));
-  m_context->VSSetConstantBuffers(0, 1, m_display_uniform_buffer.GetD3DBufferArray());
+  if (!m_scale_stage)
+  {
+    const float uniforms[4] = {static_cast<float>(texture_view_x) / static_cast<float>(texture_width),
+                               static_cast<float>(texture_view_y) / static_cast<float>(texture_height),
+                               (static_cast<float>(texture_view_width) - 0.5f) / static_cast<float>(texture_width),
+                               (static_cast<float>(texture_view_height) - 0.5f) / static_cast<float>(texture_height)};
+    const auto map =
+      m_display_uniform_buffer.Map(m_context.Get(), m_display_uniform_buffer.GetSize(), sizeof(uniforms));
+    std::memcpy(map.pointer, uniforms, sizeof(uniforms));
+    m_display_uniform_buffer.Unmap(m_context.Get(), sizeof(uniforms));
+    m_context->VSSetShader(m_display_vertex_shader.Get(), nullptr, 0);
+    m_context->VSSetConstantBuffers(0, 1, m_display_uniform_buffer.GetD3DBufferArray());
+    m_context->PSSetShader(m_display_pixel_shader.Get(), nullptr, 0);
+  }
+  else
+  {
+    const auto map =
+      m_display_uniform_buffer.Map(m_context.Get(), m_display_uniform_buffer.GetSize(), m_scale_stage->uniforms_size);
+    m_scale_shader->FillUniformBuffer(map.pointer, texture_width, texture_height, texture_view_x, texture_view_y,
+                                      texture_view_width, texture_view_height, width, height, 0.0f);
+    m_display_uniform_buffer.Unmap(m_context.Get(), m_scale_stage->uniforms_size);
+    m_context->VSSetShader(m_scale_stage->vertex_shader.Get(), nullptr, 0);
+    m_context->VSSetConstantBuffers(0, 1, m_display_uniform_buffer.GetD3DBufferArray());
+    m_context->PSSetShader(m_scale_stage->pixel_shader.Get(), nullptr, 0);
+    m_context->PSSetConstantBuffers(0, 1, m_display_uniform_buffer.GetD3DBufferArray());
+  }
+
 
   const CD3D11_VIEWPORT vp(static_cast<float>(left), static_cast<float>(top), static_cast<float>(width),
                            static_cast<float>(height));
@@ -862,6 +881,43 @@ D3D11HostDisplay::AdapterInfo D3D11HostDisplay::GetAdapterInfo(IDXGIFactory* dxg
   return adapter_info;
 }
 
+bool D3D11HostDisplay::SetScalingShader(const std::string_view& config)
+{
+  if (config.empty())
+  {
+    m_scale_shader.reset();
+    m_scale_stage.reset();
+    return true;
+  }
+
+  m_scale_shader = PostProcessingShader();
+  if (!PostProcessingChain::CreateSingleShader(&m_scale_shader.value(), config))
+  {
+    m_scale_shader.reset();
+    return false;
+  }
+
+  m_scale_stage = PostProcessingStage();
+  if (!CompilePostProcessingStage(m_scale_shader.value(), &m_scale_stage.value()))
+  {
+    Log_ErrorPrintf("Failed to compile resize shader");
+    m_scale_stage.reset();
+    m_scale_shader.reset();
+    return false;
+  }
+
+  if (m_display_uniform_buffer.GetSize() < m_scale_stage->uniforms_size &&
+      !m_display_uniform_buffer.Create(m_device.Get(), D3D11_BIND_CONSTANT_BUFFER, m_scale_stage->uniforms_size))
+  {
+    Log_ErrorPrintf("Failed to allocate %u byte constant buffer for scaling", m_scale_stage->uniforms_size);
+    m_scale_stage.reset();
+    m_scale_shader.reset();
+    return false;
+  }
+
+  return true;
+}
+
 bool D3D11HostDisplay::SetPostProcessingChain(const std::string_view& config)
 {
   if (config.empty())
@@ -882,17 +938,10 @@ bool D3D11HostDisplay::SetPostProcessingChain(const std::string_view& config)
 
   for (u32 i = 0; i < m_post_processing_chain.GetStageCount(); i++)
   {
-    const PostProcessingShader& shader = m_post_processing_chain.GetShaderStage(i);
-    const std::string vs = shadergen.GeneratePostProcessingVertexShader(shader);
-    const std::string ps = shadergen.GeneratePostProcessingFragmentShader(shader);
-
     PostProcessingStage stage;
-    stage.uniforms_size = shader.GetUniformsSize();
-    stage.vertex_shader =
-      D3D11::ShaderCompiler::CompileAndCreateVertexShader(m_device.Get(), vs, g_settings.gpu_use_debug_device);
-    stage.pixel_shader =
-      D3D11::ShaderCompiler::CompileAndCreatePixelShader(m_device.Get(), ps, g_settings.gpu_use_debug_device);
-    if (!stage.vertex_shader || !stage.pixel_shader)
+
+    const PostProcessingShader& shader = m_post_processing_chain.GetShaderStage(i);
+    if (!CompilePostProcessingStage(shader, &stage))
     {
       Log_ErrorPrintf("Failed to compile one or more post-processing shaders, disabling.");
       m_post_processing_stages.clear();
@@ -942,6 +991,21 @@ bool D3D11HostDisplay::CheckPostProcessingRenderTargets(u32 target_width, u32 ta
   }
 
   return true;
+}
+
+bool D3D11HostDisplay::CompilePostProcessingStage(const PostProcessingShader& shader, PostProcessingStage* stage)
+{
+  FrontendCommon::PostProcessingShaderGen shadergen(HostDisplay::RenderAPI::D3D11, true);
+
+  const std::string vs = shadergen.GeneratePostProcessingVertexShader(shader);
+  const std::string ps = shadergen.GeneratePostProcessingFragmentShader(shader);
+
+  stage->uniforms_size = shader.GetUniformsSize();
+  stage->vertex_shader =
+    D3D11::ShaderCompiler::CompileAndCreateVertexShader(m_device.Get(), vs, g_settings.gpu_use_debug_device);
+  stage->pixel_shader =
+    D3D11::ShaderCompiler::CompileAndCreatePixelShader(m_device.Get(), ps, g_settings.gpu_use_debug_device);
+  return stage->vertex_shader && stage->pixel_shader;
 }
 
 void D3D11HostDisplay::ApplyPostProcessingChain(ID3D11RenderTargetView* final_target, s32 final_left, s32 final_top,
@@ -1012,6 +1076,11 @@ void D3D11HostDisplay::ApplyPostProcessingChain(ID3D11RenderTargetView* final_ta
 }
 
 #else // LIBRETRO
+
+bool D3D11HostDisplay::SetScalingShader(const std::string_view& config)
+{
+  return false;
+}
 
 bool D3D11HostDisplay::SetPostProcessingChain(const std::string_view& config)
 {
