@@ -465,7 +465,7 @@ void GPU::UpdateCRTCConfig()
     cs.vertical_total = PAL_TOTAL_LINES;
     cs.current_scanline %= PAL_TOTAL_LINES;
     cs.horizontal_total = PAL_TICKS_PER_LINE;
-    cs.horizontal_sync_start = PAL_HSYNC_TICKS;
+    cs.horizontal_sync_start = PAL_TICKS_PER_LINE - PAL_HSYNC_TICKS;
     cs.current_tick_in_scanline %= System::ScaleTicksToOverclock(PAL_TICKS_PER_LINE);
   }
   else
@@ -473,7 +473,7 @@ void GPU::UpdateCRTCConfig()
     cs.vertical_total = NTSC_TOTAL_LINES;
     cs.current_scanline %= NTSC_TOTAL_LINES;
     cs.horizontal_total = NTSC_TICKS_PER_LINE;
-    cs.horizontal_sync_start = NTSC_HSYNC_TICKS;
+    cs.horizontal_sync_start = NTSC_TICKS_PER_LINE - NTSC_HSYNC_TICKS;
     cs.current_tick_in_scanline %= System::ScaleTicksToOverclock(NTSC_TICKS_PER_LINE);
   }
 
