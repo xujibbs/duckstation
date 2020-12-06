@@ -20,6 +20,7 @@ public:
   ALWAYS_INLINE ID3D11RenderTargetView* GetD3DRTV() const { return m_rtv.Get(); }
   ALWAYS_INLINE ID3D11ShaderResourceView* const* GetD3DSRVArray() const { return m_srv.GetAddressOf(); }
   ALWAYS_INLINE ID3D11RenderTargetView* const* GetD3DRTVArray() const { return m_rtv.GetAddressOf(); }
+  ALWAYS_INLINE bool IsValid() const { return static_cast<bool>(m_texture); }
 
   ALWAYS_INLINE u32 GetWidth() const { return m_width; }
   ALWAYS_INLINE u32 GetHeight() const { return m_height; }

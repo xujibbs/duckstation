@@ -11,11 +11,14 @@ public:
   PostProcessingShaderGen(HostDisplay::RenderAPI render_api, bool supports_dual_source_blend);
   ~PostProcessingShaderGen();
 
-  std::string GeneratePostProcessingVertexShader(const PostProcessingShader& shader);
-  std::string GeneratePostProcessingFragmentShader(const PostProcessingShader& shader);
+  std::string GeneratePostProcessingVertexShader(const PostProcessingShader& shader, u32 pass);
+  std::string GeneratePostProcessingFragmentShader(const PostProcessingShader& shader, u32 pass);
 
 private:
   void WriteUniformBuffer(std::stringstream& ss, const PostProcessingShader& shader, bool use_push_constants);
+
+  std::string GenerateLegacyPostProcessingVertexShader(const PostProcessingShader& shader, u32 pass);
+  std::string GenerateLegacyPostProcessingFragmentShader(const PostProcessingShader& shader, u32 pass);
 };
 
 } // namespace FrontendCommon

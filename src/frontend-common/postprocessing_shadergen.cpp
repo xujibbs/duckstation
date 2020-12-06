@@ -9,11 +9,23 @@ PostProcessingShaderGen::PostProcessingShaderGen(HostDisplay::RenderAPI render_a
 
 PostProcessingShaderGen::~PostProcessingShaderGen() = default;
 
-std::string PostProcessingShaderGen::GeneratePostProcessingVertexShader(const PostProcessingShader& shader)
+std::string PostProcessingShaderGen::GeneratePostProcessingVertexShader(const PostProcessingShader& shader, u32 pass)
+{
+
+}
+
+std::string PostProcessingShaderGen::GeneratePostProcessingFragmentShader(const PostProcessingShader& shader, u32 pass)
+{
+}
+
+std::string PostProcessingShaderGen::GenerateLegacyPostProcessingVertexShader(const PostProcessingShader& shader,
+                                                                              u32 pass)
 {
   std::stringstream ss;
 
   WriteHeader(ss);
+  DefineMacro(ss, "VERTEX", true);
+  DefineMacro(ss, "FRAGMENT", false);
   DeclareTexture(ss, "samp0", 0);
   WriteUniformBuffer(ss, shader, shader.UsePushConstants());
 
@@ -32,11 +44,14 @@ std::string PostProcessingShaderGen::GeneratePostProcessingVertexShader(const Po
   return ss.str();
 }
 
-std::string PostProcessingShaderGen::GeneratePostProcessingFragmentShader(const PostProcessingShader& shader)
+std::string PostProcessingShaderGen::GenerateLegacyPostProcessingFragmentShader(const PostProcessingShader& shader,
+                                                                                u32 pass)
 {
   std::stringstream ss;
 
   WriteHeader(ss);
+  DefineMacro(ss, "VERTEX", false);
+  DefineMacro(ss, "FRAGMENT", true);
   DeclareTexture(ss, "samp0", 0);
   WriteUniformBuffer(ss, shader, shader.UsePushConstants());
 
@@ -118,7 +133,7 @@ void SetOutput(float4 color)
 #define OptionEnabled(x) ((x) != 0)
 )";
 
-  ss << shader.GetCode();
+  ss << shader.GetCode(pass);
 
   if (!m_glsl)
   {

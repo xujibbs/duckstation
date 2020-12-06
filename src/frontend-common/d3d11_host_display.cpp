@@ -960,6 +960,10 @@ bool D3D11HostDisplay::SetPostProcessingChain(const std::string_view& config)
 
     PostProcessingStage stage;
     stage.uniforms_size = shader.GetUniformsSize();
+    stage.output_texture_scale = shader.GetOutputScale();
+    stage.sampler_state = (shader.GetTextureFilter() == PostProcessingShader::TextureFilter::Linear) ?
+                            m_linear_sampler.Get() :
+                            m_point_sampler.Get();
     stage.vertex_shader = shader_cache.GetVertexShader(m_device.Get(), vs);
     stage.pixel_shader = shader_cache.GetPixelShader(m_device.Get(), ps);
     if (!stage.vertex_shader || !stage.pixel_shader)
@@ -1000,13 +1004,17 @@ bool D3D11HostDisplay::CheckPostProcessingRenderTargets(u32 target_width, u32 ta
       return false;
   }
 
-  const u32 target_count = (static_cast<u32>(m_post_processing_stages.size()) - 1);
-  for (u32 i = 0; i < target_count; i++)
+  for (u32 i = 0; i < static_cast<u32>(m_post_processing_stages.size()); i++)
   {
     PostProcessingStage& pps = m_post_processing_stages[i];
-    if (pps.output_texture.GetWidth() != target_width || pps.output_texture.GetHeight() != target_height)
+    if (i == static_cast<u32>(m_post_processing_stages.size() - 1) && pps.output_texture_scale == 1.0f)
+      break;
+
+    const u32 stage_width = static_cast<u32>(static_cast<float>(target_width) * pps.output_texture_scale);
+    const u32 stage_height = static_cast<u32>(static_cast<float>(target_height) * pps.output_texture_scale);
+    if (pps.output_texture.GetWidth() != stage_width || pps.output_texture.GetHeight() != stage_height)
     {
-      if (!pps.output_texture.Create(m_device.Get(), target_width, target_height, 1, format, bind_flags))
+      if (!pps.output_texture.Create(m_device.Get(), stage_width, stage_height, 1, format, bind_flags))
         return false;
     }
   }
@@ -1042,25 +1050,32 @@ void D3D11HostDisplay::ApplyPostProcessingChain(ID3D11RenderTargetView* final_ta
   texture_view_width = final_width;
   texture_view_height = final_height;
 
-  const u32 final_stage = static_cast<u32>(m_post_processing_stages.size()) - 1u;
   for (u32 i = 0; i < static_cast<u32>(m_post_processing_stages.size()); i++)
   {
     PostProcessingStage& pps = m_post_processing_stages[i];
-    if (i == final_stage)
-    {
-      m_context->OMSetRenderTargets(1, &final_target, nullptr);
-    }
-    else
+    if (pps.output_texture.IsValid())
     {
       m_context->ClearRenderTargetView(pps.output_texture.GetD3DRTV(), clear_color.data());
       m_context->OMSetRenderTargets(1, pps.output_texture.GetD3DRTVArray(), nullptr);
+
+      CD3D11_VIEWPORT vp(0.0f, 0.0f, static_cast<float>(pps.output_texture.GetWidth()),
+                         static_cast<float>(pps.output_texture.GetHeight()), 0.0f, 1.0f);
+      m_context->RSSetViewports(1, &vp);
+    }
+    else
+    {
+      m_context->OMSetRenderTargets(1, &final_target, nullptr);
+
+      CD3D11_VIEWPORT vp(0.0f, 0.0f, static_cast<float>(GetWindowWidth()), static_cast<float>(GetWindowHeight()), 0.0f,
+                         1.0f);
+      m_context->RSSetViewports(1, &vp);
     }
 
     m_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     m_context->VSSetShader(pps.vertex_shader.Get(), nullptr, 0);
     m_context->PSSetShader(pps.pixel_shader.Get(), nullptr, 0);
     m_context->PSSetShaderResources(0, 1, reinterpret_cast<ID3D11ShaderResourceView**>(&texture_handle));
-    m_context->PSSetSamplers(0, 1, m_point_sampler.GetAddressOf());
+    m_context->PSSetSamplers(0, 1, &pps.sampler_state);
 
     const auto map =
       m_display_uniform_buffer.Map(m_context.Get(), m_display_uniform_buffer.GetSize(), pps.uniforms_size);
@@ -1073,8 +1088,26 @@ void D3D11HostDisplay::ApplyPostProcessingChain(ID3D11RenderTargetView* final_ta
 
     m_context->Draw(3, 0);
 
-    if (i != final_stage)
+    if (pps.output_texture.IsValid())
       texture_handle = pps.output_texture.GetD3DSRV();
+  }
+
+  // final blit when upscaling shaders are used
+  const PostProcessingStage& final_stage = m_post_processing_stages.back();
+  if (final_stage.output_texture.IsValid())
+  {
+    m_context->OMSetRenderTargets(1, &final_target, nullptr);
+
+    CD3D11_VIEWPORT vp(0.0f, 0.0f, static_cast<float>(GetWindowWidth()), static_cast<float>(GetWindowHeight()), 0.0f,
+                       1.0f);
+    m_context->RSSetViewports(1, &vp);
+
+    m_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    m_context->VSSetShader(m_display_vertex_shader.Get(), nullptr, 0);
+    m_context->PSSetShader(m_display_pixel_shader.Get(), nullptr, 0);
+    m_context->PSSetShaderResources(0, 1, final_stage.output_texture.GetD3DSRVArray());
+    m_context->PSSetSamplers(0, 1, m_linear_sampler.GetAddressOf());
+    m_context->Draw(3, 0);
   }
 
   ID3D11ShaderResourceView* null_srv = nullptr;

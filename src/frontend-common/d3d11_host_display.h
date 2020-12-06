@@ -107,7 +107,9 @@ protected:
   {
     ComPtr<ID3D11VertexShader> vertex_shader;
     ComPtr<ID3D11PixelShader> pixel_shader;
+    ID3D11SamplerState* sampler_state;
     D3D11::Texture output_texture;
+    float output_texture_scale;
     u32 uniforms_size;
   };
 

@@ -87,18 +87,21 @@ u32 ParseVector(const std::string_view& line, PostProcessingShader::Option::Valu
 
 PostProcessingShader::PostProcessingShader() = default;
 
-PostProcessingShader::PostProcessingShader(std::string name, std::string code) : m_name(name), m_code(code)
+PostProcessingShader::PostProcessingShader(std::string name, std::string code) : m_name(name)
 {
-  LoadOptions();
+  Pass pass;
+  pass.code = std::move(code);
+  m_passes.push_back(std::move(pass));
+  LoadLegacyOptions();
 }
 
 PostProcessingShader::PostProcessingShader(const PostProcessingShader& copy)
-  : m_name(copy.m_name), m_code(copy.m_code), m_options(copy.m_options)
+  : m_name(copy.m_name), m_passes(copy.m_passes), m_options(copy.m_options)
 {
 }
 
 PostProcessingShader::PostProcessingShader(PostProcessingShader& move)
-  : m_name(std::move(move.m_name)), m_code(std::move(move.m_code)), m_options(std::move(move.m_options))
+  : m_name(std::move(move.m_name)), m_passes(std::move(move.m_passes)), m_options(std::move(move.m_options))
 {
 }
 
@@ -106,20 +109,32 @@ PostProcessingShader::~PostProcessingShader() = default;
 
 bool PostProcessingShader::LoadFromFile(std::string name, const char* filename)
 {
+  const char* extension = std::strrchr(filename, '.');
+  if (extension && StringUtil::Strcasecmp(extension, ".glslp") == 0)
+    return LoadFromPassFile(std::move(name), filename);
+  else
+    return LoadFromLegacyFile(std::move(name), filename);
+}
+
+bool PostProcessingShader::LoadFromLegacyFile(std::string name, const char* filename)
+{
   std::optional<std::string> code = FileSystem::ReadFileToString(filename);
   if (!code.has_value() || code->empty())
     return false;
 
   m_name = std::move(name);
-  m_code = std::move(code.value());
+
+  Pass pass;
+  pass.code = std::move(code.value());
+  m_passes.push_back(std::move(pass));
   m_options.clear();
-  LoadOptions();
+  LoadLegacyOptions();
   return true;
 }
 
 bool PostProcessingShader::IsValid() const
 {
-  return !m_name.empty() && !m_code.empty();
+  return !m_name.empty() && !m_passes.empty();
 }
 
 const PostProcessingShader::Option* PostProcessingShader::GetOptionByName(const std::string_view& name) const
@@ -277,7 +292,7 @@ void PostProcessingShader::FillUniformBuffer(void* buffer, u32 texture_width, s3
 FrontendCommon::PostProcessingShader& PostProcessingShader::operator=(const PostProcessingShader& copy)
 {
   m_name = copy.m_name;
-  m_code = copy.m_code;
+  m_passes = copy.m_passes;
   m_options = copy.m_options;
   return *this;
 }
@@ -285,18 +300,18 @@ FrontendCommon::PostProcessingShader& PostProcessingShader::operator=(const Post
 FrontendCommon::PostProcessingShader& PostProcessingShader::operator=(PostProcessingShader& move)
 {
   m_name = std::move(move.m_name);
-  m_code = std::move(move.m_code);
+  m_passes = std::move(move.m_passes);
   m_options = std::move(move.m_options);
   return *this;
 }
 
-void PostProcessingShader::LoadOptions()
+void PostProcessingShader::LoadLegacyOptions()
 {
   // Adapted from Dolphin's PostProcessingConfiguration::LoadOptions().
   constexpr char config_start_delimiter[] = "[configuration]";
   constexpr char config_end_delimiter[] = "[/configuration]";
-  size_t configuration_start = m_code.find(config_start_delimiter);
-  size_t configuration_end = m_code.find(config_end_delimiter);
+  size_t configuration_start = m_passes.front().code.find(config_start_delimiter);
+  size_t configuration_end = m_passes.front().code.find(config_end_delimiter);
   if (configuration_start == std::string::npos || configuration_end == std::string::npos)
   {
     // Issue loading configuration or there isn't one.
@@ -304,8 +319,8 @@ void PostProcessingShader::LoadOptions()
   }
 
   std::string configuration_string =
-    m_code.substr(configuration_start + std::strlen(config_start_delimiter),
-                  configuration_end - configuration_start - std::strlen(config_start_delimiter));
+    m_passes.front().code.substr(configuration_start + std::strlen(config_start_delimiter),
+                                 configuration_end - configuration_start - std::strlen(config_start_delimiter));
 
   std::istringstream in(configuration_string);
 
@@ -414,6 +429,183 @@ void PostProcessingShader::LoadOptions()
 
     m_options.push_back(std::move(current_option));
   }
+}
+
+bool PostProcessingShader::LoadFromPassFile(std::string name, const char* filename)
+{
+  std::optional<std::string> code = FileSystem::ReadFileToString(filename);
+  if (!code.has_value() || code->empty())
+    return false;
+
+  std::istringstream in(code.value());
+
+  std::string current_section;
+  Option current_option = {};
+  Pass current_pass;
+
+  auto CompleteSection = [&]() {
+    if (current_option.type != Option::Type::Invalid)
+    {
+      current_option.value = current_option.default_value;
+      if (current_option.ui_name.empty())
+        current_option.ui_name = current_option.name;
+
+      if (!current_option.name.empty() && current_option.vector_size > 0)
+        m_options.push_back(std::move(current_option));
+
+      current_option = {};
+      return true;
+    }
+    else if (current_section == "Pass")
+    {
+      if (current_pass.code.empty())
+      {
+        Log_ErrorPrintf("Pass %zu has no code", m_passes.size() + 1);
+        return false;
+      }
+
+      return true;
+    }
+    else
+    {
+      return true;
+    }
+  };
+
+  while (!in.eof())
+  {
+    std::string line_str;
+    if (std::getline(in, line_str))
+    {
+      std::string_view line_view = line_str;
+
+      // Check for CRLF eol and convert it to LF
+      if (!line_view.empty() && line_view.at(line_view.size() - 1) == '\r')
+        line_view.remove_suffix(1);
+
+      if (line_view.empty())
+        continue;
+
+      if (line_view[0] == '[')
+      {
+        size_t endpos = line_view.find("]");
+        if (endpos != std::string::npos)
+        {
+          if (!CompleteSection())
+            return false;
+
+          // New section!
+          current_section = line_view.substr(1, endpos - 1);
+          if (current_section == "OptionBool")
+            current_option.type = Option::Type::Bool;
+          else if (current_section == "OptionRangeFloat")
+            current_option.type = Option::Type::Float;
+          else if (current_section == "OptionRangeInteger")
+            current_option.type = Option::Type::Int;
+          else if (current_section != "Pass")
+            Log_ErrorPrintf("Invalid option type: '%s'", line_str.c_str());
+
+          continue;
+        }
+      }
+
+      std::string_view key, value;
+      ParseKeyValue(line_view, &key, &value);
+      if (!key.empty() && !value.empty())
+      {
+        if (current_option.type != Option::Type::Invalid)
+        {
+          if (key == "GUIName")
+          {
+            current_option.ui_name = value;
+          }
+          else if (key == "OptionName")
+          {
+            current_option.name = value;
+          }
+          else if (key == "DependentOption")
+          {
+            current_option.dependent_option = value;
+          }
+          else if (key == "MinValue" || key == "MaxValue" || key == "DefaultValue" || key == "StepAmount")
+          {
+            Option::ValueVector* dst_array;
+            if (key == "MinValue")
+              dst_array = &current_option.min_value;
+            else if (key == "MaxValue")
+              dst_array = &current_option.max_value;
+            else if (key == "DefaultValue")
+              dst_array = &current_option.default_value;
+            else // if (key == "StepAmount")
+              dst_array = &current_option.step_value;
+
+            u32 size = 0;
+            if (current_option.type == Option::Type::Bool)
+              (*dst_array)[size++].int_value = StringUtil::FromChars<bool>(value).value_or(false) ? 1 : 0;
+            else if (current_option.type == Option::Type::Float)
+              size = ParseVector<float>(value, dst_array);
+            else if (current_option.type == Option::Type::Int)
+              size = ParseVector<s32>(value, dst_array);
+
+            current_option.vector_size =
+              (current_option.vector_size == 0) ? size : std::min(current_option.vector_size, size);
+          }
+          else
+          {
+            Log_ErrorPrintf("Invalid option key: '%s'", line_str.c_str());
+          }
+        }
+        else if (current_section == "Pass")
+        {
+          if (key == "OutputScale")
+          {
+            current_pass.output_scale = StringUtil::FromChars<float>(value).value_or(1.0f);
+            if (current_pass.output_scale <= 0.0f)
+            {
+              Log_ErrorPrintf("Invalid output scale: %f", current_pass.output_scale);
+              current_pass.output_scale = 1.0f;
+            }
+          }
+          else if (key == "TextureFilter")
+          {
+            if (value == "Nearest")
+              current_pass.texture_filter = TextureFilter::Nearest;
+            else if (value == "Linear")
+              current_pass.texture_filter = TextureFilter::Linear;
+            else
+              Log_ErrorPrintf("Invalid texture filter: '%s'", line_str.c_str());
+          }
+          else if (key == "File")
+          {
+            const String source_file(FileSystem::BuildPathRelativeToFile(filename, SmallString(value)));
+            std::optional<std::string> source_code(FileSystem::ReadFileToString(source_file));
+            if (!source_code.has_value() || source_code->empty())
+            {
+              Log_ErrorPrintf("Failed to load shader source from '%s'", source_file.GetCharArray());
+              return false;
+            }
+
+            current_pass.code = std::move(source_code.value());
+          }
+          else
+          {
+            Log_ErrorPrintf("Invalid pass setting: '%s'", line_str.c_str());
+          }
+        }
+      }
+    }
+  }
+
+  if (!CompleteSection())
+    return false;
+
+  if (m_passes.empty())
+  {
+    Log_ErrorPrintf("No passes defined in %s", filename);
+    return false;
+  }
+
+  return true;
 }
 
 } // namespace FrontendCommon

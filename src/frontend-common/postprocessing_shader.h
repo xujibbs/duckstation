@@ -16,6 +16,12 @@ public:
     PUSH_CONSTANT_SIZE_THRESHOLD = 128
   };
 
+  enum class TextureFilter
+  {
+    Nearest,
+    Linear
+  };
+
   struct Option
   {
     enum : u32
@@ -53,6 +59,13 @@ public:
     ValueVector value;
   };
 
+  struct Pass
+  {
+    std::string code;
+    float output_scale = 1.0f;
+    TextureFilter texture_filter = TextureFilter::Linear;
+  };
+
   PostProcessingShader();
   PostProcessingShader(std::string name, std::string code);
   PostProcessingShader(const PostProcessingShader& copy);
@@ -63,10 +76,14 @@ public:
   PostProcessingShader& operator=(PostProcessingShader& move);
 
   ALWAYS_INLINE const std::string& GetName() const { return m_name; }
-  ALWAYS_INLINE const std::string& GetCode() const { return m_code; }
+  ALWAYS_INLINE const std::string& GetCode(u32 pass) const { return m_passes[pass].code; }
+  ALWAYS_INLINE float GetOutputScale(u32 pass) const { return m_passes[pass].output_scale; }
+  ALWAYS_INLINE TextureFilter GetTextureFilter(u32 pass) const { return m_passes[pass].texture_filter; }
+  ALWAYS_INLINE u32 GetNumPasses() const { return static_cast<u32>(m_passes.size()); }
   ALWAYS_INLINE const std::vector<Option>& GetOptions() const { return m_options; }
   ALWAYS_INLINE std::vector<Option>& GetOptions() { return m_options; }
   ALWAYS_INLINE bool HasOptions() const { return !m_options.empty(); }
+  ALWAYS_INLINE bool IsLegacy() const { return m_is_legacy; }
 
   bool IsValid() const;
 
@@ -97,11 +114,14 @@ private:
     float padding[1];
   };
 
-  void LoadOptions();
+  bool LoadFromLegacyFile(std::string name, const char* filename);
+  bool LoadFromPassFile(std::string name, const char* filename);
+  void LoadLegacyOptions();
 
   std::string m_name;
-  std::string m_code;
+  std::vector<Pass> m_passes;
   std::vector<Option> m_options;
+  bool m_is_legacy = false;
 };
 
 } // namespace FrontendCommon
