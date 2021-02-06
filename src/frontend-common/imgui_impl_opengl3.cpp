@@ -127,7 +127,7 @@ bool    ImGui_ImplOpenGL3_Init(const char* glsl_version)
     strcat(g_GlslVersionString, "\n");
 #else
     strncpy_s(g_GlslVersionString, sizeof(g_GlslVersionString), glsl_version, _TRUNCATE);
-    strncpy_s(g_GlslVersionString, sizeof(g_GlslVersionString), "\n", _TRUNCATE);
+    strncat_s(g_GlslVersionString, sizeof(g_GlslVersionString), "\n", _TRUNCATE);
 #endif
     return ImGui_ImplOpenGL3_CreateDeviceObjects();
 }
