@@ -68,6 +68,20 @@
     <ClCompile Include="glslang\MachineIndependent\parseConst.cpp" />
     <ClCompile Include="glslang\MachineIndependent\ParseContextBase.cpp" />
     <ClCompile Include="glslang\MachineIndependent\ParseHelper.cpp" />
+    <ClCompile Include="glslang\MachineIndependent\pch.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='ReleaseLTCG|Win32'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='DebugFast|Win32'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='ReleaseLTCG|ARM64'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='DebugFast|ARM64'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='ReleaseLTCG|x64'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='DebugFast|x64'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="glslang\MachineIndependent\PoolAlloc.cpp" />
     <ClCompile Include="glslang\MachineIndependent\preprocessor\Pp.cpp" />
     <ClCompile Include="glslang\MachineIndependent\preprocessor\PpAtom.cpp" />
@@ -119,6 +133,7 @@
     <ClInclude Include="glslang\MachineIndependent\localintermediate.h" />
     <ClInclude Include="glslang\MachineIndependent\ParseHelper.h" />
     <ClInclude Include="glslang\MachineIndependent\parseVersions.h" />
+    <ClInclude Include="glslang\MachineIndependent\pch.h" />
     <ClInclude Include="glslang\MachineIndependent\preprocessor\PpContext.h" />
     <ClInclude Include="glslang\MachineIndependent\preprocessor\PpTokens.h" />
     <ClInclude Include="glslang\MachineIndependent\propagateNoContraction.h" />
@@ -358,8 +373,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
-      <PrecompiledHeader>
-      </PrecompiledHeader>
+      <PrecompiledHeader>Use</PrecompiledHeader>
       <WarningLevel>TurnOffAllWarnings</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_WARNINGS;WIN32;_DEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -370,6 +384,8 @@
       <LanguageStandard>stdcpp14</LanguageStandard>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalOptions>/Zo /utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <PrecompiledHeaderFile>glslang\MachineIndependent\pch.h</PrecompiledHeaderFile>
+      <ForcedIncludeFiles>glslang\MachineIndependent\pch.h</ForcedIncludeFiles>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -381,8 +397,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <PrecompiledHeader>
-      </PrecompiledHeader>
+      <PrecompiledHeader>Use</PrecompiledHeader>
       <WarningLevel>TurnOffAllWarnings</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_WARNINGS;WIN32;_DEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -393,6 +408,8 @@
       <LanguageStandard>stdcpp14</LanguageStandard>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalOptions>/Zo /utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <PrecompiledHeaderFile>glslang\MachineIndependent\pch.h</PrecompiledHeaderFile>
+      <ForcedIncludeFiles>glslang\MachineIndependent\pch.h</ForcedIncludeFiles>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -404,8 +421,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
     <ClCompile>
-      <PrecompiledHeader>
-      </PrecompiledHeader>
+      <PrecompiledHeader>Use</PrecompiledHeader>
       <WarningLevel>TurnOffAllWarnings</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_WARNINGS;WIN32;_DEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -416,6 +432,8 @@
       <LanguageStandard>stdcpp14</LanguageStandard>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalOptions>/Zo /utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <PrecompiledHeaderFile>glslang\MachineIndependent\pch.h</PrecompiledHeaderFile>
+      <ForcedIncludeFiles>glslang\MachineIndependent\pch.h</ForcedIncludeFiles>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -427,8 +445,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='DebugFast|Win32'">
     <ClCompile>
-      <PrecompiledHeader>
-      </PrecompiledHeader>
+      <PrecompiledHeader>Use</PrecompiledHeader>
       <WarningLevel>TurnOffAllWarnings</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>_CRT_NONSTDC_NO_DEPRECATE;_ITERATOR_DEBUG_LEVEL=1;_CRT_SECURE_NO_WARNINGS;WIN32;_DEBUGFAST;_DEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -442,6 +459,8 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
       <AdditionalOptions>/Zo /utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <PrecompiledHeaderFile>glslang\MachineIndependent\pch.h</PrecompiledHeaderFile>
+      <ForcedIncludeFiles>glslang\MachineIndependent\pch.h</ForcedIncludeFiles>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -453,8 +472,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='DebugFast|x64'">
     <ClCompile>
-      <PrecompiledHeader>
-      </PrecompiledHeader>
+      <PrecompiledHeader>Use</PrecompiledHeader>
       <WarningLevel>TurnOffAllWarnings</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>_CRT_NONSTDC_NO_DEPRECATE;_ITERATOR_DEBUG_LEVEL=1;_CRT_SECURE_NO_WARNINGS;WIN32;_DEBUGFAST;_DEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -468,6 +486,8 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
       <AdditionalOptions>/Zo /utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <PrecompiledHeaderFile>glslang\MachineIndependent\pch.h</PrecompiledHeaderFile>
+      <ForcedIncludeFiles>glslang\MachineIndependent\pch.h</ForcedIncludeFiles>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -479,8 +499,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='DebugFast|ARM64'">
     <ClCompile>
-      <PrecompiledHeader>
-      </PrecompiledHeader>
+      <PrecompiledHeader>Use</PrecompiledHeader>
       <WarningLevel>TurnOffAllWarnings</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>_CRT_NONSTDC_NO_DEPRECATE;_ITERATOR_DEBUG_LEVEL=1;_CRT_SECURE_NO_WARNINGS;WIN32;_DEBUGFAST;_DEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -494,6 +513,8 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
       <AdditionalOptions>/Zo /utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <PrecompiledHeaderFile>glslang\MachineIndependent\pch.h</PrecompiledHeaderFile>
+      <ForcedIncludeFiles>glslang\MachineIndependent\pch.h</ForcedIncludeFiles>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -506,8 +527,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
       <WarningLevel>TurnOffAllWarnings</WarningLevel>
-      <PrecompiledHeader>
-      </PrecompiledHeader>
+      <PrecompiledHeader>Use</PrecompiledHeader>
       <Optimization>MaxSpeed</Optimization>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_WARNINGS;WIN32;NDEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -516,6 +536,8 @@
       <LanguageStandard>stdcpp14</LanguageStandard>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalOptions>/Zo /utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <PrecompiledHeaderFile>glslang\MachineIndependent\pch.h</PrecompiledHeaderFile>
+      <ForcedIncludeFiles>glslang\MachineIndependent\pch.h</ForcedIncludeFiles>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -530,8 +552,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseLTCG|Win32'">
     <ClCompile>
       <WarningLevel>TurnOffAllWarnings</WarningLevel>
-      <PrecompiledHeader>
-      </PrecompiledHeader>
+      <PrecompiledHeader>Use</PrecompiledHeader>
       <Optimization>MaxSpeed</Optimization>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_WARNINGS;WIN32;NDEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -541,6 +562,8 @@
       <OmitFramePointers>true</OmitFramePointers>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalOptions>/Zo /utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <PrecompiledHeaderFile>glslang\MachineIndependent\pch.h</PrecompiledHeaderFile>
+      <ForcedIncludeFiles>glslang\MachineIndependent\pch.h</ForcedIncludeFiles>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -555,8 +578,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
       <WarningLevel>TurnOffAllWarnings</WarningLevel>
-      <PrecompiledHeader>
-      </PrecompiledHeader>
+      <PrecompiledHeader>Use</PrecompiledHeader>
       <Optimization>MaxSpeed</Optimization>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_WARNINGS;WIN32;NDEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -565,6 +587,8 @@
       <LanguageStandard>stdcpp14</LanguageStandard>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalOptions>/Zo /utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <PrecompiledHeaderFile>glslang\MachineIndependent\pch.h</PrecompiledHeaderFile>
+      <ForcedIncludeFiles>glslang\MachineIndependent\pch.h</ForcedIncludeFiles>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -579,8 +603,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
     <ClCompile>
       <WarningLevel>TurnOffAllWarnings</WarningLevel>
-      <PrecompiledHeader>
-      </PrecompiledHeader>
+      <PrecompiledHeader>Use</PrecompiledHeader>
       <Optimization>MaxSpeed</Optimization>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_WARNINGS;WIN32;NDEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -589,6 +612,8 @@
       <LanguageStandard>stdcpp14</LanguageStandard>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalOptions>/Zo /utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <PrecompiledHeaderFile>glslang\MachineIndependent\pch.h</PrecompiledHeaderFile>
+      <ForcedIncludeFiles>glslang\MachineIndependent\pch.h</ForcedIncludeFiles>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -603,8 +628,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseLTCG|x64'">
     <ClCompile>
       <WarningLevel>TurnOffAllWarnings</WarningLevel>
-      <PrecompiledHeader>
-      </PrecompiledHeader>
+      <PrecompiledHeader>Use</PrecompiledHeader>
       <Optimization>MaxSpeed</Optimization>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_WARNINGS;WIN32;NDEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -614,6 +638,8 @@
       <OmitFramePointers>true</OmitFramePointers>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalOptions>/Zo /utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <PrecompiledHeaderFile>glslang\MachineIndependent\pch.h</PrecompiledHeaderFile>
+      <ForcedIncludeFiles>glslang\MachineIndependent\pch.h</ForcedIncludeFiles>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -628,8 +654,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseLTCG|ARM64'">
     <ClCompile>
       <WarningLevel>TurnOffAllWarnings</WarningLevel>
-      <PrecompiledHeader>
-      </PrecompiledHeader>
+      <PrecompiledHeader>Use</PrecompiledHeader>
       <Optimization>MaxSpeed</Optimization>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_WARNINGS;WIN32;NDEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -639,6 +664,8 @@
       <OmitFramePointers>true</OmitFramePointers>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalOptions>/Zo /utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <PrecompiledHeaderFile>glslang\MachineIndependent\pch.h</PrecompiledHeaderFile>
+      <ForcedIncludeFiles>glslang\MachineIndependent\pch.h</ForcedIncludeFiles>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>

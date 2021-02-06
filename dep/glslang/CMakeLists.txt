@@ -45,6 +45,8 @@ set(SRCS
 
 add_library(glslang ${SRCS})
 
+target_precompile_headers(glslang PRIVATE glslang/MachineIndependent/pch.h)
+
 if(WIN32)
   target_sources(glslang PRIVATE glslang/OSDependent/Windows/ossource.cpp)
 else()

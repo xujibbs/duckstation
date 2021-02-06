@@ -44,6 +44,7 @@
     <ClCompile Include="StandAlone\resource_limits_c.cpp" />
     <ClCompile Include="SPIRV\SpvTools.cpp" />
     <ClCompile Include="OGLCompilersDLL\InitializeDll.cpp" />
+    <ClCompile Include="glslang\MachineIndependent\pch.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="glslang\Include\glslang_c_interface.h" />
@@ -102,5 +103,6 @@
     <ClInclude Include="StandAlone\resource_limits_c.h" />
     <ClInclude Include="SPIRV\SpvTools.h" />
     <ClInclude Include="OGLCompilersDLL\InitializeDll.h" />
+    <ClInclude Include="glslang\MachineIndependent\pch.h" />
   </ItemGroup>
 </Project>
