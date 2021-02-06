@@ -1,0 +1,26 @@
+#pragma once
+#include "core/types.h"
+
+#include <QtCore/QByteArray>
+#include <QtCore/QMetaType>
+#include <QtCore/QObject>
+#include <QtCore/QSettings>
+#include <QtCore/QString>
+#include <QtCore/QStringList>
+#include <QtCore/QThread>
+#include <QtCore/QTimer>
+#include <QtGui/QKeyEvent>
+#include <QtGui/QMouseEvent>
+#include <QtWidgets/QComboBox>
+#include <QtWidgets/QDialog>
+#include <QtWidgets/QGridLayout>
+#include <QtWidgets/QGroupBox>
+#include <QtWidgets/QLabel>
+#include <QtWidgets/QLineEdit>
+#include <QtWidgets/QMainWindow>
+#include <QtWidgets/QPushButton>
+#include <QtWidgets/QScrollArea>
+#include <QtWidgets/QTabWidget>
+#include <QtWidgets/QTableWidget>
+#include <QtWidgets/QVBoxLayout>
+#include <QtWidgets/QWidget>

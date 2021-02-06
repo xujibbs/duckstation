@@ -77,12 +77,14 @@
     <ClCompile Include="$(IntDir)moc_debuggerwindow.cpp" />
     <ClCompile Include="emulationsettingswidget.cpp" />
     <ClCompile Include="$(IntDir)moc_emulationsettingswidget.cpp" />
+    <ClCompile Include="pch.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="qtutils.h" />
     <ClInclude Include="settingwidgetbinder.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="inputbindingmonitor.h" />
+    <ClInclude Include="pch.h" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="resources">

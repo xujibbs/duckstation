@@ -40,6 +40,7 @@ add_library(frontend-common
 )
 
 target_link_libraries(frontend-common PUBLIC core common glad vulkan-loader cubeb imgui simpleini tinyxml2 scmversion)
+target_precompile_headers(frontend-common PRIVATE pch.h)
 
 if(WIN32)
   target_sources(frontend-common PRIVATE
