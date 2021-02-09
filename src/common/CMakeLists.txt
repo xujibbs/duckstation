@@ -37,6 +37,8 @@ add_library(common
   gl/program.h
   gl/shader_cache.cpp
   gl/shader_cache.h
+  gl/staging_texture.cpp
+  gl/staging_texture.h
   gl/stream_buffer.cpp
   gl/stream_buffer.h
   gl/texture.cpp

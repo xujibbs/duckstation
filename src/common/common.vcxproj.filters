@@ -108,6 +108,9 @@
       <Filter>thirdparty</Filter>
     </ClInclude>
     <ClInclude Include="crash_handler.h" />
+    <ClInclude Include="gl\staging_texture.h">
+      <Filter>gl</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="jit_code_buffer.cpp" />
@@ -208,6 +211,9 @@
       <Filter>thirdparty</Filter>
     </ClCompile>
     <ClCompile Include="crash_handler.cpp" />
+    <ClCompile Include="gl\staging_texture.cpp">
+      <Filter>gl</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="bitfield.natvis" />
