@@ -192,6 +192,8 @@ AdvancedSettingsWidget::AdvancedSettingsWidget(QtHostInterface* host_interface, 
                          1000, Settings::DEFAULT_GPU_MAX_RUN_AHEAD);
   addBooleanTweakOption(m_host_interface, m_ui.tweakOptionTable, tr("Use Debug Host GPU Device"), "GPU",
                         "UseDebugDevice", false);
+  addBooleanTweakOption(m_host_interface, m_ui.tweakOptionTable, tr("Delay VRAM Reads (Hack)"), "GPU", "DelayVRAMReads",
+                        false);
 
   addBooleanTweakOption(m_host_interface, m_ui.tweakOptionTable, tr("Increase Timer Resolution"), "Main",
                         "IncreaseTimerResolution", true);
@@ -235,5 +237,6 @@ void AdvancedSettingsWidget::onResetToDefaultClicked()
   setIntRangeTweakOption(m_ui.tweakOptionTable, 18, static_cast<int>(Settings::DEFAULT_GPU_FIFO_SIZE));
   setIntRangeTweakOption(m_ui.tweakOptionTable, 19, static_cast<int>(Settings::DEFAULT_GPU_MAX_RUN_AHEAD));
   setBooleanTweakOption(m_ui.tweakOptionTable, 20, false);
-  setBooleanTweakOption(m_ui.tweakOptionTable, 21, true);
+  setBooleanTweakOption(m_ui.tweakOptionTable, 21, false);
+  setBooleanTweakOption(m_ui.tweakOptionTable, 22, true);
 }

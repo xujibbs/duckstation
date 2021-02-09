@@ -571,7 +571,8 @@ bool GPU::HandleCopyRectangleVRAMToCPUCommand()
   FlushRender();
 
   // ensure VRAM shadow is up to date
-  ReadVRAM(m_vram_transfer.x, m_vram_transfer.y, m_vram_transfer.width, m_vram_transfer.height);
+  ReadVRAM(m_vram_transfer.x, m_vram_transfer.y, m_vram_transfer.width, m_vram_transfer.height,
+           !g_settings.gpu_delay_vram_reads);
 
   if (g_settings.debugging.dump_vram_to_cpu_copies)
   {

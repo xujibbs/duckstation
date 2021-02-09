@@ -836,7 +836,7 @@ void GPU_SW::DispatchRenderCommand()
   }
 }
 
-void GPU_SW::ReadVRAM(u32 x, u32 y, u32 width, u32 height)
+void GPU_SW::ReadVRAM(u32 x, u32 y, u32 width, u32 height, bool no_delay)
 {
   m_backend.Sync();
 }

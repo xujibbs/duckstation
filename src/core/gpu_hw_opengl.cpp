@@ -245,7 +245,7 @@ void GPU_HW_OpenGL::UpdateSettings()
   if (framebuffer_changed)
   {
     RestoreGraphicsAPIState();
-    ReadVRAM(0, 0, VRAM_WIDTH, VRAM_HEIGHT);
+    ReadVRAM(0, 0, VRAM_WIDTH, VRAM_HEIGHT, true);
     ResetGraphicsAPIState();
     m_host_display->ClearDisplayTexture();
     CreateFramebuffer();
@@ -394,8 +394,8 @@ bool GPU_HW_OpenGL::CreateFramebuffer()
       !m_vram_read_texture.Create(texture_width, texture_height, 1, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, nullptr, false,
                                   true) ||
       !m_vram_read_texture.CreateFramebuffer() ||
-      !m_vram_encoding_texture.Create(VRAM_WIDTH, VRAM_HEIGHT, 1, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, nullptr,
-                                      false) ||
+      !m_vram_encoding_texture.Create(VRAM_READ_TEXTURE_WIDTH, VRAM_READ_TEXTURE_HEIGHT, 1, GL_RGBA8, GL_RGBA,
+                                      GL_UNSIGNED_BYTE, nullptr, false) ||
       !m_vram_encoding_texture.CreateFramebuffer() ||
       !m_display_texture.Create(GPU_MAX_DISPLAY_WIDTH * m_resolution_scale, GPU_MAX_DISPLAY_HEIGHT * m_resolution_scale,
                                 1, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, nullptr, false) ||
@@ -425,6 +425,17 @@ bool GPU_HW_OpenGL::CreateFramebuffer()
 
   if (m_state_copy_fbo_id == 0)
     glGenFramebuffers(1, &m_state_copy_fbo_id);
+
+  if (g_settings.gpu_delay_vram_reads)
+  {
+    for (GL::StagingTexture& tex : m_delayed_vram_read_buffer)
+    {
+      if (!tex.Create(VRAM_READ_TEXTURE_WIDTH, VRAM_READ_TEXTURE_HEIGHT, GL_RGBA8, true))
+        return false;
+    }
+
+    m_current_delayed_vram_read_buffer = 0;
+  }
 
   SetFullVRAMDirtyRectangle();
   return true;
@@ -971,10 +982,8 @@ void GPU_HW_OpenGL::UpdateDisplay()
   }
 }
 
-void GPU_HW_OpenGL::ReadVRAM(u32 x, u32 y, u32 width, u32 height)
+void GPU_HW_OpenGL::DoVRAMReadback(const Common::Rectangle<u32>& copy_rect, u32 dst_x, u32 dst_y)
 {
-  // Get bounds with wrap-around handled.
-  const Common::Rectangle<u32> copy_rect = GetVRAMTransferBounds(x, y, width, height);
   const u32 encoded_width = (copy_rect.GetWidth() + 1) / 2;
   const u32 encoded_height = copy_rect.GetHeight();
 
@@ -985,21 +994,61 @@ void GPU_HW_OpenGL::ReadVRAM(u32 x, u32 y, u32 width, u32 height)
   m_vram_texture.Bind();
   m_vram_read_program.Bind();
   UploadUniformBuffer(uniforms, sizeof(uniforms));
+  glDisable(GL_DEPTH_TEST);
   glDisable(GL_BLEND);
   glDisable(GL_SCISSOR_TEST);
-  glViewport(0, 0, encoded_width, encoded_height);
+  glViewport(dst_x, dst_y, encoded_width, encoded_height);
   glBindVertexArray(m_attributeless_vao_id);
   glDrawArrays(GL_TRIANGLES, 0, 3);
 
-  // Readback encoded texture.
-  m_vram_encoding_texture.BindFramebuffer(GL_READ_FRAMEBUFFER);
-  glPixelStorei(GL_PACK_ALIGNMENT, 2);
-  glPixelStorei(GL_PACK_ROW_LENGTH, VRAM_WIDTH / 2);
-  glReadPixels(0, 0, encoded_width, encoded_height, GL_RGBA, GL_UNSIGNED_BYTE,
-               &m_vram_shadow[copy_rect.top * VRAM_WIDTH + copy_rect.left]);
-  glPixelStorei(GL_PACK_ALIGNMENT, 4);
-  glPixelStorei(GL_PACK_ROW_LENGTH, 0);
-  RestoreGraphicsAPIState();
+  SetBlendMode();
+  SetDepthFunc();
+  glEnable(GL_SCISSOR_TEST);
+  glBindVertexArray(m_vao_id);
+  glViewport(0, 0, m_vram_texture.GetWidth(), m_vram_texture.GetHeight());
+  glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_vram_fbo_id);
+}
+
+void GPU_HW_OpenGL::UpdateDelayedVRAMReadBuffer()
+{
+  DoVRAMReadback(Common::Rectangle<u32>(0, 0, VRAM_WIDTH, VRAM_HEIGHT), 0, 0);
+
+  GL::StagingTexture& st = m_delayed_vram_read_buffer[m_current_delayed_vram_read_buffer];
+  st.CopyFromTexture(m_vram_encoding_texture, 0, 0, 0, 0, 0, 0, VRAM_READ_TEXTURE_WIDTH, VRAM_READ_TEXTURE_HEIGHT);
+
+  m_vram_read_texture.Bind();
+
+  m_current_delayed_vram_read_buffer =
+    (m_current_delayed_vram_read_buffer + 1) % NUM_VRAM_STAGING_TEXTURES_IN_DELAYED_MODE;
+}
+
+void GPU_HW_OpenGL::ReadVRAM(u32 x, u32 y, u32 width, u32 height, bool no_delay)
+{
+  // Get bounds with wrap-around handled.
+  Common::Rectangle<u32> copy_rect = GetVRAMTransferBounds(x, y, width, height);
+  copy_rect.left &= ~static_cast<u32>(1);
+
+  const u32 encoded_width = (copy_rect.GetWidth() + 1) / 2;
+  const u32 encoded_height = copy_rect.GetHeight();
+  if (no_delay)
+  {
+    DoVRAMReadback(copy_rect, 0, 0);
+
+    // Readback encoded texture.
+    m_vram_encoding_texture.BindFramebuffer(GL_READ_FRAMEBUFFER);
+    glPixelStorei(GL_PACK_ALIGNMENT, 2);
+    glPixelStorei(GL_PACK_ROW_LENGTH, VRAM_WIDTH / 2);
+    glReadPixels(0, 0, encoded_width, encoded_height, GL_RGBA, GL_UNSIGNED_BYTE,
+                 &m_vram_shadow[copy_rect.top * VRAM_WIDTH + copy_rect.left]);
+    glPixelStorei(GL_PACK_ALIGNMENT, 4);
+    glPixelStorei(GL_PACK_ROW_LENGTH, 0);
+  }
+  else
+  {
+    GL::StagingTexture& st = m_delayed_vram_read_buffer[m_current_delayed_vram_read_buffer];
+    st.ReadTexels(copy_rect.left / 2, copy_rect.top, encoded_width, encoded_height,
+                  &m_vram_shadow[copy_rect.top * VRAM_WIDTH + copy_rect.left], VRAM_WIDTH * sizeof(u16));
+  }
 }
 
 void GPU_HW_OpenGL::FillVRAM(u32 x, u32 y, u32 width, u32 height, u32 color)
@@ -1008,7 +1057,7 @@ void GPU_HW_OpenGL::FillVRAM(u32 x, u32 y, u32 width, u32 height, u32 color)
   {
     // CPU round trip if oversized for now.
     Log_WarningPrintf("Oversized VRAM fill (%u-%u, %u-%u), CPU round trip", x, x + width, y, y + height);
-    ReadVRAM(0, 0, VRAM_WIDTH, VRAM_HEIGHT);
+    ReadVRAM(0, 0, VRAM_WIDTH, VRAM_HEIGHT, true);
     GPU::FillVRAM(x, y, width, height, color);
     UpdateVRAM(0, 0, VRAM_WIDTH, VRAM_HEIGHT, m_vram_shadow.data(), false, false);
     return;
@@ -1100,7 +1149,7 @@ void GPU_HW_OpenGL::UpdateVRAM(u32 x, u32 y, u32 width, u32 height, const void* 
     {
       // CPU round trip if oversized for now.
       Log_WarningPrintf("Oversized VRAM update (%u-%u, %u-%u), CPU round trip", x, x + width, y, y + height);
-      ReadVRAM(0, 0, VRAM_WIDTH, VRAM_HEIGHT);
+      ReadVRAM(0, 0, VRAM_WIDTH, VRAM_HEIGHT, true);
       GPU::UpdateVRAM(x, y, width, height, data, set_mask, check_mask);
       UpdateVRAM(0, 0, VRAM_WIDTH, VRAM_HEIGHT, m_vram_shadow.data(), false, false);
       return;

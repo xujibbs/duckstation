@@ -201,7 +201,7 @@ void GPU_HW_Vulkan::UpdateSettings()
   if (framebuffer_changed)
   {
     RestoreGraphicsAPIState();
-    ReadVRAM(0, 0, VRAM_WIDTH, VRAM_HEIGHT);
+    ReadVRAM(0, 0, VRAM_WIDTH, VRAM_HEIGHT, true);
     ResetGraphicsAPIState();
   }
 
@@ -528,14 +528,19 @@ bool GPU_HW_Vulkan::CreateFramebuffer()
                                 VK_IMAGE_TILING_OPTIMAL,
                                 VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
                                   VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT) ||
-      !m_vram_readback_texture.Create(VRAM_WIDTH, VRAM_HEIGHT, 1, 1, texture_format, VK_SAMPLE_COUNT_1_BIT,
+      !m_vram_readback_texture.Create(VRAM_WIDTH / 2u, VRAM_HEIGHT, 1, 1, texture_format, VK_SAMPLE_COUNT_1_BIT,
                                       VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_TILING_OPTIMAL,
-                                      VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT) ||
-      !m_vram_readback_staging_texture.Create(Vulkan::StagingBuffer::Type::Readback, texture_format, VRAM_WIDTH / 2,
-                                              VRAM_HEIGHT))
+                                      VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT))
   {
     return false;
   }
+
+  for (Vulkan::StagingTexture& st : m_vram_readback_staging_textures)
+  {
+    if (!st.Create(Vulkan::StagingBuffer::Type::Readback, texture_format, VRAM_WIDTH / 2u, VRAM_HEIGHT))
+      return false;
+  }
+  m_current_vram_readback_staging_texture = 0;
 
   m_vram_render_pass =
     g_vulkan_context->GetRenderPass(texture_format, depth_format, samples, VK_ATTACHMENT_LOAD_OP_LOAD);
@@ -757,7 +762,10 @@ void GPU_HW_Vulkan::DestroyFramebuffer()
   m_vram_texture.Destroy(false);
   m_vram_readback_texture.Destroy(false);
   m_display_texture.Destroy(false);
-  m_vram_readback_staging_texture.Destroy(false);
+
+  for (auto& it : m_vram_readback_staging_textures)
+    it.Destroy(false);
+  m_current_vram_readback_staging_texture = 0;
 }
 
 bool GPU_HW_Vulkan::CreateVertexBuffer()
@@ -1417,14 +1425,10 @@ void GPU_HW_Vulkan::UpdateDisplay()
   }
 }
 
-void GPU_HW_Vulkan::ReadVRAM(u32 x, u32 y, u32 width, u32 height)
+void GPU_HW_Vulkan::DoVRAMReadback(Vulkan::StagingTexture& staging_texture, const Common::Rectangle<u32>& copy_rect, u32 dst_x, u32 dst_y)
 {
-  // Get bounds with wrap-around handled.
-  const Common::Rectangle<u32> copy_rect = GetVRAMTransferBounds(x, y, width, height);
   const u32 encoded_width = (copy_rect.GetWidth() + 1) / 2;
   const u32 encoded_height = copy_rect.GetHeight();
-
-  EndRenderPass();
 
   VkCommandBuffer cmdbuf = g_vulkan_context->GetCurrentCommandBuffer();
   m_vram_texture.TransitionToLayout(cmdbuf, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
@@ -1442,7 +1446,7 @@ void GPU_HW_Vulkan::ReadVRAM(u32 x, u32 y, u32 width, u32 height)
                      uniforms);
   vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_single_sampler_pipeline_layout, 0, 1,
                           &m_vram_read_descriptor_set, 0, nullptr);
-  Vulkan::Util::SetViewportAndScissor(cmdbuf, 0, 0, encoded_width, encoded_height);
+  Vulkan::Util::SetViewportAndScissor(cmdbuf, dst_x, dst_y, encoded_width, encoded_height);
   vkCmdDraw(cmdbuf, 3, 1, 0, 0);
 
   EndRenderPass();
@@ -1451,13 +1455,38 @@ void GPU_HW_Vulkan::ReadVRAM(u32 x, u32 y, u32 width, u32 height)
   m_vram_texture.TransitionToLayout(cmdbuf, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
   // Stage the readback.
-  m_vram_readback_staging_texture.CopyFromTexture(m_vram_readback_texture, 0, 0, 0, 0, 0, 0, encoded_width,
-                                                  encoded_height);
+  staging_texture.CopyFromTexture(m_vram_readback_texture, 0, 0, 0, 0, 0, 0, encoded_width, encoded_height);
+}
+
+void GPU_HW_Vulkan::UpdateDelayedVRAMReadBuffer()
+{
+  EndRenderPass();
+
+  DoVRAMReadback(m_vram_readback_staging_textures[m_current_vram_readback_staging_texture],
+                 Common::Rectangle<u32>(0, 0, VRAM_WIDTH, VRAM_HEIGHT));
+  m_current_vram_readback_staging_texture =
+    (m_current_vram_readback_staging_texture + 1) % NUM_VRAM_STAGING_TEXTURES_IN_DELAYED_MODE;
+
+  RestoreGraphicsAPIState();
+}
+
+void GPU_HW_Vulkan::ReadVRAM(u32 x, u32 y, u32 width, u32 height, bool no_delay)
+{
+  EndRenderPass();
+
+  // Get bounds with wrap-around handled.
+  Common::Rectangle<u32> copy_rect = GetVRAMTransferBounds(x, y, width, height);
+  copy_rect.left &= ~static_cast<u32>(1);
+
+  Vulkan::StagingTexture& staging_texture = m_vram_readback_staging_textures[m_current_vram_readback_staging_texture];
+  if (no_delay)
+    DoVRAMReadback(staging_texture, Common::Rectangle<u32>(0, 0, VRAM_WIDTH, VRAM_HEIGHT));
 
   // And copy it into our shadow buffer (will execute command buffer and stall).
-  m_vram_readback_staging_texture.ReadTexels(0, 0, encoded_width, encoded_height,
-                                             &m_vram_shadow[copy_rect.top * VRAM_WIDTH + copy_rect.left],
-                                             VRAM_WIDTH * sizeof(u16));
+  const u32 encoded_width = (copy_rect.GetWidth() + 1) / 2;
+  const u32 encoded_height = copy_rect.GetHeight();
+  staging_texture.ReadTexels(copy_rect.left / 2u, copy_rect.top, encoded_width, encoded_height,
+                             &m_vram_shadow[copy_rect.top * VRAM_WIDTH + copy_rect.left], VRAM_WIDTH * sizeof(u16));
 
   RestoreGraphicsAPIState();
 }
@@ -1468,7 +1497,7 @@ void GPU_HW_Vulkan::FillVRAM(u32 x, u32 y, u32 width, u32 height, u32 color)
   {
     // CPU round trip if oversized for now.
     Log_WarningPrintf("Oversized VRAM fill (%u-%u, %u-%u), CPU round trip", x, x + width, y, y + height);
-    ReadVRAM(0, 0, VRAM_WIDTH, VRAM_HEIGHT);
+    ReadVRAM(0, 0, VRAM_WIDTH, VRAM_HEIGHT, true);
     GPU::FillVRAM(x, y, width, height, color);
     UpdateVRAM(0, 0, VRAM_WIDTH, VRAM_HEIGHT, m_vram_shadow.data(), false, false);
     return;

@@ -1,6 +1,7 @@
 #pragma once
 #include "common/gl/program.h"
 #include "common/gl/shader_cache.h"
+#include "common/gl/staging_texture.h"
 #include "common/gl/stream_buffer.h"
 #include "common/gl/texture.h"
 #include "glad.h"
@@ -27,13 +28,14 @@ public:
 protected:
   void ClearDisplay() override;
   void UpdateDisplay() override;
-  void ReadVRAM(u32 x, u32 y, u32 width, u32 height) override;
+  void ReadVRAM(u32 x, u32 y, u32 width, u32 height, bool no_delay) override;
   void FillVRAM(u32 x, u32 y, u32 width, u32 height, u32 color) override;
   void UpdateVRAM(u32 x, u32 y, u32 width, u32 height, const void* data, bool set_mask, bool check_mask) override;
   void CopyVRAM(u32 src_x, u32 src_y, u32 dst_x, u32 dst_y, u32 width, u32 height) override;
   void UpdateVRAMReadTexture() override;
   void UpdateDepthBufferFromMaskBit() override;
   void ClearDepthBuffer() override;
+  void UpdateDelayedVRAMReadBuffer() override;
   void SetScissorFromDrawingArea() override;
   void MapBatchVertexPointer(u32 required_vertices) override;
   void UnmapBatchVertexPointer(u32 used_vertices) override;
@@ -66,6 +68,8 @@ private:
   bool CreateTextureBuffer();
 
   bool CompilePrograms();
+
+  void DoVRAMReadback(const Common::Rectangle<u32>& copy_rect, u32 dst_x, u32 dst_y);
 
   void SetDepthFunc();
   void SetDepthFunc(GLenum func);
@@ -116,4 +120,7 @@ private:
 
   GL::Texture m_downsample_texture;
   GL::Program m_downsample_program;
+
+  std::array<GL::StagingTexture, NUM_VRAM_STAGING_TEXTURES_IN_DELAYED_MODE> m_delayed_vram_read_buffer;
+  u32 m_current_delayed_vram_read_buffer = 0;
 };

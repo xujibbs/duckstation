@@ -26,7 +26,7 @@ public:
 protected:
   void ClearDisplay() override;
   void UpdateDisplay() override;
-  void ReadVRAM(u32 x, u32 y, u32 width, u32 height) override;
+  void ReadVRAM(u32 x, u32 y, u32 width, u32 height, bool no_delay) override;
   void FillVRAM(u32 x, u32 y, u32 width, u32 height, u32 color) override;
   void UpdateVRAM(u32 x, u32 y, u32 width, u32 height, const void* data, bool set_mask, bool check_mask) override;
   void CopyVRAM(u32 src_x, u32 src_y, u32 dst_x, u32 dst_y, u32 width, u32 height) override;
@@ -38,6 +38,7 @@ protected:
   void UnmapBatchVertexPointer(u32 used_vertices) override;
   void UploadUniformBuffer(const void* data, u32 data_size) override;
   void DrawBatchVertices(BatchRenderMode render_mode, u32 base_vertex, u32 num_vertices) override;
+  void UpdateDelayedVRAMReadBuffer();
 
 private:
   enum : u32
@@ -67,6 +68,9 @@ private:
   bool CompilePipelines();
   void DestroyPipelines();
 
+  void DoVRAMReadback(Vulkan::StagingTexture& staging_texture, const Common::Rectangle<u32>& copy_rect, u32 dst_x,
+                      u32 dst_y);
+
   bool CreateTextureReplacementStreamBuffer();
 
   bool BlitVRAMReplacementTexture(const TextureReplacementTexture* tex, u32 dst_x, u32 dst_y, u32 width, u32 height);
@@ -95,9 +99,10 @@ private:
   Vulkan::Texture m_vram_depth_texture;
   Vulkan::Texture m_vram_read_texture;
   Vulkan::Texture m_vram_readback_texture;
-  Vulkan::StagingTexture m_vram_readback_staging_texture;
+  std::array<Vulkan::StagingTexture, NUM_VRAM_STAGING_TEXTURES_IN_DELAYED_MODE> m_vram_readback_staging_textures;
   Vulkan::Texture m_display_texture;
   bool m_use_ssbos_for_vram_writes = false;
+  u32 m_current_vram_readback_staging_texture = 0;
 
   VkFramebuffer m_vram_framebuffer = VK_NULL_HANDLE;
   VkFramebuffer m_vram_update_depth_framebuffer = VK_NULL_HANDLE;

@@ -228,7 +228,7 @@ bool GPU::DoState(StateWrapper& sw, HostDisplayTexture** host_texture, bool upda
     }
     else
     {
-      ReadVRAM(0, 0, VRAM_WIDTH, VRAM_HEIGHT);
+      ReadVRAM(0, 0, VRAM_WIDTH, VRAM_HEIGHT, true);
       sw.DoBytes(m_vram_ptr, VRAM_WIDTH * VRAM_HEIGHT * sizeof(u16));
     }
   }
@@ -713,6 +713,11 @@ void GPU::UpdateCRTCDisplayParameters()
   }
 }
 
+void GPU::UpdateDelayedVRAMReadBuffer()
+{
+  // noop
+}
+
 TickCount GPU::GetPendingCRTCTicks() const
 {
   const TickCount pending_sysclk_ticks = m_crtc_tick_event->GetTicksSinceLastExecution();
@@ -1079,6 +1084,9 @@ void GPU::WriteGP1(u32 value)
         m_crtc_state.regs.display_address_start = new_value;
         UpdateCRTCDisplayParameters();
       }
+
+      if (g_settings.gpu_delay_vram_reads)
+        UpdateDelayedVRAMReadBuffer();
     }
     break;
 
@@ -1241,7 +1249,7 @@ void GPU::ClearDisplay() {}
 
 void GPU::UpdateDisplay() {}
 
-void GPU::ReadVRAM(u32 x, u32 y, u32 width, u32 height) {}
+void GPU::ReadVRAM(u32 x, u32 y, u32 width, u32 height, bool no_delay) {}
 
 void GPU::FillVRAM(u32 x, u32 y, u32 width, u32 height, u32 color)
 {
@@ -1467,7 +1475,7 @@ void GPU::SetTextureWindow(u32 value)
 
 bool GPU::DumpVRAMToFile(const char* filename)
 {
-  ReadVRAM(0, 0, VRAM_WIDTH, VRAM_HEIGHT);
+  ReadVRAM(0, 0, VRAM_WIDTH, VRAM_HEIGHT, true);
 
   const char* extension = std::strrchr(filename, '.');
   if (extension && StringUtil::Strcasecmp(extension, ".png") == 0)

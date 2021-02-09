@@ -170,7 +170,7 @@ void GPU_HW_D3D11::UpdateSettings()
   if (framebuffer_changed)
   {
     RestoreGraphicsAPIState();
-    ReadVRAM(0, 0, VRAM_WIDTH, VRAM_HEIGHT);
+    ReadVRAM(0, 0, VRAM_WIDTH, VRAM_HEIGHT, true);
     ResetGraphicsAPIState();
     m_host_display->ClearDisplayTexture();
     CreateFramebuffer();
@@ -933,7 +933,7 @@ void GPU_HW_D3D11::UpdateDisplay()
   }
 }
 
-void GPU_HW_D3D11::ReadVRAM(u32 x, u32 y, u32 width, u32 height)
+void GPU_HW_D3D11::ReadVRAM(u32 x, u32 y, u32 width, u32 height, bool no_delay)
 {
   // Get bounds with wrap-around handled.
   const Common::Rectangle<u32> copy_rect = GetVRAMTransferBounds(x, y, width, height);
@@ -973,7 +973,7 @@ void GPU_HW_D3D11::FillVRAM(u32 x, u32 y, u32 width, u32 height, u32 color)
   {
     // CPU round trip if oversized for now.
     Log_WarningPrintf("Oversized VRAM fill (%u-%u, %u-%u), CPU round trip", x, x + width, y, y + height);
-    ReadVRAM(0, 0, VRAM_WIDTH, VRAM_HEIGHT);
+    ReadVRAM(0, 0, VRAM_WIDTH, VRAM_HEIGHT, true);
     GPU::FillVRAM(x, y, width, height, color);
     UpdateVRAM(0, 0, VRAM_WIDTH, VRAM_HEIGHT, m_vram_shadow.data(), false, false);
     return;

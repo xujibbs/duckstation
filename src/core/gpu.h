@@ -288,7 +288,7 @@ protected:
   void HandleGetGPUInfoCommand(u32 value);
 
   // Rendering in the backend
-  virtual void ReadVRAM(u32 x, u32 y, u32 width, u32 height);
+  virtual void ReadVRAM(u32 x, u32 y, u32 width, u32 height, bool no_delay);
   virtual void FillVRAM(u32 x, u32 y, u32 width, u32 height, u32 color);
   virtual void UpdateVRAM(u32 x, u32 y, u32 width, u32 height, const void* data, bool set_mask, bool check_mask);
   virtual void CopyVRAM(u32 src_x, u32 src_y, u32 dst_x, u32 dst_y, u32 width, u32 height);
@@ -297,6 +297,7 @@ protected:
   virtual void ClearDisplay();
   virtual void UpdateDisplay();
   virtual void DrawRendererStats(bool is_idle_frame);
+  virtual void UpdateDelayedVRAMReadBuffer();
 
   ALWAYS_INLINE void AddDrawTriangleTicks(s32 x1, s32 y1, s32 x2, s32 y2, s32 x3, s32 y3, bool shaded, bool textured,
                                           bool semitransparent)
