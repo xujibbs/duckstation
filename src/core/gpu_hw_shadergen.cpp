@@ -4,13 +4,13 @@
 #include <glad.h>
 
 GPU_HW_ShaderGen::GPU_HW_ShaderGen(HostDisplay::RenderAPI render_api, u32 resolution_scale, u32 multisamples,
-                                   bool per_sample_shading, bool true_color, bool scaled_dithering,
-                                   GPUTextureFilter texture_filtering, bool uv_limits, bool pgxp_depth,
-                                   bool supports_dual_source_blend)
+                                   bool per_sample_shading, bool rgb5a1_framebuffer, bool true_color,
+                                   bool scaled_dithering, GPUTextureFilter texture_filtering, bool uv_limits,
+                                   bool pgxp_depth, bool supports_dual_source_blend)
   : ShaderGen(render_api, supports_dual_source_blend), m_resolution_scale(resolution_scale),
-    m_multisamples(multisamples), m_per_sample_shading(per_sample_shading), m_true_color(true_color),
-    m_scaled_dithering(scaled_dithering), m_texture_filter(texture_filtering), m_uv_limits(uv_limits),
-    m_pgxp_depth(pgxp_depth)
+    m_multisamples(multisamples), m_per_sample_shading(per_sample_shading), m_rgb5a1_framebuffer(rgb5a1_framebuffer),
+    m_true_color(true_color), m_scaled_dithering(scaled_dithering), m_texture_filter(texture_filtering),
+    m_uv_limits(uv_limits), m_pgxp_depth(pgxp_depth)
 {
 }
 

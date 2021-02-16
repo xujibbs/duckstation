@@ -1160,6 +1160,18 @@ void Context::DisableDebugReports()
   }
 }
 
+bool Context::SupportsTextureFormat(VkFormat format, bool as_render_target /*= false*/) const
+{
+  VkImageFormatProperties props;
+  VkResult res = vkGetPhysicalDeviceImageFormatProperties(
+    m_physical_device, format, VK_IMAGE_TYPE_2D, VK_IMAGE_TILING_OPTIMAL,
+    VK_IMAGE_USAGE_SAMPLED_BIT | (as_render_target ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT : 0), 0, &props);
+  if (res != VK_SUCCESS)
+    return false;
+
+  return true;
+}
+
 bool Context::GetMemoryType(u32 bits, VkMemoryPropertyFlags properties, u32* out_type_index)
 {
   for (u32 i = 0; i < VK_MAX_MEMORY_TYPES; i++)

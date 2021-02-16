@@ -89,6 +89,7 @@ public:
   // Support bits
   ALWAYS_INLINE bool SupportsGeometryShaders() const { return m_device_features.geometryShader == VK_TRUE; }
   ALWAYS_INLINE bool SupportsDualSourceBlend() const { return m_device_features.dualSrcBlend == VK_TRUE; }
+  bool SupportsTextureFormat(VkFormat format, bool as_render_target = false) const;
 
   // Helpers for getting constants
   ALWAYS_INLINE VkDeviceSize GetUniformBufferAlignment() const

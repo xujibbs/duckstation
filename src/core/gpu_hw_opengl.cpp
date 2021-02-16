@@ -378,6 +378,9 @@ void GPU_HW_OpenGL::SetCapabilities(HostDisplay* host_display)
 
   // adaptive smoothing would require texture views, which aren't in GLES.
   m_supports_adaptive_downsampling = false;
+
+  // GLES mandates support for RGB5A1, desktop ???
+  m_supports_rgb5a1_framebuffer = true;
 }
 
 bool GPU_HW_OpenGL::CreateFramebuffer()
@@ -386,19 +389,23 @@ bool GPU_HW_OpenGL::CreateFramebuffer()
   const u32 texture_width = VRAM_WIDTH * m_resolution_scale;
   const u32 texture_height = VRAM_HEIGHT * m_resolution_scale;
   const u32 multisamples = m_multisamples;
+  const GLenum render_texture_format = m_use_rgb5a1_framebuffer ? GL_RGB5_A1 : GL_RGBA8;
+  const GLenum render_texture_type = m_use_rgb5a1_framebuffer ? GL_UNSIGNED_SHORT_5_5_5_1 : GL_RGBA8;
+  const GLenum display_texture_format = m_use_rgb5a1_framebuffer ? GL_RGB5_A1 : GL_RGBA8;
+  const GLenum display_texture_type = m_use_rgb5a1_framebuffer ? GL_UNSIGNED_SHORT_5_5_5_1 : GL_RGBA8;
 
-  if (!m_vram_texture.Create(texture_width, texture_height, multisamples, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, nullptr,
-                             false, true) ||
+  if (!m_vram_texture.Create(texture_width, texture_height, multisamples, render_texture_format, GL_RGBA,
+                             render_texture_type, nullptr, false, true) ||
       !m_vram_depth_texture.Create(texture_width, texture_height, multisamples, GL_DEPTH_COMPONENT16,
                                    GL_DEPTH_COMPONENT, GL_UNSIGNED_SHORT, nullptr, false) ||
-      !m_vram_read_texture.Create(texture_width, texture_height, 1, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, nullptr, false,
-                                  true) ||
+      !m_vram_read_texture.Create(texture_width, texture_height, 1, render_texture_format, GL_RGBA, render_texture_type,
+                                  nullptr, false, true) ||
       !m_vram_read_texture.CreateFramebuffer() ||
-      !m_vram_encoding_texture.Create(VRAM_WIDTH, VRAM_HEIGHT, 1, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, nullptr,
-                                      false) ||
+      (!m_vram_encoding_texture.Create(VRAM_WIDTH, VRAM_HEIGHT, 1, render_texture_format, GL_RGBA, render_texture_type,
+                                       nullptr, false)) ||
       !m_vram_encoding_texture.CreateFramebuffer() ||
       !m_display_texture.Create(GPU_MAX_DISPLAY_WIDTH * m_resolution_scale, GPU_MAX_DISPLAY_HEIGHT * m_resolution_scale,
-                                1, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, nullptr, false) ||
+                                1, display_texture_format, GL_RGBA, display_texture_type, nullptr, false) ||
       !m_display_texture.CreateFramebuffer())
   {
     return false;
@@ -416,7 +423,8 @@ bool GPU_HW_OpenGL::CreateFramebuffer()
 
   if (m_downsample_mode == GPUDownsampleMode::Box)
   {
-    if (!m_downsample_texture.Create(VRAM_WIDTH, VRAM_HEIGHT, 1, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE) ||
+    if (!m_downsample_texture.Create(VRAM_WIDTH, VRAM_HEIGHT, 1, display_texture_format, GL_RGBA,
+                                     display_texture_type) ||
         !m_downsample_texture.CreateFramebuffer())
     {
       return false;
@@ -509,8 +517,8 @@ bool GPU_HW_OpenGL::CompilePrograms()
 
   const bool use_binding_layout = GPU_HW_ShaderGen::UseGLSLBindingLayout();
   GPU_HW_ShaderGen shadergen(m_host_display->GetRenderAPI(), m_resolution_scale, m_multisamples, m_per_sample_shading,
-                             m_true_color, m_scaled_dithering, m_texture_filtering, m_using_uv_limits,
-                             m_pgxp_depth_buffer, m_supports_dual_source_blend);
+                             m_use_rgb5a1_framebuffer, m_true_color, m_scaled_dithering, m_texture_filtering,
+                             m_using_uv_limits, m_pgxp_depth_buffer, m_supports_dual_source_blend);
 
   Common::Timer compile_time;
   const int progress_total = (4 * 9 * 2 * 2) + (2 * 3) + 6;
@@ -862,18 +870,20 @@ void GPU_HW_OpenGL::UpdateDisplay()
     {
       UpdateVRAMReadTexture();
 
-      m_host_display->SetDisplayTexture(reinterpret_cast<void*>(static_cast<uintptr_t>(m_vram_read_texture.GetGLId())),
-                                        HostDisplayPixelFormat::RGBA8, m_vram_read_texture.GetWidth(),
-                                        static_cast<s32>(m_vram_read_texture.GetHeight()), 0,
-                                        m_vram_read_texture.GetHeight(), m_vram_read_texture.GetWidth(),
-                                        -static_cast<s32>(m_vram_read_texture.GetHeight()));
+      m_host_display->SetDisplayTexture(
+        reinterpret_cast<void*>(static_cast<uintptr_t>(m_vram_read_texture.GetGLId())),
+        m_use_rgb5a1_framebuffer ? HostDisplayPixelFormat::RGBA5551 : HostDisplayPixelFormat::RGBA8,
+        m_vram_read_texture.GetWidth(), static_cast<s32>(m_vram_read_texture.GetHeight()), 0,
+        m_vram_read_texture.GetHeight(), m_vram_read_texture.GetWidth(),
+        -static_cast<s32>(m_vram_read_texture.GetHeight()));
     }
     else
     {
-      m_host_display->SetDisplayTexture(reinterpret_cast<void*>(static_cast<uintptr_t>(m_vram_texture.GetGLId())),
-                                        HostDisplayPixelFormat::RGBA8, m_vram_texture.GetWidth(),
-                                        static_cast<s32>(m_vram_texture.GetHeight()), 0, m_vram_texture.GetHeight(),
-                                        m_vram_texture.GetWidth(), -static_cast<s32>(m_vram_texture.GetHeight()));
+      m_host_display->SetDisplayTexture(
+        reinterpret_cast<void*>(static_cast<uintptr_t>(m_vram_texture.GetGLId())),
+        m_use_rgb5a1_framebuffer ? HostDisplayPixelFormat::RGBA5551 : HostDisplayPixelFormat::RGBA8,
+        m_vram_texture.GetWidth(), static_cast<s32>(m_vram_texture.GetHeight()), 0, m_vram_texture.GetHeight(),
+        m_vram_texture.GetWidth(), -static_cast<s32>(m_vram_texture.GetHeight()));
     }
     m_host_display->SetDisplayParameters(VRAM_WIDTH, VRAM_HEIGHT, 0, 0, VRAM_WIDTH, VRAM_HEIGHT,
                                          static_cast<float>(VRAM_WIDTH) / static_cast<float>(VRAM_HEIGHT));
@@ -907,8 +917,9 @@ void GPU_HW_OpenGL::UpdateDisplay()
       else
       {
         m_host_display->SetDisplayTexture(reinterpret_cast<void*>(static_cast<uintptr_t>(m_vram_texture.GetGLId())),
-                                          HostDisplayPixelFormat::RGBA8, m_vram_texture.GetWidth(),
-                                          m_vram_texture.GetHeight(), scaled_vram_offset_x,
+                                          m_use_rgb5a1_framebuffer ? HostDisplayPixelFormat::RGBA5551 :
+                                                                     HostDisplayPixelFormat::RGBA8,
+                                          m_vram_texture.GetWidth(), m_vram_texture.GetHeight(), scaled_vram_offset_x,
                                           m_vram_texture.GetHeight() - scaled_vram_offset_y, scaled_display_width,
                                           -static_cast<s32>(scaled_display_height));
       }
@@ -947,10 +958,11 @@ void GPU_HW_OpenGL::UpdateDisplay()
       }
       else
       {
-        m_host_display->SetDisplayTexture(reinterpret_cast<void*>(static_cast<uintptr_t>(m_display_texture.GetGLId())),
-                                          HostDisplayPixelFormat::RGBA8, m_display_texture.GetWidth(),
-                                          m_display_texture.GetHeight(), 0, scaled_display_height, scaled_display_width,
-                                          -static_cast<s32>(scaled_display_height));
+        m_host_display->SetDisplayTexture(
+          reinterpret_cast<void*>(static_cast<uintptr_t>(m_display_texture.GetGLId())),
+          m_use_rgb5a1_framebuffer ? HostDisplayPixelFormat::RGBA5551 : HostDisplayPixelFormat::RGBA8,
+          m_display_texture.GetWidth(), m_display_texture.GetHeight(), 0, scaled_display_height, scaled_display_width,
+          -static_cast<s32>(scaled_display_height));
       }
 
       // restore state
@@ -971,35 +983,95 @@ void GPU_HW_OpenGL::UpdateDisplay()
   }
 }
 
+static u16 SwapGL16ToPSX16(u16 val)
+{
+  // RRRRRGGGGGBBBBBA -> ABBBBBGGGGGRRRRR
+  return ((val << 15) |           // A
+          (val >> 11) |           // R
+          ((val >> 1) & 0x3E0) |  // G
+          ((val << 9) & 0x7C00)); // B
+}
+
+static u16 SwapPSX16ToGL16(u16 val)
+{
+  // ABBBBBGGGGGRRRRR -> // RRRRRGGGGGBBBBBA
+  return ((val >> 15) |            // A
+          ((val << 11) & 0xF800) | // R
+          ((val << 1) & 0x7C0) |   // G
+          ((val >> 9) & 0x3E));    // B
+}
+
 void GPU_HW_OpenGL::ReadVRAM(u32 x, u32 y, u32 width, u32 height)
 {
   // Get bounds with wrap-around handled.
   const Common::Rectangle<u32> copy_rect = GetVRAMTransferBounds(x, y, width, height);
-  const u32 encoded_width = (copy_rect.GetWidth() + 1) / 2;
-  const u32 encoded_height = copy_rect.GetHeight();
+  if (!m_use_rgb5a1_framebuffer)
+  {
+    const u32 encoded_width = (copy_rect.GetWidth() + 1) / 2;
+    const u32 encoded_height = copy_rect.GetHeight();
 
-  // Encode the 24-bit texture as 16-bit.
-  const u32 uniforms[4] = {copy_rect.left, VRAM_HEIGHT - copy_rect.top - copy_rect.GetHeight(), copy_rect.GetWidth(),
-                           copy_rect.GetHeight()};
-  m_vram_encoding_texture.BindFramebuffer(GL_DRAW_FRAMEBUFFER);
-  m_vram_texture.Bind();
-  m_vram_read_program.Bind();
-  UploadUniformBuffer(uniforms, sizeof(uniforms));
-  glDisable(GL_BLEND);
-  glDisable(GL_SCISSOR_TEST);
-  glViewport(0, 0, encoded_width, encoded_height);
-  glBindVertexArray(m_attributeless_vao_id);
-  glDrawArrays(GL_TRIANGLES, 0, 3);
+    // Encode the 24-bit texture as 16-bit.
+    const u32 uniforms[4] = {copy_rect.left, VRAM_HEIGHT - copy_rect.top - copy_rect.GetHeight(), copy_rect.GetWidth(),
+                             copy_rect.GetHeight()};
+    m_vram_encoding_texture.BindFramebuffer(GL_DRAW_FRAMEBUFFER);
+    m_vram_texture.Bind();
+    m_vram_read_program.Bind();
+    UploadUniformBuffer(uniforms, sizeof(uniforms));
+    glDisable(GL_BLEND);
+    glDisable(GL_SCISSOR_TEST);
+    glViewport(0, 0, encoded_width, encoded_height);
+    glBindVertexArray(m_attributeless_vao_id);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
 
-  // Readback encoded texture.
-  m_vram_encoding_texture.BindFramebuffer(GL_READ_FRAMEBUFFER);
-  glPixelStorei(GL_PACK_ALIGNMENT, 2);
-  glPixelStorei(GL_PACK_ROW_LENGTH, VRAM_WIDTH / 2);
-  glReadPixels(0, 0, encoded_width, encoded_height, GL_RGBA, GL_UNSIGNED_BYTE,
-               &m_vram_shadow[copy_rect.top * VRAM_WIDTH + copy_rect.left]);
-  glPixelStorei(GL_PACK_ALIGNMENT, 4);
-  glPixelStorei(GL_PACK_ROW_LENGTH, 0);
-  RestoreGraphicsAPIState();
+    // Readback encoded texture.
+    m_vram_encoding_texture.BindFramebuffer(GL_READ_FRAMEBUFFER);
+    glPixelStorei(GL_PACK_ALIGNMENT, 2);
+    glPixelStorei(GL_PACK_ROW_LENGTH, VRAM_WIDTH / 2);
+    glReadPixels(0, 0, encoded_width, encoded_height, GL_RGBA, GL_UNSIGNED_BYTE,
+                 &m_vram_shadow[copy_rect.top * VRAM_WIDTH + copy_rect.left]);
+    glPixelStorei(GL_PACK_ALIGNMENT, 4);
+    glPixelStorei(GL_PACK_ROW_LENGTH, 0);
+    RestoreGraphicsAPIState();
+  }
+  else
+  {
+    const u32 copy_width = copy_rect.GetWidth();
+    const u32 copy_height = copy_rect.GetHeight();
+
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, m_vram_fbo_id);
+    glPixelStorei(GL_PACK_ALIGNMENT, 2);
+    glPixelStorei(GL_PACK_ROW_LENGTH, VRAM_WIDTH);
+    glReadPixels(copy_rect.left, VRAM_HEIGHT - copy_rect.top - copy_height, copy_width, copy_height, GL_RGBA,
+                 GL_UNSIGNED_SHORT_5_5_5_1, &m_vram_shadow[copy_rect.top * VRAM_WIDTH + copy_rect.left]);
+    glPixelStorei(GL_PACK_ALIGNMENT, 4);
+    glPixelStorei(GL_PACK_ROW_LENGTH, 0);
+
+    // flip and convert colours
+    const u32 rows_to_flip = copy_height / 2;
+    u16* base_ptr = &m_vram_shadow[copy_rect.top * VRAM_WIDTH + copy_rect.left];
+    for (u32 row = 0; row < rows_to_flip; row++)
+    {
+      const u32 row1 = row;
+      const u32 row2 = copy_height - row - 1;
+
+      u16* row1_ptr = base_ptr + row1 * VRAM_WIDTH;
+      u16* row2_ptr = base_ptr + row2 * VRAM_WIDTH;
+
+      for (u32 col = 0; col < copy_width; col++)
+      {
+        const u16 temp = SwapGL16ToPSX16(row1_ptr[col]);
+        row1_ptr[col] = SwapGL16ToPSX16(row2_ptr[col]);
+        row2_ptr[col] = temp;
+      }
+    }
+    if (copy_height & 1u)
+    {
+      const u32 row = rows_to_flip;
+      u16* row_ptr = base_ptr + row * VRAM_WIDTH;
+      for (u32 col = 0; col < copy_width; col++)
+        row_ptr[col] = SwapGL16ToPSX16(row_ptr[col]);
+    }
+  }
 }
 
 void GPU_HW_OpenGL::FillVRAM(u32 x, u32 y, u32 width, u32 height, u32 color)
@@ -1108,44 +1180,87 @@ void GPU_HW_OpenGL::UpdateVRAM(u32 x, u32 y, u32 width, u32 height, const void* 
 
     GPU_HW::UpdateVRAM(x, y, width, height, data, set_mask, check_mask);
 
-    const auto map_result = m_texture_stream_buffer->Map(sizeof(u32), num_pixels * sizeof(u32));
-
-    // reverse copy the rows so it matches opengl's lower-left origin
-    const u32 source_stride = width * sizeof(u16);
-    const u8* source_ptr = static_cast<const u8*>(data) + (source_stride * (height - 1));
-    u32* dest_ptr = static_cast<u32*>(map_result.pointer);
-    for (u32 row = 0; row < height; row++)
-    {
-      const u8* source_row_ptr = source_ptr;
-
-      for (u32 col = 0; col < width; col++)
-      {
-        u16 src_col;
-        std::memcpy(&src_col, source_row_ptr, sizeof(src_col));
-        source_row_ptr += sizeof(src_col);
-
-        *(dest_ptr++) = RGBA5551ToRGBA8888(src_col);
-      }
-
-      source_ptr -= source_stride;
-    }
-
-    m_texture_stream_buffer->Unmap(num_pixels * sizeof(u32));
-    m_texture_stream_buffer->Bind();
-
-    // have to write to the 1x texture first
-    if (m_resolution_scale > 1)
-      m_vram_encoding_texture.Bind();
-    else
-      m_vram_texture.Bind();
-
     // lower-left origin flip happens here
     const u32 flipped_y = VRAM_HEIGHT - y - height;
 
-    // update texture data
-    glTexSubImage2D(m_vram_texture.GetGLTarget(), 0, x, flipped_y, width, height, GL_RGBA, GL_UNSIGNED_BYTE,
-                    reinterpret_cast<void*>(static_cast<uintptr_t>(map_result.buffer_offset)));
-    m_texture_stream_buffer->Unbind();
+    if (!m_use_rgb5a1_framebuffer)
+    {
+      const auto map_result = m_texture_stream_buffer->Map(sizeof(u32), num_pixels * sizeof(u32));
+
+      // reverse copy the rows so it matches opengl's lower-left origin
+      const u32 source_stride = width * sizeof(u16);
+      const u8* source_ptr = static_cast<const u8*>(data) + (source_stride * (height - 1));
+      u32* dest_ptr = static_cast<u32*>(map_result.pointer);
+      for (u32 row = 0; row < height; row++)
+      {
+        const u8* source_row_ptr = source_ptr;
+
+        for (u32 col = 0; col < width; col++)
+        {
+          u16 src_col;
+          std::memcpy(&src_col, source_row_ptr, sizeof(src_col));
+          source_row_ptr += sizeof(src_col);
+
+          *(dest_ptr++) = RGBA5551ToRGBA8888(src_col);
+        }
+
+        source_ptr -= source_stride;
+      }
+
+      m_texture_stream_buffer->Unmap(num_pixels * sizeof(u32));
+      m_texture_stream_buffer->Bind();
+
+      // have to write to the 1x texture first
+      if (m_resolution_scale > 1)
+        m_vram_encoding_texture.Bind();
+      else
+        m_vram_texture.Bind();
+
+      // update texture data
+      glTexSubImage2D(m_vram_texture.GetGLTarget(), 0, x, flipped_y, width, height, GL_RGBA, GL_UNSIGNED_BYTE,
+                      reinterpret_cast<void*>(static_cast<uintptr_t>(map_result.buffer_offset)));
+      m_texture_stream_buffer->Unbind();
+    }
+    else
+    {
+      const auto map_result = m_texture_stream_buffer->Map(sizeof(u32), num_pixels * sizeof(u32));
+
+      // reverse copy the rows so it matches opengl's lower-left origin
+      const u32 source_stride = width * sizeof(u16);
+      const u8* source_ptr = static_cast<const u8*>(data) + (source_stride * (height - 1));
+      u16* dest_ptr = static_cast<u16*>(map_result.pointer);
+      for (u32 row = 0; row < height; row++)
+      {
+        const u8* source_row_ptr = source_ptr;
+
+        for (u32 col = 0; col < width; col++)
+        {
+          // TODO: Byte flip?
+          u16 src_col;
+          std::memcpy(&src_col, source_row_ptr, sizeof(src_col));
+          source_row_ptr += sizeof(src_col);
+          *(dest_ptr++) = SwapPSX16ToGL16(src_col);
+        }
+
+        source_ptr -= source_stride;
+      }
+
+      m_texture_stream_buffer->Unmap(num_pixels * sizeof(u32));
+      m_texture_stream_buffer->Bind();
+
+      // have to write to the 1x texture first
+      if (m_resolution_scale > 1)
+        m_vram_encoding_texture.Bind();
+      else
+        m_vram_texture.Bind();
+
+      // update texture data
+      glPixelStorei(GL_UNPACK_ALIGNMENT, 2);
+      glTexSubImage2D(m_vram_texture.GetGLTarget(), 0, x, flipped_y, width, height, GL_RGBA, GL_UNSIGNED_SHORT_5_5_5_1,
+                      reinterpret_cast<void*>(static_cast<uintptr_t>(map_result.buffer_offset)));
+      glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+      m_texture_stream_buffer->Unbind();
+    }
 
     if (m_resolution_scale > 1)
     {

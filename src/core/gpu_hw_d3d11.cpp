@@ -237,6 +237,12 @@ void GPU_HW_D3D11::SetCapabilities()
       m_max_multisamples = multisamples;
     }
   }
+
+  const UINT required_support = D3D11_FORMAT_SUPPORT_RENDER_TARGET | D3D11_FORMAT_SUPPORT_TEXTURE2D;
+  UINT bgr5a1_support = 0;
+  m_supports_rgb5a1_framebuffer =
+    (SUCCEEDED(m_device->CheckFormatSupport(DXGI_FORMAT_B5G5R5A1_UNORM, &bgr5a1_support)) &&
+     ((bgr5a1_support & required_support) == required_support));
 }
 
 bool GPU_HW_D3D11::CreateFramebuffer()
@@ -247,21 +253,25 @@ bool GPU_HW_D3D11::CreateFramebuffer()
   const u32 texture_width = VRAM_WIDTH * m_resolution_scale;
   const u32 texture_height = VRAM_HEIGHT * m_resolution_scale;
   const u16 samples = static_cast<u16>(m_multisamples);
-  const DXGI_FORMAT texture_format = DXGI_FORMAT_R8G8B8A8_UNORM;
+  const DXGI_FORMAT render_texture_format =
+    m_use_rgb5a1_framebuffer ? DXGI_FORMAT_B5G5R5A1_UNORM : DXGI_FORMAT_R8G8B8A8_UNORM;
+  const DXGI_FORMAT display_texture_format =
+    m_use_rgb5a1_framebuffer ? DXGI_FORMAT_B5G5R5A1_UNORM : DXGI_FORMAT_R8G8B8A8_UNORM;
   const DXGI_FORMAT depth_format = DXGI_FORMAT_D16_UNORM;
 
-  if (!m_vram_texture.Create(m_device.Get(), texture_width, texture_height, 1, samples, texture_format,
+  if (!m_vram_texture.Create(m_device.Get(), texture_width, texture_height, 1, samples, render_texture_format,
                              D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET) ||
       !m_vram_depth_texture.Create(m_device.Get(), texture_width, texture_height, 1, samples, depth_format,
                                    D3D11_BIND_DEPTH_STENCIL) ||
-      !m_vram_read_texture.Create(m_device.Get(), texture_width, texture_height, 1, 1, texture_format,
+      !m_vram_read_texture.Create(m_device.Get(), texture_width, texture_height, 1, 1, render_texture_format,
                                   D3D11_BIND_SHADER_RESOURCE) ||
       !m_display_texture.Create(m_device.Get(), GPU_MAX_DISPLAY_WIDTH * m_resolution_scale,
-                                GPU_MAX_DISPLAY_HEIGHT * m_resolution_scale, 1, 1, texture_format,
+                                GPU_MAX_DISPLAY_HEIGHT * m_resolution_scale, 1, 1, display_texture_format,
                                 D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET) ||
-      !m_vram_encoding_texture.Create(m_device.Get(), VRAM_WIDTH, VRAM_HEIGHT, 1, 1, texture_format,
-                                      D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET) ||
-      !m_vram_readback_texture.Create(m_device.Get(), VRAM_WIDTH, VRAM_HEIGHT, texture_format, false))
+      ((!m_use_rgb5a1_framebuffer || m_resolution_scale > 1) &&
+       !m_vram_encoding_texture.Create(m_device.Get(), VRAM_WIDTH, VRAM_HEIGHT, 1, 1, render_texture_format,
+                                       D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET)) ||
+      !m_vram_readback_texture.Create(m_device.Get(), VRAM_WIDTH, VRAM_HEIGHT, render_texture_format, false))
   {
     return false;
   }
@@ -278,7 +288,7 @@ bool GPU_HW_D3D11::CreateFramebuffer()
     const u32 levels = GetAdaptiveDownsamplingMipLevels();
 
     if (!m_downsample_texture.Create(m_device.Get(), texture_width, texture_height, static_cast<u16>(levels), 1,
-                                     texture_format, D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET) ||
+                                     render_texture_format, D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET) ||
         !m_downsample_weight_texture.Create(m_device.Get(), texture_width >> (levels - 1),
                                             texture_height >> (levels - 1), 1, 1, DXGI_FORMAT_R8_UNORM,
                                             D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET))
@@ -290,9 +300,9 @@ bool GPU_HW_D3D11::CreateFramebuffer()
     for (u32 i = 0; i < levels; i++)
     {
       const CD3D11_SHADER_RESOURCE_VIEW_DESC srv_desc(m_downsample_texture, D3D11_SRV_DIMENSION_TEXTURE2D,
-                                                      texture_format, i, 1);
-      const CD3D11_RENDER_TARGET_VIEW_DESC rtv_desc(m_downsample_texture, D3D11_RTV_DIMENSION_TEXTURE2D, texture_format,
-                                                    i, 1);
+                                                      render_texture_format, i, 1);
+      const CD3D11_RENDER_TARGET_VIEW_DESC rtv_desc(m_downsample_texture, D3D11_RTV_DIMENSION_TEXTURE2D,
+                                                    render_texture_format, i, 1);
 
       hr = m_device->CreateShaderResourceView(m_downsample_texture, &srv_desc,
                                               m_downsample_mip_views[i].first.GetAddressOf());
@@ -307,7 +317,7 @@ bool GPU_HW_D3D11::CreateFramebuffer()
   }
   else if (m_downsample_mode == GPUDownsampleMode::Box)
   {
-    if (!m_downsample_texture.Create(m_device.Get(), VRAM_WIDTH, VRAM_HEIGHT, 1, 1, texture_format,
+    if (!m_downsample_texture.Create(m_device.Get(), VRAM_WIDTH, VRAM_HEIGHT, 1, 1, render_texture_format,
                                      D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET))
     {
       return false;
@@ -497,8 +507,8 @@ bool GPU_HW_D3D11::CompileShaders()
                     g_settings.gpu_use_debug_device);
 
   GPU_HW_ShaderGen shadergen(m_host_display->GetRenderAPI(), m_resolution_scale, m_multisamples, m_per_sample_shading,
-                             m_true_color, m_scaled_dithering, m_texture_filtering, m_using_uv_limits,
-                             m_pgxp_depth_buffer, m_supports_dual_source_blend);
+                             m_use_rgb5a1_framebuffer, m_true_color, m_scaled_dithering, m_texture_filtering,
+                             m_using_uv_limits, m_pgxp_depth_buffer, m_supports_dual_source_blend);
 
   Common::Timer compile_time;
   const int progress_total = 1 + 1 + 2 + (4 * 9 * 2 * 2) + 7 + (2 * 3) + 1;
@@ -937,31 +947,77 @@ void GPU_HW_D3D11::ReadVRAM(u32 x, u32 y, u32 width, u32 height)
 {
   // Get bounds with wrap-around handled.
   const Common::Rectangle<u32> copy_rect = GetVRAMTransferBounds(x, y, width, height);
-  const u32 encoded_width = (copy_rect.GetWidth() + 1) / 2;
-  const u32 encoded_height = copy_rect.GetHeight();
 
   // Encode the 24-bit texture as 16-bit.
-  const u32 uniforms[4] = {copy_rect.left, copy_rect.top, copy_rect.GetWidth(), copy_rect.GetHeight()};
-  m_context->RSSetState(m_cull_none_rasterizer_state_no_msaa.Get());
-  m_context->OMSetRenderTargets(1, m_vram_encoding_texture.GetD3DRTVArray(), nullptr);
-  m_context->OMSetDepthStencilState(m_depth_disabled_state.Get(), 0);
-  m_context->PSSetShaderResources(0, 1, m_vram_texture.GetD3DSRVArray());
-  SetViewportAndScissor(0, 0, encoded_width, encoded_height);
-  DrawUtilityShader(m_vram_read_pixel_shader.Get(), uniforms, sizeof(uniforms));
-
-  // Stage the readback.
-  m_vram_readback_texture.CopyFromTexture(m_context.Get(), m_vram_encoding_texture.GetD3DTexture(), 0, 0, 0, 0, 0,
-                                          encoded_width, encoded_height);
-  // And copy it into our shadow buffer.
-  if (m_vram_readback_texture.Map(m_context.Get(), false))
+  if (!m_use_rgb5a1_framebuffer || m_resolution_scale > 1)
   {
-    m_vram_readback_texture.ReadPixels(0, 0, encoded_width * 2, encoded_height, VRAM_WIDTH,
-                                       &m_vram_shadow[copy_rect.top * VRAM_WIDTH + copy_rect.left]);
-    m_vram_readback_texture.Unmap(m_context.Get());
+    const u32 encoded_width = (copy_rect.GetWidth() + 1) / 2;
+    const u32 encoded_height = copy_rect.GetHeight();
+    const u32 uniforms[4] = {copy_rect.left, copy_rect.top, copy_rect.GetWidth(), copy_rect.GetHeight()};
+    m_context->RSSetState(m_cull_none_rasterizer_state_no_msaa.Get());
+    m_context->OMSetRenderTargets(1, m_vram_encoding_texture.GetD3DRTVArray(), nullptr);
+    m_context->OMSetDepthStencilState(m_depth_disabled_state.Get(), 0);
+    m_context->PSSetShaderResources(0, 1, m_vram_texture.GetD3DSRVArray());
+    SetViewportAndScissor(0, 0, encoded_width, encoded_height);
+    DrawUtilityShader(m_vram_read_pixel_shader.Get(), uniforms, sizeof(uniforms));
+
+    // Stage the readback.
+    m_vram_readback_texture.CopyFromTexture(m_context.Get(), m_vram_encoding_texture.GetD3DTexture(), 0, 0, 0, 0, 0,
+                                            encoded_width, encoded_height);
+
+    // And copy it into our shadow buffer.
+    if (m_vram_readback_texture.Map(m_context.Get(), false))
+    {
+      m_vram_readback_texture.ReadPixels(0, 0, encoded_width * 2, encoded_height, VRAM_WIDTH,
+                                         &m_vram_shadow[copy_rect.top * VRAM_WIDTH + copy_rect.left]);
+      m_vram_readback_texture.Unmap(m_context.Get());
+    }
+    else
+    {
+      Log_ErrorPrintf("Failed to map VRAM readback texture");
+    }
   }
   else
   {
-    Log_ErrorPrintf("Failed to map VRAM readback texture");
+    const u32 copy_width = copy_rect.GetWidth();
+    const u32 copy_height = copy_rect.GetHeight();
+
+    m_vram_readback_texture.CopyFromTexture(m_context.Get(), m_vram_texture.GetD3DTexture(), 0, copy_rect.left,
+                                            copy_rect.top, copy_rect.left, copy_rect.top, copy_width, copy_height);
+
+    // And copy it into our shadow buffer.
+    if (m_vram_readback_texture.Map(m_context.Get(), false))
+    {
+      // Needs to be swapped to PSX order.
+      // TODO: vector-ify.
+      const u32 src_pitch = m_vram_readback_texture.GetMappedSubresource().RowPitch;
+      const u32 dst_pitch = sizeof(u16) * VRAM_WIDTH;
+      const u32 copy_size = sizeof(u16) * copy_width;
+      const u8* src_ptr = reinterpret_cast<const u8*>(m_vram_readback_texture.GetMappedSubresource().pData) +
+                          copy_rect.top * src_pitch + copy_rect.left * sizeof(u16);
+      u8* dst_ptr = reinterpret_cast<u8*>(&m_vram_shadow[copy_rect.top * VRAM_WIDTH + copy_rect.left]);
+      for (u32 row = 0; row < copy_height; row++)
+      {
+        const u8* src_row_ptr = src_ptr;
+        u8* dst_row_ptr = dst_ptr;
+        for (u32 col = 0; col < copy_width; col++)
+        {
+          u16 pix;
+          std::memcpy(&pix, src_row_ptr, sizeof(pix));
+          src_row_ptr += sizeof(u16);
+          pix = (pix & 0x83E0) | ((pix >> 10) & 0x1F) | ((pix & 0x1F) << 10);
+          std::memcpy(dst_row_ptr, &pix, sizeof(pix));
+          dst_row_ptr += sizeof(u16);
+        }
+        src_ptr += src_pitch;
+        dst_ptr += dst_pitch;
+      }
+      m_vram_readback_texture.Unmap(m_context.Get());
+    }
+    else
+    {
+      Log_ErrorPrintf("Failed to map VRAM readback texture");
+    }
   }
 
   RestoreGraphicsAPIState();

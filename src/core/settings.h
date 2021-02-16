@@ -116,6 +116,7 @@ struct Settings
   bool gpu_disable_interlacing = false;
   bool gpu_force_ntsc_timings = false;
   bool gpu_widescreen_hack = false;
+  bool gpu_use_rgb5a1_framebuffer = true;
   bool gpu_pgxp_enable = false;
   bool gpu_pgxp_culling = true;
   bool gpu_pgxp_texture_correction = true;

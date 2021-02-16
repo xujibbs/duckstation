@@ -48,6 +48,8 @@ bool GPU_HW::Initialize(HostDisplay* host_display)
 
   m_resolution_scale = CalculateResolutionScale();
   m_multisamples = std::min(g_settings.gpu_multisamples, m_max_multisamples);
+  m_use_rgb5a1_framebuffer =
+    g_settings.gpu_use_rgb5a1_framebuffer && !g_settings.gpu_true_color && m_supports_rgb5a1_framebuffer;
   m_render_api = host_display->GetRenderAPI();
   m_per_sample_shading = g_settings.gpu_per_sample_shading && m_supports_per_sample_shading;
   m_true_color = g_settings.gpu_true_color;
@@ -128,17 +130,20 @@ void GPU_HW::UpdateHWSettings(bool* framebuffer_changed, bool* shaders_changed)
   const u32 resolution_scale = CalculateResolutionScale();
   const u32 multisamples = std::min(m_max_multisamples, g_settings.gpu_multisamples);
   const bool per_sample_shading = g_settings.gpu_per_sample_shading && m_supports_per_sample_shading;
+  const bool rgb5a1_framebuffer =
+    g_settings.gpu_use_rgb5a1_framebuffer && !g_settings.gpu_true_color && m_supports_rgb5a1_framebuffer;
   const GPUDownsampleMode downsample_mode = GetDownsampleMode(resolution_scale);
   const bool use_uv_limits = ShouldUseUVLimits();
 
-  *framebuffer_changed =
-    (m_resolution_scale != resolution_scale || m_multisamples != multisamples || m_downsample_mode != downsample_mode);
+  *framebuffer_changed = (m_resolution_scale != resolution_scale || m_multisamples != multisamples ||
+                          m_downsample_mode != downsample_mode || rgb5a1_framebuffer != m_use_rgb5a1_framebuffer);
   *shaders_changed =
     (m_resolution_scale != resolution_scale || m_multisamples != multisamples ||
-     m_true_color != g_settings.gpu_true_color || m_per_sample_shading != per_sample_shading ||
-     m_scaled_dithering != g_settings.gpu_scaled_dithering || m_texture_filtering != g_settings.gpu_texture_filter ||
-     m_using_uv_limits != use_uv_limits || m_chroma_smoothing != g_settings.gpu_24bit_chroma_smoothing ||
-     m_downsample_mode != downsample_mode || m_pgxp_depth_buffer != g_settings.UsingPGXPDepthBuffer());
+     rgb5a1_framebuffer != m_use_rgb5a1_framebuffer || g_settings.gpu_true_color != g_settings.gpu_true_color ||
+     m_per_sample_shading != per_sample_shading || m_scaled_dithering != g_settings.gpu_scaled_dithering ||
+     m_texture_filtering != g_settings.gpu_texture_filter || m_using_uv_limits != use_uv_limits ||
+     m_chroma_smoothing != g_settings.gpu_24bit_chroma_smoothing || m_downsample_mode != downsample_mode ||
+     m_pgxp_depth_buffer != g_settings.UsingPGXPDepthBuffer());
 
   if (m_resolution_scale != resolution_scale)
   {
@@ -167,6 +172,7 @@ void GPU_HW::UpdateHWSettings(bool* framebuffer_changed, bool* shaders_changed)
   m_resolution_scale = resolution_scale;
   m_multisamples = multisamples;
   m_per_sample_shading = per_sample_shading;
+  m_use_rgb5a1_framebuffer = rgb5a1_framebuffer;
   m_true_color = g_settings.gpu_true_color;
   m_scaled_dithering = g_settings.gpu_scaled_dithering;
   m_texture_filtering = g_settings.gpu_texture_filter;
@@ -246,6 +252,7 @@ void GPU_HW::PrintSettingsToLog()
   Log_InfoPrintf("Resolution Scale: %u (%ux%u), maximum %u", m_resolution_scale, VRAM_WIDTH * m_resolution_scale,
                  VRAM_HEIGHT * m_resolution_scale, m_max_resolution_scale);
   Log_InfoPrintf("Multisampling: %ux%s", m_multisamples, m_per_sample_shading ? " (per sample shading)" : "");
+  Log_InfoPrintf("Framebuffer format: %s", m_use_rgb5a1_framebuffer ? "RGB5A1" : "RGBA8");
   Log_InfoPrintf("Dithering: %s%s", m_true_color ? "Disabled" : "Enabled",
                  (!m_true_color && m_scaled_dithering) ? " (Scaled)" : "");
   Log_InfoPrintf("Texture Filtering: %s", Settings::GetTextureFilterDisplayName(m_texture_filtering));
