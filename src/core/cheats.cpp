@@ -46,7 +46,7 @@ static T DoMemoryRead(PhysicalMemoryAddress address)
   if ((address & CPU::DCACHE_LOCATION_MASK) == CPU::DCACHE_LOCATION &&
       (address & CPU::DCACHE_OFFSET_MASK) < CPU::DCACHE_SIZE)
   {
-    std::memcpy(&result, &CPU::g_state.dcache[address & CPU::DCACHE_OFFSET_MASK], sizeof(result));
+    std::memcpy(&result, &CPU::g_scratchpad[address & CPU::DCACHE_OFFSET_MASK], sizeof(result));
     return result;
   }
 
@@ -74,7 +74,7 @@ static void DoMemoryWrite(PhysicalMemoryAddress address, T value)
   if ((address & CPU::DCACHE_LOCATION_MASK) == CPU::DCACHE_LOCATION &&
       (address & CPU::DCACHE_OFFSET_MASK) < CPU::DCACHE_SIZE)
   {
-    std::memcpy(&CPU::g_state.dcache[address & CPU::DCACHE_OFFSET_MASK], &value, sizeof(value));
+    std::memcpy(&CPU::g_scratchpad[address & CPU::DCACHE_OFFSET_MASK], &value, sizeof(value));
     return;
   }
 

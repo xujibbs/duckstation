@@ -1203,9 +1203,10 @@ void CodeGenerator::EmitLoadGuestRAMFastmem(const Value& address, RegSize size, 
   }
 
   m_emit->lsr(GetHostReg32(RARG1), GetHostReg32(address_reg), 12);
-  m_emit->and_(GetHostReg32(RARG2), GetHostReg32(address_reg), HOST_PAGE_OFFSET_MASK);
+  m_emit->ubfx(GetHostReg32(RARG2), GetHostReg32(address_reg), 0, 12); // offset = addr & 0xfff
   m_emit->ldr(GetHostReg32(RARG1),
               a32::MemOperand(GetHostReg32(fastmem_base), GetHostReg32(RARG1), a32::LSL, 2)); // pointer load
+  m_emit->bic(GetHostReg32(RARG1), GetHostReg32(RARG1), 0xFF);                                // ptr &= ~cycles
 
   switch (size)
   {
@@ -1249,10 +1250,12 @@ void CodeGenerator::EmitLoadGuestMemoryFastmem(const CodeBlockInstruction& cbi, 
     address_reg = address.host_reg;
   }
 
-  m_emit->lsr(GetHostReg32(RARG1), GetHostReg32(address_reg), 12);
-  m_emit->and_(GetHostReg32(RARG2), GetHostReg32(address_reg), HOST_PAGE_OFFSET_MASK);
+  m_emit->lsr(GetHostReg32(RARG1), GetHostReg32(address_reg), 12);     // page = addr >> 12
+  m_emit->ubfx(GetHostReg32(RARG2), GetHostReg32(address_reg), 0, 12); // offset = addr & 0xfff
   m_emit->ldr(GetHostReg32(RARG1),
               a32::MemOperand(GetHostReg32(fastmem_base), GetHostReg32(RARG1), a32::LSL, 2)); // pointer load
+  m_emit->and_(GetHostReg32(RSCRATCH), GetHostReg32(RARG1), 0xFF);                            // scratch = ptr & cycles
+  m_emit->bic(GetHostReg32(RARG1), GetHostReg32(RARG1), 0xFF);                                // ptr &= ~cycles
 
   m_register_cache.InhibitAllocation();
   bpi.host_pc = GetCurrentNearCodePointer();
@@ -1285,15 +1288,7 @@ void CodeGenerator::EmitLoadGuestMemoryFastmem(const CodeBlockInstruction& cbi, 
   bpi.host_slowmem_pc = GetCurrentFarCodePointer();
   SwitchToFarCode();
 
-  // we add the ticks *after* the add here, since we counted incorrectly, then correct for it below
-  DebugAssert(m_delayed_cycles_add > 0);
-  EmitAddCPUStructField(offsetof(State, pending_ticks), Value::FromConstantU32(static_cast<u32>(m_delayed_cycles_add)));
-  m_delayed_cycles_add += Bus::RAM_READ_TICKS;
-
   EmitLoadGuestMemorySlowmem(cbi, address, size, result, true);
-
-  EmitAddCPUStructField(offsetof(State, pending_ticks),
-                        Value::FromConstantU32(static_cast<u32>(-m_delayed_cycles_add)));
 
   // restore fastmem base state for the next instruction
   if (old_store_fastmem_base)
@@ -1409,7 +1404,7 @@ void CodeGenerator::EmitStoreGuestMemoryFastmem(const CodeBlockInstruction& cbi,
   // TODO: if this gets backpatched, these instructions are wasted
 
   m_emit->lsr(GetHostReg32(RARG1), GetHostReg32(address_reg), 12);
-  m_emit->and_(GetHostReg32(RARG2), GetHostReg32(address_reg), HOST_PAGE_OFFSET_MASK);
+  m_emit->ubfx(GetHostReg32(RARG2), GetHostReg32(address_reg), 0, 12);
   m_emit->ldr(GetHostReg32(RARG1),
               a32::MemOperand(GetHostReg32(fastmem_base), GetHostReg32(RARG1), a32::LSL, 2)); // pointer load
 

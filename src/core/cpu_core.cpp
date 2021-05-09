@@ -25,6 +25,7 @@ static void Branch(u32 target);
 static void FlushPipeline();
 
 State g_state;
+alignas(HOST_PAGE_SIZE) std::array<u8, DCACHE_SIZE> g_scratchpad;
 bool g_using_interpreter = false;
 bool TRACE_EXECUTION = false;
 
@@ -164,7 +165,7 @@ bool DoState(StateWrapper& sw)
   sw.Do(&g_state.next_load_delay_reg);
   sw.Do(&g_state.next_load_delay_value);
   sw.Do(&g_state.cache_control.bits);
-  sw.DoBytes(g_state.dcache.data(), g_state.dcache.size());
+  sw.DoBytes(g_scratchpad.data(), g_scratchpad.size());
 
   if (!GTE::DoState(sw))
     return false;

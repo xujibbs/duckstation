@@ -1838,6 +1838,7 @@ void CodeGenerator::EmitLoadGuestRAMFastmem(const Value& address, RegSize size, 
     m_emit->shr(GetHostReg32(RARG1), 12);
     m_emit->and_(GetHostReg32(RARG2), HOST_PAGE_OFFSET_MASK);
     m_emit->mov(GetHostReg64(RARG1), m_emit->qword[GetFastmemBasePtrReg() + GetHostReg64(RARG1) * 8]);
+    m_emit->and_(GetHostReg64(RARG1), ~static_cast<u32>(HOST_PAGE_OFFSET_MASK));
 
     switch (size)
     {
@@ -1926,6 +1927,35 @@ void CodeGenerator::EmitLoadGuestMemoryFastmem(const CodeBlockInstruction& cbi, 
       }
       break;
     }
+
+    // insert nops, we need at least 5 bytes for a relative jump
+    const u32 fastmem_size =
+      static_cast<u32>(static_cast<u8*>(GetCurrentNearCodePointer()) - static_cast<u8*>(bpi.host_pc));
+    const u32 nops = (fastmem_size < 5 ? 5 - fastmem_size : 0);
+    for (u32 i = 0; i < nops; i++)
+      m_emit->nop();
+
+    bpi.host_code_size = static_cast<u32>(
+      static_cast<ptrdiff_t>(static_cast<u8*>(GetCurrentNearCodePointer()) - static_cast<u8*>(bpi.host_pc)));
+
+    // generate slowmem fallback
+    m_far_emitter.align(16);
+    bpi.host_slowmem_pc = GetCurrentFarCodePointer();
+    SwitchToFarCode();
+
+    // we add the ticks *after* the add here, since we counted incorrectly, then correct for it below
+    DebugAssert(m_delayed_cycles_add > 0);
+    EmitAddCPUStructField(offsetof(State, pending_ticks),
+                          Value::FromConstantU32(static_cast<u32>(m_delayed_cycles_add)));
+    m_delayed_cycles_add += Bus::RAM_READ_TICKS;
+
+    EmitLoadGuestMemorySlowmem(cbi, address, size, result, true);
+
+    EmitAddCPUStructField(offsetof(State, pending_ticks),
+                          Value::FromConstantU32(static_cast<u32>(-m_delayed_cycles_add)));
+
+    // return to the block code
+    m_emit->jmp(GetCurrentNearCodePointer());
   }
   else
   {
@@ -1937,6 +1967,9 @@ void CodeGenerator::EmitLoadGuestMemoryFastmem(const CodeBlockInstruction& cbi, 
     m_emit->shr(GetHostReg32(RARG1), 12);
     m_emit->and_(GetHostReg32(RARG2), HOST_PAGE_OFFSET_MASK);
     m_emit->mov(GetHostReg64(RARG1), m_emit->qword[GetFastmemBasePtrReg() + GetHostReg64(RARG1) * 8]);
+    m_emit->mov(GetHostReg32(RARG3), GetHostReg32(RARG1));
+    m_emit->and_(GetHostReg64(RARG1), ~static_cast<u32>(HOST_PAGE_OFFSET_MASK));
+    m_emit->and_(GetHostReg32(RARG3), static_cast<u32>(HOST_PAGE_OFFSET_MASK));
     bpi.host_pc = GetCurrentNearCodePointer();
 
     switch (size)
@@ -1953,35 +1986,29 @@ void CodeGenerator::EmitLoadGuestMemoryFastmem(const CodeBlockInstruction& cbi, 
         m_emit->mov(GetHostReg32(result.host_reg), m_emit->dword[GetHostReg64(RARG1) + GetHostReg64(RARG2)]);
         break;
     }
+
+    m_emit->add(m_emit->dword[GetHostReg64(RCPUPTR) + offsetof(State, pending_ticks)], GetHostReg32(RARG3));
+
+    // insert nops, we need at least 5 bytes for a relative jump
+    const u32 fastmem_size =
+      static_cast<u32>(static_cast<u8*>(GetCurrentNearCodePointer()) - static_cast<u8*>(bpi.host_pc));
+    const u32 nops = (fastmem_size < 5 ? 5 - fastmem_size : 0);
+    for (u32 i = 0; i < nops; i++)
+      m_emit->nop();
+
+    bpi.host_code_size = static_cast<u32>(
+      static_cast<ptrdiff_t>(static_cast<u8*>(GetCurrentNearCodePointer()) - static_cast<u8*>(bpi.host_pc)));
+
+    // generate slowmem fallback
+    m_far_emitter.align(16);
+    bpi.host_slowmem_pc = GetCurrentFarCodePointer();
+    SwitchToFarCode();
+
+    EmitLoadGuestMemorySlowmem(cbi, address, size, result, true);
+
+    // return to the block code
+    m_emit->jmp(GetCurrentNearCodePointer());
   }
-
-  // insert nops, we need at least 5 bytes for a relative jump
-  const u32 fastmem_size =
-    static_cast<u32>(static_cast<u8*>(GetCurrentNearCodePointer()) - static_cast<u8*>(bpi.host_pc));
-  const u32 nops = (fastmem_size < 5 ? 5 - fastmem_size : 0);
-  for (u32 i = 0; i < nops; i++)
-    m_emit->nop();
-
-  bpi.host_code_size = static_cast<u32>(
-    static_cast<ptrdiff_t>(static_cast<u8*>(GetCurrentNearCodePointer()) - static_cast<u8*>(bpi.host_pc)));
-
-  // generate slowmem fallback
-  m_far_emitter.align(16);
-  bpi.host_slowmem_pc = GetCurrentFarCodePointer();
-  SwitchToFarCode();
-
-  // we add the ticks *after* the add here, since we counted incorrectly, then correct for it below
-  DebugAssert(m_delayed_cycles_add > 0);
-  EmitAddCPUStructField(offsetof(State, pending_ticks), Value::FromConstantU32(static_cast<u32>(m_delayed_cycles_add)));
-  m_delayed_cycles_add += Bus::RAM_READ_TICKS;
-
-  EmitLoadGuestMemorySlowmem(cbi, address, size, result, true);
-
-  EmitAddCPUStructField(offsetof(State, pending_ticks),
-                        Value::FromConstantU32(static_cast<u32>(-m_delayed_cycles_add)));
-
-  // return to the block code
-  m_emit->jmp(GetCurrentNearCodePointer());
 
   SwitchToNearCode();
   m_register_cache.UninhibitAllocation();

@@ -81,7 +81,6 @@ struct State
   u8* fastmem_base = nullptr;
 
   // data cache (used as scratchpad)
-  std::array<u8, DCACHE_SIZE> dcache = {};
   std::array<u32, ICACHE_LINES> icache_tags = {};
   std::array<u8, ICACHE_SIZE> icache_data = {};
 
@@ -90,6 +89,7 @@ struct State
 };
 
 extern State g_state;
+extern std::array<u8, DCACHE_SIZE> g_scratchpad;
 extern bool g_using_interpreter;
 
 void Initialize();

@@ -2868,7 +2868,7 @@ CodeGenerator::SpeculativeValue CodeGenerator::SpeculativeReadMemory(VirtualMemo
   if ((phys_addr & DCACHE_LOCATION_MASK) == DCACHE_LOCATION)
   {
     u32 scratchpad_offset = phys_addr & DCACHE_OFFSET_MASK;
-    std::memcpy(&value, &CPU::g_state.dcache[scratchpad_offset], sizeof(value));
+    std::memcpy(&value, &CPU::g_scratchpad[scratchpad_offset], sizeof(value));
     return value;
   }
 
