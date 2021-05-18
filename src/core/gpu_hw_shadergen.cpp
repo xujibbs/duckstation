@@ -1100,15 +1100,8 @@ float3 SampleVRAM24Smoothed(uint2 icoords)
 {
   uint2 icoords = uint2(v_pos.xy) + uint2(u_crop_left, 0u);
 
-  #if INTERLACED
-    if ((fixYCoord(icoords.y) & 1u) != u_field_offset)
-      discard;
-
-    #if !INTERLEAVED
-      icoords.y /= 2u;
-    #else
-      icoords.y &= ~1u;
-    #endif
+  #if INTERLACED && INTERLEAVED
+    icoords.y *= 2u;
   #endif
 
   #if DEPTH_24BIT
@@ -1120,6 +1113,29 @@ float3 SampleVRAM24Smoothed(uint2 icoords)
   #else
     o_col0 = float4(LoadVRAM(int2((icoords + u_vram_offset) % VRAM_SIZE)).rgb, 1.0);
   #endif
+}
+)";
+
+  return ss.str();
+}
+
+std::string GPU_HW_ShaderGen::GenerateFieldBlendFragmentShader()
+{
+  std::stringstream ss;
+  WriteHeader(ss);
+
+  WriteCommonFunctions(ss);
+  DeclareTextureArray(ss, "samp0", 0);
+
+  DeclareFragmentEntryPoint(ss, 0, 1, {}, true, 1);
+  ss << R"(
+{
+  int2 icoords = int2(v_pos.xy);
+
+  float3 odd = LOAD_TEXTURE_ARRAY(samp0, icoords, 0, 0).rgb;
+  float3 even = LOAD_TEXTURE_ARRAY(samp0, icoords, 1, 0).rgb;
+
+  o_col0 = float4((odd + even) / 2.0, 1.0);
 }
 )";
 

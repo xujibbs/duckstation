@@ -281,6 +281,26 @@ bool GPU_HW_D3D11::CreateFramebuffer()
   if (FAILED(hr))
     return false;
 
+  if (!m_force_progressive_scan)
+  {
+    const CD3D11_TEXTURE2D_DESC texture_desc(texture_format, texture_width, texture_height, 2, 1,
+                                             D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE);
+    const CD3D11_SHADER_RESOURCE_VIEW_DESC srv_desc(D3D11_SRV_DIMENSION_TEXTURE2DARRAY, texture_format);
+    const CD3D11_RENDER_TARGET_VIEW_DESC odd_rtv_desc(D3D11_RTV_DIMENSION_TEXTURE2DARRAY, texture_format, 0, 0, 1);
+    const CD3D11_RENDER_TARGET_VIEW_DESC even_rtv_desc(D3D11_RTV_DIMENSION_TEXTURE2DARRAY, texture_format, 0, 1, 1);
+    if (FAILED(hr = m_device->CreateTexture2D(&texture_desc, nullptr, m_field_texture.ReleaseAndGetAddressOf())) ||
+        FAILED(hr = m_device->CreateShaderResourceView(m_field_texture.Get(), &srv_desc,
+                                                       m_field_texture_srv.ReleaseAndGetAddressOf())) ||
+        FAILED(hr = m_device->CreateRenderTargetView(m_field_texture.Get(), &odd_rtv_desc,
+                                                     m_field_texture_odd_rtv.ReleaseAndGetAddressOf())) ||
+        FAILED(hr = m_device->CreateRenderTargetView(m_field_texture.Get(), &even_rtv_desc,
+                                                     m_field_texture_even_rtv.ReleaseAndGetAddressOf())))
+
+    {
+      return false;
+    }
+  }
+
   if (m_downsample_mode == GPUDownsampleMode::Adaptive)
   {
     const u32 levels = GetAdaptiveDownsamplingMipLevels();
@@ -509,7 +529,7 @@ bool GPU_HW_D3D11::CompileShaders()
                              m_pgxp_depth_buffer, m_supports_dual_source_blend);
 
   Common::Timer compile_time;
-  const int progress_total = 1 + 1 + 2 + (4 * 9 * 2 * 2) + 7 + (2 * 3) + 1;
+  const int progress_total = 1 + 1 + 2 + (4 * 9 * 2 * 2) + 7 + (2 * 3) + 1 + 1;
   int progress_value = 0;
 #define UPDATE_PROGRESS()                                                                                              \
   do                                                                                                                   \
@@ -655,6 +675,11 @@ bool GPU_HW_D3D11::CompileShaders()
     }
   }
 
+  m_field_blend_pixel_shader =
+    shader_cache.GetPixelShader(m_device.Get(), shadergen.GenerateFieldBlendFragmentShader());
+  if (!m_field_blend_pixel_shader)
+    return false;
+
   UPDATE_PROGRESS();
 
   if (m_downsample_mode == GPUDownsampleMode::Adaptive)
@@ -695,6 +720,7 @@ void GPU_HW_D3D11::DestroyShaders()
   m_downsample_blur_pass_pixel_shader.Reset();
   m_downsample_mid_pass_pixel_shader.Reset();
   m_downsample_first_pass_pixel_shader.Reset();
+  m_field_blend_pixel_shader.Reset();
   m_display_pixel_shaders = {};
   m_vram_update_depth_pixel_shader.Reset();
   m_vram_copy_pixel_shader.Reset();
@@ -879,7 +905,7 @@ void GPU_HW_D3D11::UpdateDisplay()
     const u32 display_width = m_crtc_state.display_vram_width;
     const u32 display_height = m_crtc_state.display_vram_height;
     const u32 scaled_display_width = display_width * resolution_scale;
-    const u32 scaled_display_height = display_height * resolution_scale;
+    u32 scaled_display_height = display_height * resolution_scale;
     const InterlacedRenderMode interlaced = GetInterlacedRenderMode();
 
     if (IsDisplayDisabled())
@@ -905,8 +931,23 @@ void GPU_HW_D3D11::UpdateDisplay()
     }
     else
     {
+      if (interlaced != InterlacedRenderMode::None)
+      {
+        scaled_display_height /= 2;
+
+        m_context->OMSetRenderTargets(1,
+                                      GetInterlacedDisplayField() ? m_field_texture_even_rtv.GetAddressOf() :
+                                                                    m_field_texture_odd_rtv.GetAddressOf(),
+                                      nullptr);
+        SetViewportAndScissor(0, 0, scaled_display_width, scaled_display_height);
+      }
+      else
+      {
+        m_context->OMSetRenderTargets(1, m_display_texture.GetD3DRTVArray(), nullptr);
+        SetViewportAndScissor(0, 0, scaled_display_width, scaled_display_height);
+      }
+
       m_context->RSSetState(m_cull_none_rasterizer_state_no_msaa.Get());
-      m_context->OMSetRenderTargets(1, m_display_texture.GetD3DRTVArray(), nullptr);
       m_context->OMSetDepthStencilState(m_depth_disabled_state.Get(), 0);
       m_context->PSSetShaderResources(0, 1, m_vram_texture.GetD3DSRVArray());
 
@@ -933,6 +974,13 @@ void GPU_HW_D3D11::UpdateDisplay()
         m_host_display->SetDisplayTexture(m_display_texture.GetD3DSRV(), HostDisplayPixelFormat::RGBA8,
                                           m_display_texture.GetWidth(), m_display_texture.GetHeight(), 0, 0,
                                           scaled_display_width, scaled_display_height);
+      }
+
+      if (interlaced != InterlacedRenderMode::None)
+      {
+        m_context->OMSetRenderTargets(1, m_display_texture.GetD3DRTVArray(), nullptr);
+        m_context->PSSetShaderResources(0, 1, m_field_texture_srv.GetAddressOf());
+        DrawUtilityShader(m_field_blend_pixel_shader.Get(), nullptr, 0);
       }
 
       RestoreGraphicsAPIState();

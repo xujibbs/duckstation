@@ -88,6 +88,11 @@ private:
   D3D11::Texture m_vram_read_texture;
   D3D11::Texture m_vram_encoding_texture;
   D3D11::Texture m_display_texture;
+  ComPtr<ID3D11Texture2D> m_field_texture;
+  ComPtr<ID3D11ShaderResourceView> m_field_texture_srv;
+  ComPtr<ID3D11RenderTargetView> m_field_texture_odd_rtv;
+  ComPtr<ID3D11RenderTargetView> m_field_texture_even_rtv;
+
 
   D3D11::StreamBuffer m_vertex_stream_buffer;
 
@@ -130,6 +135,7 @@ private:
   ComPtr<ID3D11PixelShader> m_vram_copy_pixel_shader;
   ComPtr<ID3D11PixelShader> m_vram_update_depth_pixel_shader;
   std::array<std::array<ComPtr<ID3D11PixelShader>, 3>, 2> m_display_pixel_shaders; // [depth_24][interlaced]
+  ComPtr<ID3D11PixelShader> m_field_blend_pixel_shader;
 
   D3D11::Texture m_vram_replacement_texture;
 
