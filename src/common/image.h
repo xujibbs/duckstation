@@ -14,6 +14,11 @@ class Image
 {
 public:
   Image() = default;
+  Image(u32 width, u32 height)
+  {
+    SetSize(width, height);
+    Clear();
+  }
   Image(u32 width, u32 height, const PixelType* pixels) { SetPixels(width, height, pixels); }
   Image(const Image& copy)
   {
@@ -58,6 +63,11 @@ public:
   ALWAYS_INLINE void SetPixel(u32 x, u32 y, PixelType pixel) { m_pixels[y * m_width + x] = pixel; }
   ALWAYS_INLINE PixelType GetPixel(u32 x, u32 y) const { return m_pixels[y * m_width + x]; }
 
+  ALWAYS_INLINE typename std::vector<PixelType>::const_iterator begin() const { return m_pixels.begin(); }
+  ALWAYS_INLINE typename std::vector<PixelType>::const_iterator end() const { return m_pixels.end(); }
+  ALWAYS_INLINE typename std::vector<PixelType>::iterator begin() { return m_pixels.begin(); }
+  ALWAYS_INLINE typename std::vector<PixelType>::iterator end() { return m_pixels.end(); }
+
   void Clear(PixelType fill_value = static_cast<PixelType>(0))
   {
     std::fill(m_pixels.begin(), m_pixels.end(), fill_value);
@@ -86,6 +96,15 @@ public:
     std::memcpy(m_pixels.data(), pixels, width * height * sizeof(PixelType));
   }
 
+  void SetPixels(u32 width, u32 height, std::vector<PixelType> pixels)
+  {
+    Assert(pixels.size() == width * height);
+
+    m_width = width;
+    m_height = height;
+    m_pixels = std::move(pixels);
+  }
+
 private:
   u32 m_width = 0;
   u32 m_height = 0;
@@ -98,5 +117,7 @@ bool LoadImageFromFile(Common::RGBA8Image* image, const char* filename);
 bool LoadImageFromBuffer(Common::RGBA8Image* image, const void* buffer, std::size_t buffer_size);
 bool LoadImageFromStream(Common::RGBA8Image* image, ByteStream* stream);
 bool WriteImageToFile(const Common::RGBA8Image& image, const char* filename);
+void ResizeImage(RGBA8Image* image, u32 new_width, u32 new_height);
+void ResizeImage(RGBA8Image* dst_image, const RGBA8Image* src_image, u32 new_width, u32 new_height);
 
 } // namespace Common

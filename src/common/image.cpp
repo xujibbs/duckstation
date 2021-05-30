@@ -3,6 +3,7 @@
 #include "file_system.h"
 #include "log.h"
 #include "stb_image.h"
+#include "stb_image_resize.h"
 #include "stb_image_write.h"
 #include "string_util.h"
 Log_SetChannel(Common::Image);
@@ -119,6 +120,43 @@ bool WriteImageToFile(const RGBA8Image& image, const char* filename)
   }
 
   return true;
+}
+
+void ResizeImage(RGBA8Image* image, u32 new_width, u32 new_height)
+{
+  if (image->GetWidth() == new_width && image->GetHeight() == new_height)
+    return;
+
+  std::vector<u32> resized_texture_data(new_width * new_height);
+  u32 resized_texture_stride = sizeof(u32) * new_width;
+  if (!stbir_resize_uint8(reinterpret_cast<u8*>(image->GetPixels()), image->GetWidth(), image->GetHeight(),
+                          image->GetByteStride(), reinterpret_cast<u8*>(resized_texture_data.data()), new_width,
+                          new_height, resized_texture_stride, 4))
+  {
+    Panic("stbir_resize_uint8 failed");
+    return;
+  }
+
+  image->SetPixels(new_width, new_height, std::move(resized_texture_data));
+}
+
+void ResizeImage(RGBA8Image* dst_image, const RGBA8Image* src_image, u32 new_width, u32 new_height)
+{
+  if (src_image->GetWidth() == new_width && src_image->GetHeight() == new_height)
+  {
+    dst_image->SetPixels(src_image->GetWidth(), src_image->GetHeight(), src_image->GetPixels());
+    return;
+  }
+
+  dst_image->SetSize(new_width, new_height);
+  if (!stbir_resize_uint8(reinterpret_cast<const u8*>(src_image->GetPixels()), src_image->GetWidth(),
+                          src_image->GetHeight(), src_image->GetByteStride(),
+                          reinterpret_cast<u8*>(dst_image->GetPixels()), dst_image->GetWidth(), dst_image->GetHeight(),
+                          dst_image->GetByteStride(), 4))
+  {
+    Panic("stbir_resize_uint8 failed");
+    return;
+  }
 }
 
 } // namespace Common
