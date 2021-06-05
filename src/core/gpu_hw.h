@@ -33,12 +33,18 @@ public:
   GPU_HW();
   virtual ~GPU_HW();
 
+  ALWAYS_INLINE bool IsTextureReplacementEnabled() const { return m_texture_replacements; }
+
   virtual bool Initialize(HostDisplay* host_display) override;
   virtual void Reset(bool clear_vram) override;
   virtual bool DoState(StateWrapper& sw, HostDisplayTexture** host_texture, bool update_display) override;
 
   void UpdateResolutionScale() override final;
   std::tuple<u32, u32> GetEffectiveDisplayResolution() override final;
+
+  virtual void UploadTextureReplacement(u32 page_index, u32 page_x, u32 page_y, u32 data_width, u32 data_height,
+                                        const void* data, u32 data_stride) = 0;
+  virtual void InvalidateTextureReplacements() = 0;
 
 protected:
   enum : u32
@@ -202,6 +208,7 @@ protected:
   virtual void UnmapBatchVertexPointer(u32 used_vertices) = 0;
   virtual void UploadUniformBuffer(const void* uniforms, u32 uniforms_size) = 0;
   virtual void DrawBatchVertices(BatchRenderMode render_mode, u32 base_vertex, u32 num_vertices) = 0;
+  virtual bool SetupTextureReplacementTexture() = 0;
 
   u32 CalculateResolutionScale() const;
   GPUDownsampleMode GetDownsampleMode(u32 resolution_scale) const;
@@ -210,6 +217,11 @@ protected:
   ALWAYS_INLINE bool IsUsingDownsampling() const
   {
     return (m_downsample_mode != GPUDownsampleMode::Disabled && !m_GPUSTAT.display_area_color_depth_24);
+  }
+
+  ALWAYS_INLINE bool IsFullVRAMUpload(u32 x, u32 y, u32 width, u32 height)
+  {
+    return (x == 0 && y == 0 && width == VRAM_WIDTH && height == VRAM_HEIGHT);
   }
 
   void SetFullVRAMDirtyRectangle()
@@ -374,6 +386,7 @@ protected:
     BitField<u8, bool, 3, 1> m_per_sample_shading;
     BitField<u8, bool, 4, 1> m_scaled_dithering;
     BitField<u8, bool, 5, 1> m_chroma_smoothing;
+    BitField<u8, bool, 6, 1> m_texture_replacements;
 
     u8 bits = 0;
   };

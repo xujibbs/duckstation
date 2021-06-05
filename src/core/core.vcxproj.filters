@@ -59,6 +59,7 @@
     <ClCompile Include="gdb_protocol.h" />
     <ClCompile Include="multitap.cpp" />
     <ClCompile Include="gpu_hw_d3d12.cpp" />
+    <ClCompile Include="texture_dumper.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="types.h" />
@@ -120,5 +121,6 @@
     <ClInclude Include="shader_cache_version.h" />
     <ClInclude Include="multitap.h" />
     <ClInclude Include="gpu_hw_d3d12.h" />
+    <ClInclude Include="texture_dumper.h" />
   </ItemGroup>
 </Project>

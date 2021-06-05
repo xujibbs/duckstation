@@ -197,18 +197,35 @@ struct Settings
   struct TextureReplacementSettings
   {
     bool enable_vram_write_replacements = false;
+    bool enable_texture_replacements = false;
     bool preload_textures = false;
 
     bool dump_vram_writes = false;
     bool dump_vram_write_force_alpha_channel = true;
+
+    bool dump_textures = false;
+    bool dump_textures_by_vram_write = false;
+    bool dump_textures_by_palette = false;
+    bool dump_textures_force_alpha_channel = false;
+
+    u32 replacement_texture_scale = 0;
+
     u32 dump_vram_write_width_threshold = 128;
     u32 dump_vram_write_height_threshold = 128;
 
-    ALWAYS_INLINE bool AnyReplacementsEnabled() const { return enable_vram_write_replacements; }
+    u32 dump_textures_max_merge_width = 256;
+    u32 dump_textures_max_merge_height = 256;
+    u32 dump_textures_max_mergee_width = 256;
+    u32 dump_textures_max_mergee_height = 1;
 
-    ALWAYS_INLINE bool ShouldDumpVRAMWrite(u32 width, u32 height)
+    ALWAYS_INLINE bool AnyReplacementsEnabled() const
     {
-      return dump_vram_writes && width >= dump_vram_write_width_threshold && height >= dump_vram_write_height_threshold;
+      return enable_vram_write_replacements || enable_texture_replacements;
+    }
+    ALWAYS_INLINE bool IsAnyDumpingEnabled() const { return dump_vram_writes || dump_textures; }
+    ALWAYS_INLINE void UpdateTextureDumpingEnabled()
+    {
+      dump_textures = dump_textures_by_vram_write || dump_textures_by_palette;
     }
   } texture_replacements;
 
@@ -287,6 +304,10 @@ struct Settings
     DEFAULT_GPU_MAX_RUN_AHEAD = 128,
     DEFAULT_VRAM_WRITE_DUMP_WIDTH_THRESHOLD = 128,
     DEFAULT_VRAM_WRITE_DUMP_HEIGHT_THRESHOLD = 128,
+    DEFAULT_TEXTURE_DUMP_MAX_MERGE_WIDTH = 256,
+    DEFAULT_TEXTURE_DUMP_MAX_MERGE_HEIGHT = 256,
+    DEFAULT_TEXTURE_DUMP_MAX_MERGEE_WIDTH = 256,
+    DEFAULT_TEXTURE_DUMP_MAX_MERGEE_HEIGHT = 1,
   };
 
   void Load(SettingsInterface& si);

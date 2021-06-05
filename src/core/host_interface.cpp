@@ -18,6 +18,7 @@
 #include "save_state_version.h"
 #include "spu.h"
 #include "system.h"
+#include "texture_dumper.h"
 #include "texture_replacements.h"
 #include <cmath>
 #include <cstring>
@@ -627,6 +628,27 @@ void HostInterface::SetDefaultSettings(SettingsInterface& si)
   si.SetIntValue("Hacks", "DMAHaltTicks", static_cast<int>(Settings::DEFAULT_DMA_HALT_TICKS));
   si.SetIntValue("Hacks", "GPUFIFOSize", static_cast<int>(Settings::DEFAULT_GPU_FIFO_SIZE));
   si.SetIntValue("Hacks", "GPUMaxRunAhead", static_cast<int>(Settings::DEFAULT_GPU_MAX_RUN_AHEAD));
+
+  si.SetBoolValue("TextureReplacements", "EnableVRAMWriteReplacements", false);
+  si.SetBoolValue("TextureReplacements", "EnableTextureReplacements", false);
+  si.SetBoolValue("TextureReplacements", "PreloadTextures", false);
+  si.SetIntValue("TextureReplacements", "TextureReplacementScale", 0);
+
+  si.SetBoolValue("TextureReplacements", "DumpVRAMWrites", false);
+  si.SetBoolValue("TextureReplacements", "DumpVRAMWriteForceAlphaChannel", true);
+  si.SetIntValue("TextureReplacements", "DumpVRAMWriteWidthThreshold",
+                 Settings::DEFAULT_VRAM_WRITE_DUMP_WIDTH_THRESHOLD);
+  si.SetIntValue("TextureReplacements", "DumpVRAMWriteHeightThreshold",
+                 Settings::DEFAULT_VRAM_WRITE_DUMP_HEIGHT_THRESHOLD);
+
+  si.SetBoolValue("TextureReplacements", "DumpTexturesByVRAMWrite", false);
+  si.SetBoolValue("TextureReplacements", "DumpTexturesByPalette", false);
+  si.SetBoolValue("TextureReplacements", "DumpTexturesForceAlphaChannel", false);
+  si.SetIntValue("TextureReplacements", "DumpTexturesMaxMergeWidth", Settings::DEFAULT_TEXTURE_DUMP_MAX_MERGE_WIDTH);
+  si.SetIntValue("TextureReplacements", "DumpTexturesMaxMergeHeight", Settings::DEFAULT_TEXTURE_DUMP_MAX_MERGE_HEIGHT);
+  si.SetIntValue("TextureReplacements", "DumpTexturesMaxMergeeWidth", Settings::DEFAULT_TEXTURE_DUMP_MAX_MERGEE_WIDTH);
+  si.SetIntValue("TextureReplacements", "DumpTexturesMaxMergeeHeight",
+                 Settings::DEFAULT_TEXTURE_DUMP_MAX_MERGEE_HEIGHT);
 }
 
 void HostInterface::LoadSettings(SettingsInterface& si)
@@ -712,6 +734,13 @@ void HostInterface::FixIncompatibleSettings(bool display_osd_messages)
   {
     Log_WarningPrintf("Rewind disabled due to runahead being enabled");
     g_settings.rewind_enable = false;
+  }
+
+  if (g_settings.IsUsingSoftwareRenderer() && g_settings.texture_replacements.IsAnyDumpingEnabled())
+  {
+    Log_WarningPrintf("Disabling texture dumping because of software renderer");
+    g_settings.texture_replacements.dump_vram_writes = false;
+    g_settings.texture_replacements.dump_textures = false;
   }
 }
 
@@ -809,7 +838,12 @@ void HostInterface::CheckForSettingsChanges(const Settings& old_settings)
         g_settings.display_line_start_offset != old_settings.display_line_start_offset ||
         g_settings.display_line_end_offset != old_settings.display_line_end_offset ||
         g_settings.rewind_enable != old_settings.rewind_enable ||
-        g_settings.runahead_frames != old_settings.runahead_frames)
+        g_settings.runahead_frames != old_settings.runahead_frames ||
+        g_settings.texture_replacements.enable_texture_replacements !=
+          old_settings.texture_replacements.enable_texture_replacements ||
+        (g_settings.texture_replacements.enable_texture_replacements &&
+         g_settings.texture_replacements.replacement_texture_scale !=
+           old_settings.texture_replacements.replacement_texture_scale))
     {
       g_gpu->UpdateSettings();
       OnDisplayInvalidated();
@@ -867,9 +901,17 @@ void HostInterface::CheckForSettingsChanges(const Settings& old_settings)
 
     if (g_settings.texture_replacements.enable_vram_write_replacements !=
           old_settings.texture_replacements.enable_vram_write_replacements ||
+        g_settings.texture_replacements.enable_texture_replacements !=
+          old_settings.texture_replacements.enable_texture_replacements ||
         g_settings.texture_replacements.preload_textures != old_settings.texture_replacements.preload_textures)
     {
       g_texture_replacements.Reload();
+    }
+
+    if (g_settings.texture_replacements.IsAnyDumpingEnabled() !=
+        old_settings.texture_replacements.IsAnyDumpingEnabled())
+    {
+      TextureDumper::ClearState();
     }
 
     g_dma.SetMaxSliceTicks(g_settings.dma_max_slice_ticks);

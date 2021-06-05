@@ -2572,12 +2572,14 @@ void DrawSettingsWindow()
                                          &s_settings_copy.texture_replacements.preload_textures,
                                          s_settings_copy.texture_replacements.AnyReplacementsEnabled());
         settings_changed |=
-          ToggleButton("Dump Replacable VRAM Writes", "Writes textures which can be replaced to the dump directory.",
+          ToggleButton("Dump Backgrounds", "",
                        &s_settings_copy.texture_replacements.dump_vram_writes);
+        settings_changed |=
+          ToggleButton("Dump Textures", "", &s_settings_copy.texture_replacements.dump_textures);
         settings_changed |=
           ToggleButton("Set VRAM Write Dump Alpha Channel", "Clears the mask/transparency bit in VRAM write dumps.",
                        &s_settings_copy.texture_replacements.dump_vram_write_force_alpha_channel,
-                       s_settings_copy.texture_replacements.dump_vram_writes);
+                       s_settings_copy.texture_replacements.IsAnyDumpingEnabled());
 
         MenuHeading("CPU Emulation");
 

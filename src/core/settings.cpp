@@ -323,14 +323,37 @@ void Settings::Load(SettingsInterface& si)
 
   texture_replacements.enable_vram_write_replacements =
     si.GetBoolValue("TextureReplacements", "EnableVRAMWriteReplacements", false);
+  texture_replacements.enable_texture_replacements =
+    si.GetBoolValue("TextureReplacements", "EnableTextureReplacements", false);
   texture_replacements.preload_textures = si.GetBoolValue("TextureReplacements", "PreloadTextures", false);
+  texture_replacements.replacement_texture_scale =
+    static_cast<u32>(si.GetIntValue("TextureReplacements", "TextureReplacementScale", 0));
+  if (texture_replacements.replacement_texture_scale == 0)
+    texture_replacements.replacement_texture_scale = gpu_resolution_scale;
+
   texture_replacements.dump_vram_writes = si.GetBoolValue("TextureReplacements", "DumpVRAMWrites", false);
   texture_replacements.dump_vram_write_force_alpha_channel =
     si.GetBoolValue("TextureReplacements", "DumpVRAMWriteForceAlphaChannel", true);
   texture_replacements.dump_vram_write_width_threshold =
-    si.GetIntValue("TextureReplacements", "DumpVRAMWriteWidthThreshold", 128);
+    si.GetIntValue("TextureReplacements", "DumpVRAMWriteWidthThreshold", DEFAULT_VRAM_WRITE_DUMP_WIDTH_THRESHOLD);
   texture_replacements.dump_vram_write_height_threshold =
-    si.GetIntValue("TextureReplacements", "DumpVRAMWriteHeightThreshold", 128);
+    si.GetIntValue("TextureReplacements", "DumpVRAMWriteHeightThreshold", DEFAULT_VRAM_WRITE_DUMP_HEIGHT_THRESHOLD);
+
+  texture_replacements.dump_textures_by_vram_write =
+    si.GetBoolValue("TextureReplacements", "DumpTexturesByVRAMWrite", false);
+  texture_replacements.dump_textures_by_palette =
+    si.GetBoolValue("TextureReplacements", "DumpTexturesByPalette", false);
+  texture_replacements.dump_textures_force_alpha_channel =
+    si.GetBoolValue("TextureReplacements", "DumpTexturesForceAlphaChannel", false);
+  texture_replacements.dump_textures_max_merge_width =
+    si.GetIntValue("TextureReplacements", "DumpTexturesMaxMergeWidth", DEFAULT_TEXTURE_DUMP_MAX_MERGE_WIDTH);
+  texture_replacements.dump_textures_max_merge_height =
+    si.GetIntValue("TextureReplacements", "DumpTexturesMaxMergeHeight", DEFAULT_TEXTURE_DUMP_MAX_MERGE_HEIGHT);
+  texture_replacements.dump_textures_max_mergee_width =
+    si.GetIntValue("TextureReplacements", "DumpTexturesMaxMergeeWidth", DEFAULT_TEXTURE_DUMP_MAX_MERGEE_WIDTH);
+  texture_replacements.dump_textures_max_mergee_height =
+    si.GetIntValue("TextureReplacements", "DumpTexturesMaxMergeeHeight", DEFAULT_TEXTURE_DUMP_MAX_MERGEE_HEIGHT);
+  texture_replacements.UpdateTextureDumpingEnabled();
 }
 
 void Settings::Save(SettingsInterface& si) const
@@ -490,7 +513,10 @@ void Settings::Save(SettingsInterface& si) const
 
   si.SetBoolValue("TextureReplacements", "EnableVRAMWriteReplacements",
                   texture_replacements.enable_vram_write_replacements);
+  si.SetBoolValue("TextureReplacements", "EnableTextureReplacements", texture_replacements.enable_texture_replacements);
   si.SetBoolValue("TextureReplacements", "PreloadTextures", texture_replacements.preload_textures);
+  si.SetIntValue("TextureReplacements", "TextureReplacementScale", texture_replacements.replacement_texture_scale);
+
   si.SetBoolValue("TextureReplacements", "DumpVRAMWrites", texture_replacements.dump_vram_writes);
   si.SetBoolValue("TextureReplacements", "DumpVRAMWriteForceAlphaChannel",
                   texture_replacements.dump_vram_write_force_alpha_channel);
@@ -498,6 +524,19 @@ void Settings::Save(SettingsInterface& si) const
                  texture_replacements.dump_vram_write_width_threshold);
   si.SetIntValue("TextureReplacements", "DumpVRAMWriteHeightThreshold",
                  texture_replacements.dump_vram_write_height_threshold);
+
+  si.SetBoolValue("TextureReplacements", "DumpTexturesByVRAMWrite", texture_replacements.dump_textures_by_vram_write);
+  si.SetBoolValue("TextureReplacements", "DumpTexturesByPalette", texture_replacements.dump_textures_by_palette);
+  si.SetBoolValue("TextureReplacements", "DumpTexturesForceAlphaChannel",
+                  texture_replacements.dump_textures_force_alpha_channel);
+  si.SetIntValue("TextureReplacements", "DumpTexturesMaxMergeWidth",
+                 texture_replacements.dump_textures_max_merge_width);
+  si.SetIntValue("TextureReplacements", "DumpTexturesMaxMergeHeight",
+                 texture_replacements.dump_textures_max_merge_height);
+  si.SetIntValue("TextureReplacements", "DumpTexturesMaxMergeeWidth",
+                 texture_replacements.dump_textures_max_mergee_width);
+  si.SetIntValue("TextureReplacements", "DumpTexturesMaxMergeeHeight",
+                 texture_replacements.dump_textures_max_mergee_height);
 }
 
 static std::array<const char*, LOGLEVEL_COUNT> s_log_level_names = {
