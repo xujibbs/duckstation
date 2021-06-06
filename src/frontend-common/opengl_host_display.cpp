@@ -82,7 +82,7 @@ std::unique_ptr<HostDisplayTexture> OpenGLHostDisplay::CreateTexture(u32 width, 
   Assert(!data || data_stride == (width * sizeof(u32)));
 
   GL::Texture tex;
-  if (!tex.Create(width, height, samples, gl_internal_format, gl_format, gl_type, data, data_stride))
+  if (!tex.Create(width, height, layers, levels, samples, gl_internal_format, gl_format, gl_type, data, data_stride))
     return {};
 
   return std::make_unique<OpenGLHostDisplayTexture>(std::move(tex), format);
@@ -750,8 +750,11 @@ bool OpenGLHostDisplay::RenderScreenshot(u32 width, u32 height, std::vector<u32>
                                          HostDisplayPixelFormat* out_format)
 {
   GL::Texture texture;
-  if (!texture.Create(width, height, 1, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, nullptr) || !texture.CreateFramebuffer())
+  if (!texture.Create(width, height, 1, 1, 1, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, nullptr) ||
+      !texture.CreateFramebuffer())
+  {
     return false;
+  }
 
   glDisable(GL_SCISSOR_TEST);
   texture.BindFramebuffer(GL_FRAMEBUFFER);
@@ -989,7 +992,8 @@ bool OpenGLHostDisplay::CheckPostProcessingRenderTargets(u32 target_width, u32 t
   if (m_post_processing_input_texture.GetWidth() != target_width ||
       m_post_processing_input_texture.GetHeight() != target_height)
   {
-    if (!m_post_processing_input_texture.Create(target_width, target_height, 1, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE) ||
+    if (!m_post_processing_input_texture.Create(target_width, target_height, 1, 1, 1, GL_RGBA8, GL_RGBA,
+                                                GL_UNSIGNED_BYTE) ||
         !m_post_processing_input_texture.CreateFramebuffer())
     {
       return false;
@@ -1002,7 +1006,7 @@ bool OpenGLHostDisplay::CheckPostProcessingRenderTargets(u32 target_width, u32 t
     PostProcessingStage& pps = m_post_processing_stages[i];
     if (pps.output_texture.GetWidth() != target_width || pps.output_texture.GetHeight() != target_height)
     {
-      if (!pps.output_texture.Create(target_width, target_height, 1, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE) ||
+      if (!pps.output_texture.Create(target_width, target_height, 1, 1, 1, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE) ||
           !pps.output_texture.CreateFramebuffer())
       {
         return false;
