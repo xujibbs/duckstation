@@ -859,16 +859,16 @@ bool GPU_HW_Vulkan::CompilePipelines()
 
   // vertex shaders - [textured]
   // fragment shaders - [render_mode][texture_mode][dithering][interlacing]
-  DimensionalArray<VkShaderModule, 2> batch_vertex_shaders{};
+  DimensionalArray<VkShaderModule, 3> batch_vertex_shaders{};
   DimensionalArray<VkShaderModule, 2, 2, 9, 4> batch_fragment_shaders{};
   Common::ScopeGuard batch_shader_guard([&batch_vertex_shaders, &batch_fragment_shaders]() {
     batch_vertex_shaders.enumerate(Vulkan::Util::SafeDestroyShaderModule);
     batch_fragment_shaders.enumerate(Vulkan::Util::SafeDestroyShaderModule);
   });
 
-  for (u8 textured = 0; textured < 2; textured++)
+  for (u8 textured = 0; textured < 3; textured++)
   {
-    const std::string vs = shadergen.GenerateBatchVertexShader(ConvertToBoolUnchecked(textured));
+    const std::string vs = shadergen.GenerateBatchVertexShader(textured != 0, textured > 1);
     VkShaderModule shader = g_vulkan_shader_cache->GetVertexShader(vs);
     if (shader == VK_NULL_HANDLE)
       return false;
@@ -918,6 +918,8 @@ bool GPU_HW_Vulkan::CompilePipelines()
               static constexpr std::array<VkCompareOp, 3> depth_test_values = {
                 VK_COMPARE_OP_ALWAYS, VK_COMPARE_OP_GREATER_OR_EQUAL, VK_COMPARE_OP_LESS_OR_EQUAL};
               const bool textured = (static_cast<GPUTextureMode>(texture_mode) != GPUTextureMode::Disabled);
+              const bool paletted =
+                textured && (static_cast<GPUTextureMode>(texture_mode & 3u) <= GPUTextureMode::Palette8Bit);
 
               gpbuilder.SetPipelineLayout(m_batch_pipeline_layout);
               gpbuilder.SetRenderPass(m_vram_render_pass, 0);
@@ -934,7 +936,7 @@ bool GPU_HW_Vulkan::CompilePipelines()
               }
 
               gpbuilder.SetPrimitiveTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-              gpbuilder.SetVertexShader(batch_vertex_shaders[BoolToUInt8(textured)]);
+              gpbuilder.SetVertexShader(batch_vertex_shaders[BoolToUInt8(textured) + BoolToUInt8(paletted)]);
               gpbuilder.SetFragmentShader(batch_fragment_shaders[render_mode][texture_mode][dithering][interlacing]);
 
               gpbuilder.SetRasterizationState(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);

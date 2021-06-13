@@ -23,6 +23,8 @@ void GPU_HW_ShaderGen::WriteCommonFunctions(std::stringstream& ss)
   ss << "CONSTANT uint RESOLUTION_SCALE = " << m_resolution_scale << "u;\n";
   ss << "CONSTANT uint2 VRAM_SIZE = uint2(" << VRAM_WIDTH << ", " << VRAM_HEIGHT << ") * RESOLUTION_SCALE;\n";
   ss << "CONSTANT float2 RCP_VRAM_SIZE = float2(1.0, 1.0) / float2(VRAM_SIZE);\n";
+  ss << "CONSTANT uint2 NATIVE_VRAM_SIZE = uint2(" << VRAM_WIDTH << ", " << VRAM_HEIGHT << ");\n";
+  ss << "CONSTANT float2 RCP_NATIVE_VRAM_SIZE = float2(1.0, 1.0) / float2(NATIVE_VRAM_SIZE);\n";
   ss << "CONSTANT uint MULTISAMPLES = " << m_multisamples << "u;\n";
   ss << "CONSTANT bool PER_SAMPLE_SHADING = " << (m_per_sample_shading ? "true" : "false") << ";\n";
   ss << R"(
@@ -40,6 +42,15 @@ uint fixYCoord(uint y)
 {
 #if API_OPENGL || API_OPENGL_ES
   return VRAM_SIZE.y - y - 1u;
+#else
+  return y;
+#endif
+}
+
+uint fixNativeYCoord(uint y)
+{
+#if API_OPENGL || API_OPENGL_ES
+  return NATIVE_VRAM_SIZE.y - y - 1u;
 #else
   return y;
 #endif
@@ -75,11 +86,12 @@ void GPU_HW_ShaderGen::WriteBatchUniformBuffer(std::stringstream& ss)
                        false);
 }
 
-std::string GPU_HW_ShaderGen::GenerateBatchVertexShader(bool textured)
+std::string GPU_HW_ShaderGen::GenerateBatchVertexShader(bool textured, bool palette)
 {
   std::stringstream ss;
   WriteHeader(ss);
   DefineMacro(ss, "TEXTURED", textured);
+  DefineMacro(ss, "PALETTE", palette);
   DefineMacro(ss, "UV_LIMITS", m_uv_limits);
   DefineMacro(ss, "PGXP_DEPTH", m_pgxp_depth);
 
@@ -159,21 +171,41 @@ std::string GPU_HW_ShaderGen::GenerateBatchVertexShader(bool textured)
 
   v_pos = float4(pos_x * pos_w, pos_y * pos_w, pos_z * pos_w, pos_w);
 
-  v_col0 = a_col0;
+  v_col0 = a_col0 * float4(255.0, 255.0, 255.0, 255.0);
   #if TEXTURED
-    v_tex0 = float2(float((a_texcoord & 0xFFFFu) * RESOLUTION_SCALE),
-                    float((a_texcoord >> 16) * RESOLUTION_SCALE));
+    #if PALETTE
+      // We can't currently use upscaled coordinate for palettes because of how they're packed.
+      // Not that it would be any benefit anyway, render-to-texture effects don't use palettes.
+      v_tex0 = float2(float(a_texcoord & 0xFFFFu), float((a_texcoord >> 16)));
 
-    // base_x,base_y,palette_x,palette_y
-    v_texpage.x = (a_texpage & 15u) * 64u * RESOLUTION_SCALE;
-    v_texpage.y = ((a_texpage >> 4) & 1u) * 256u * RESOLUTION_SCALE;
-    v_texpage.z = ((a_texpage >> 16) & 63u) * 16u * RESOLUTION_SCALE;
-    v_texpage.w = ((a_texpage >> 22) & 511u) * RESOLUTION_SCALE;
+      // base_x,base_y,palette_x,palette_y
+      v_texpage.x = (a_texpage & 15u) * 64u;
+      v_texpage.y = ((a_texpage >> 4) & 1u) * 256u;
+      v_texpage.z = ((a_texpage >> 16) & 63u) * 16u;
+      v_texpage.w = ((a_texpage >> 22) & 511u);
 
-    #if UV_LIMITS
-      v_uv_limits = a_uv_limits * float4(255.0, 255.0, 255.0, 255.0);
-    #endif
-  #endif
+      #if UV_LIMITS
+        v_uv_limits = a_uv_limits * float4(255.0, 255.0, 255.0, 255.0);
+      #endif
+    #else
+      v_tex0 = float2(float((a_texcoord & 0xFFFFu) * RESOLUTION_SCALE),
+                      float((a_texcoord >> 16) * RESOLUTION_SCALE));
+
+      // base_x,base_y,palette_x,palette_y
+      v_texpage.x = (a_texpage & 15u) * 64u * RESOLUTION_SCALE;
+      v_texpage.y = ((a_texpage >> 4) & 1u) * 256u * RESOLUTION_SCALE;
+      v_texpage.z = ((a_texpage >> 16) & 63u) * 16u * RESOLUTION_SCALE;
+      v_texpage.w = ((a_texpage >> 22) & 511u) * RESOLUTION_SCALE;
+
+      #if UV_LIMITS
+        // Extend the UV range to all "upscaled" pixels. This means 1-pixel-high polygon-based
+        // framebuffer effects won't be downsampled. (e.g. Mega Man Legends 2 haze effect)
+        v_uv_limits = a_uv_limits * float4(255.0, 255.0, 255.0, 255.0);
+        v_uv_limits.xy *= float(RESOLUTION_SCALE);
+        v_uv_limits.zw = (v_uv_limits.zw * float(RESOLUTION_SCALE + 1u)) - float(RESOLUTION_SCALE - 1u);
+      #endif
+    #endif  // PALETTE
+  #endif    // TEXTURED
 }
 )";
 
@@ -767,11 +799,9 @@ float4 SampleFromVRAM(uint4 texpage, float2 coords)
       index_coord.x /= 2u;
     #endif
 
-    // fixup coords
-    uint2 vicoord = uint2(texpage.x + index_coord.x * RESOLUTION_SCALE, fixYCoord(texpage.y + index_coord.y * RESOLUTION_SCALE));
-
-    // load colour/palette
-    float4 texel = SAMPLE_TEXTURE(samp0, float2(vicoord) * RCP_VRAM_SIZE);
+    // load palette index
+    uint2 vicoord = uint2(texpage.x + index_coord.x, fixNativeYCoord(texpage.y + index_coord.y));
+    float4 texel = SAMPLE_TEXTURE(samp0, float2(vicoord) * RCP_NATIVE_VRAM_SIZE);
     uint vram_value = RGBA8ToRGBA5551(texel);
 
     // apply palette
@@ -784,8 +814,8 @@ float4 SampleFromVRAM(uint4 texpage, float2 coords)
     #endif
 
     // sample palette
-    uint2 palette_icoord = uint2(texpage.z + (palette_index * RESOLUTION_SCALE), fixYCoord(texpage.w));
-    return SAMPLE_TEXTURE(samp0, float2(palette_icoord) * RCP_VRAM_SIZE);
+    uint2 palette_icoord = uint2(texpage.z + palette_index, fixNativeYCoord(texpage.w));
+    return SAMPLE_TEXTURE(samp0, float2(palette_icoord) * RCP_NATIVE_VRAM_SIZE);
   #else
     // Direct texturing. Render-to-texture effects. Use upscaled coordinates.
     uint2 icoord = ApplyUpscaledTextureWindow(FloatToIntegerCoords(coords));    
@@ -822,7 +852,7 @@ float4 SampleFromVRAM(uint4 texpage, float2 coords)
 
   ss << R"(
 {
-  uint3 vertcol = uint3(v_col0.rgb * float3(255.0, 255.0, 255.0));
+  uint3 vertcol = uint3(v_col0.rgb);
 
   bool semitransparent;
   uint3 icolor;
@@ -835,34 +865,16 @@ float4 SampleFromVRAM(uint4 texpage, float2 coords)
   #endif
 
   #if TEXTURED
-
-    // We can't currently use upscaled coordinate for palettes because of how they're packed.
-    // Not that it would be any benefit anyway, render-to-texture effects don't use palettes.
-    float2 coords = v_tex0;
-    #if PALETTE
-      coords /= float2(RESOLUTION_SCALE, RESOLUTION_SCALE);
-    #endif
-
-    #if UV_LIMITS
-      float4 uv_limits = v_uv_limits;
-      #if !PALETTE
-        // Extend the UV range to all "upscaled" pixels. This means 1-pixel-high polygon-based 
-        // framebuffer effects won't be downsampled. (e.g. Mega Man Legends 2 haze effect)
-        uv_limits.xy *= float(RESOLUTION_SCALE);
-        uv_limits.zw = (uv_limits.zw * float(RESOLUTION_SCALE + 1u)) - float(RESOLUTION_SCALE - 1u);
-      #endif
-    #endif
-
     float4 texcol;
     #if TEXTURE_FILTERING
-      FilteredSampleFromVRAM(v_texpage, coords, uv_limits, texcol, ialpha);
+      FilteredSampleFromVRAM(v_texpage, v_tex0, v_uv_limits, texcol, ialpha);
       if (ialpha < 0.5)
         discard;
     #else
       #if UV_LIMITS
-        texcol = SampleFromVRAM(v_texpage, clamp(coords, uv_limits.xy, uv_limits.zw));
+        texcol = SampleFromVRAM(v_texpage, clamp(v_tex0, v_uv_limits.xy, v_uv_limits.zw));
       #else
-        texcol = SampleFromVRAM(v_texpage, coords);
+        texcol = SampleFromVRAM(v_texpage, v_tex0);
       #endif
       if (VECTOR_EQ(texcol, TRANSPARENT_PIXEL_COLOR))
         discard;

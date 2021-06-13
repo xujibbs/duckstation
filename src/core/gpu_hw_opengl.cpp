@@ -544,7 +544,8 @@ bool GPU_HW_OpenGL::CompilePrograms()
         for (u8 interlacing = 0; interlacing < 2; interlacing++)
         {
           const bool textured = (static_cast<GPUTextureMode>(texture_mode) != GPUTextureMode::Disabled);
-          const std::string batch_vs = shadergen.GenerateBatchVertexShader(textured);
+          const bool paletted = textured && (static_cast<GPUTextureMode>(texture_mode & 3u) <= GPUTextureMode::Palette8Bit);
+          const std::string batch_vs = shadergen.GenerateBatchVertexShader(textured, paletted);
           const std::string fs = shadergen.GenerateBatchFragmentShader(
             static_cast<BatchRenderMode>(render_mode), static_cast<GPUTextureMode>(texture_mode),
             ConvertToBoolUnchecked(dithering), ConvertToBoolUnchecked(interlacing));

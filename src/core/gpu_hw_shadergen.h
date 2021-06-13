@@ -10,7 +10,7 @@ public:
                    bool pgxp_depth, bool supports_dual_source_blend);
   ~GPU_HW_ShaderGen();
 
-  std::string GenerateBatchVertexShader(bool textured);
+  std::string GenerateBatchVertexShader(bool textured, bool palette);
   std::string GenerateBatchFragmentShader(GPU_HW::BatchRenderMode transparency, GPUTextureMode texture_mode,
                                           bool dithering, bool interlacing);
   std::string GenerateInterlacedFillFragmentShader();

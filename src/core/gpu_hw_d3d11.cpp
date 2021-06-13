@@ -537,7 +537,7 @@ bool GPU_HW_D3D11::CompileShaders()
 
     // we need a vertex shader...
     ComPtr<ID3DBlob> vs_bytecode =
-      shader_cache.GetShaderBlob(D3D11::ShaderCompiler::Type::Vertex, shadergen.GenerateBatchVertexShader(true));
+      shader_cache.GetShaderBlob(D3D11::ShaderCompiler::Type::Vertex, shadergen.GenerateBatchVertexShader(true, true));
     if (!vs_bytecode)
       return false;
 
@@ -562,9 +562,9 @@ bool GPU_HW_D3D11::CompileShaders()
 
   UPDATE_PROGRESS();
 
-  for (u8 textured = 0; textured < 2; textured++)
+  for (u8 textured = 0; textured < 3; textured++)
   {
-    const std::string vs = shadergen.GenerateBatchVertexShader(ConvertToBoolUnchecked(textured));
+    const std::string vs = shadergen.GenerateBatchVertexShader(textured != 0, textured > 1);
     m_batch_vertex_shaders[textured] = shader_cache.GetVertexShader(m_device.Get(), vs);
     if (!m_batch_vertex_shaders[textured])
       return false;
@@ -807,9 +807,11 @@ bool GPU_HW_D3D11::BlitVRAMReplacementTexture(const TextureReplacementTexture* t
 
 void GPU_HW_D3D11::DrawBatchVertices(BatchRenderMode render_mode, u32 base_vertex, u32 num_vertices)
 {
-  const bool textured = (m_batch.texture_mode != GPUTextureMode::Disabled);
+  const u8 textured =
+    BoolToUInt8(m_batch.texture_mode != GPUTextureMode::Disabled) +
+    BoolToUInt8((m_batch.texture_mode & ~GPUTextureMode::RawTextureBit) <= GPUTextureMode::Palette8Bit);
 
-  m_context->VSSetShader(m_batch_vertex_shaders[BoolToUInt8(textured)].Get(), nullptr, 0);
+  m_context->VSSetShader(m_batch_vertex_shaders[textured].Get(), nullptr, 0);
 
   m_context->PSSetShader(m_batch_pixel_shaders[static_cast<u8>(render_mode)][static_cast<u8>(m_batch.texture_mode)]
                                               [BoolToUInt8(m_batch.dithering)][BoolToUInt8(m_batch.interlacing)]
