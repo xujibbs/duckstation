@@ -20,12 +20,12 @@ void GPU_HW_ShaderGen::WriteCommonFunctions(std::stringstream& ss)
 {
   DefineMacro(ss, "MULTISAMPLING", UsingMSAA());
 
-  ss << "CONSTANT uint RESOLUTION_SCALE = " << m_resolution_scale << "u;\n";
-  ss << "CONSTANT uint2 VRAM_SIZE = uint2(" << VRAM_WIDTH << ", " << VRAM_HEIGHT << ") * RESOLUTION_SCALE;\n";
-  ss << "CONSTANT float2 RCP_VRAM_SIZE = float2(1.0, 1.0) / float2(VRAM_SIZE);\n";
-  ss << "CONSTANT uint2 NATIVE_VRAM_SIZE = uint2(" << VRAM_WIDTH << ", " << VRAM_HEIGHT << ");\n";
-  ss << "CONSTANT float2 RCP_NATIVE_VRAM_SIZE = float2(1.0, 1.0) / float2(NATIVE_VRAM_SIZE);\n";
-  ss << "CONSTANT uint MULTISAMPLES = " << m_multisamples << "u;\n";
+  ss << "CONSTANT min16uint RESOLUTION_SCALE = " << m_resolution_scale << "u;\n";
+  ss << "CONSTANT min16uint2 VRAM_SIZE = uint2(" << VRAM_WIDTH << ", " << VRAM_HEIGHT << ") * RESOLUTION_SCALE;\n";
+  ss << "CONSTANT min16float2 RCP_VRAM_SIZE = float2(1.0, 1.0) / float2(VRAM_SIZE);\n";
+  ss << "CONSTANT min16uint2 NATIVE_VRAM_SIZE = uint2(" << VRAM_WIDTH << ", " << VRAM_HEIGHT << ");\n";
+  ss << "CONSTANT min16float2 RCP_NATIVE_VRAM_SIZE = float2(1.0, 1.0) / float2(NATIVE_VRAM_SIZE);\n";
+  ss << "CONSTANT min16uint MULTISAMPLES = " << m_multisamples << "u;\n";
   ss << "CONSTANT bool PER_SAMPLE_SHADING = " << (m_per_sample_shading ? "true" : "false") << ";\n";
   ss << R"(
 
@@ -47,7 +47,7 @@ uint fixYCoord(uint y)
 #endif
 }
 
-uint fixNativeYCoord(uint y)
+min16uint fixNativeYCoord(min16uint y)
 {
 #if API_OPENGL || API_OPENGL_ES
   return NATIVE_VRAM_SIZE.y - y - 1u;
@@ -56,7 +56,7 @@ uint fixNativeYCoord(uint y)
 #endif
 }
 
-uint RGBA8ToRGBA5551(float4 v)
+uint RGBA8ToRGBA5551(min16float4 v)
 {
   uint r = uint(roundEven(v.r * 31.0));
   uint g = uint(roundEven(v.g * 31.0));
@@ -65,7 +65,7 @@ uint RGBA8ToRGBA5551(float4 v)
   return (r) | (g << 5) | (b << 10) | (a << 15);
 }
 
-float4 RGBA5551ToRGBA8(uint v)
+min16float4 RGBA5551ToRGBA8(uint v)
 {
   uint r = (v & 31u);
   uint g = ((v >> 5) & 31u);
@@ -748,14 +748,14 @@ std::string GPU_HW_ShaderGen::GenerateBatchFragmentShader(GPU_HW::BatchRenderMod
     ss << "};\n";
 
   ss << R"(
-uint3 ApplyDithering(uint2 coord, uint3 icol)
+min16uint3 ApplyDithering(min16uint2 coord, min16uint3 icol)
 {
   #if DITHERING_SCALED
-    uint2 fc = coord & uint2(3u, 3u);
+    min16uint2 fc = coord & uint2(3u, 3u);
   #else
-    uint2 fc = (coord / uint2(RESOLUTION_SCALE, RESOLUTION_SCALE)) & uint2(3u, 3u);
+    min16uint2 fc = (coord / uint2(RESOLUTION_SCALE, RESOLUTION_SCALE)) & uint2(3u, 3u);
   #endif
-  int offset = s_dither_values[fc.y * 4u + fc.x];
+  min16int offset = s_dither_values[fc.y * 4u + fc.x];
 
   #if !TRUE_COLOR
     return uint3(clamp((int3(icol) + int3(offset, offset, offset)) >> 3, 0, 31));
@@ -767,32 +767,32 @@ uint3 ApplyDithering(uint2 coord, uint3 icol)
 #if TEXTURED
 CONSTANT float4 TRANSPARENT_PIXEL_COLOR = float4(0.0, 0.0, 0.0, 0.0);
 
-uint2 ApplyTextureWindow(uint2 coords)
+min16uint2 ApplyTextureWindow(min16uint2 coords)
 {
-  uint x = (uint(coords.x) & u_texture_window_and.x) | u_texture_window_or.x;
-  uint y = (uint(coords.y) & u_texture_window_and.y) | u_texture_window_or.y;
+  min16uint x = (uint(coords.x) & u_texture_window_and.x) | u_texture_window_or.x;
+  min16uint y = (uint(coords.y) & u_texture_window_and.y) | u_texture_window_or.y;
   return uint2(x, y);
 }
 
-uint2 ApplyUpscaledTextureWindow(uint2 coords)
+min16uint2 ApplyUpscaledTextureWindow(min16uint2 coords)
 {
-  uint2 native_coords = coords / uint2(RESOLUTION_SCALE, RESOLUTION_SCALE);
-  uint2 coords_offset = coords % uint2(RESOLUTION_SCALE, RESOLUTION_SCALE);
+  min16uint2 native_coords = coords / uint2(RESOLUTION_SCALE, RESOLUTION_SCALE);
+  min16uint2 coords_offset = coords % uint2(RESOLUTION_SCALE, RESOLUTION_SCALE);
   return (ApplyTextureWindow(native_coords) * uint2(RESOLUTION_SCALE, RESOLUTION_SCALE)) + coords_offset;
 }
 
-uint2 FloatToIntegerCoords(float2 coords)
+min16uint2 FloatToIntegerCoords(min16float2 coords)
 {
   // With the vertex offset applied at 1x resolution scale, we want to round the texture coordinates.
   // Floor them otherwise, as it currently breaks when upscaling as the vertex offset is not applied.
   return uint2((RESOLUTION_SCALE == 1u) ? roundEven(coords) : floor(coords));
 }
 
-float4 SampleFromVRAM(uint4 texpage, float2 coords)
+min16float4 SampleFromVRAM(min16uint4 texpage, min16float2 coords)
 {
   #if PALETTE
-    uint2 icoord = ApplyTextureWindow(FloatToIntegerCoords(coords));
-    uint2 index_coord = icoord;
+    min16uint2 icoord = ApplyTextureWindow(FloatToIntegerCoords(coords));
+    min16uint2 index_coord = icoord;
     #if PALETTE_4_BIT
       index_coord.x /= 4u;
     #elif PALETTE_8_BIT
@@ -800,8 +800,9 @@ float4 SampleFromVRAM(uint4 texpage, float2 coords)
     #endif
 
     // load palette index
-    uint2 vicoord = uint2(texpage.x + index_coord.x, fixNativeYCoord(texpage.y + index_coord.y));
-    float4 texel = SAMPLE_TEXTURE(samp0, float2(vicoord) * RCP_NATIVE_VRAM_SIZE);
+    min16uint2 vicoord = uint2(texpage.x + index_coord.x, fixNativeYCoord(texpage.y + index_coord.y));
+    min16float2 vncoord = float2(vicoord) * RCP_NATIVE_VRAM_SIZE;
+    min16float4 texel = SAMPLE_TEXTURE(samp0, vncoord);
     uint vram_value = RGBA8ToRGBA5551(texel);
 
     // apply palette
@@ -814,7 +815,7 @@ float4 SampleFromVRAM(uint4 texpage, float2 coords)
     #endif
 
     // sample palette
-    uint2 palette_icoord = uint2(texpage.z + palette_index, fixNativeYCoord(texpage.w));
+    min16uint2 palette_icoord = uint2(texpage.z + palette_index, fixNativeYCoord(texpage.w));
     return SAMPLE_TEXTURE(samp0, float2(palette_icoord) * RCP_NATIVE_VRAM_SIZE);
   #else
     // Direct texturing. Render-to-texture effects. Use upscaled coordinates.
@@ -852,12 +853,12 @@ float4 SampleFromVRAM(uint4 texpage, float2 coords)
 
   ss << R"(
 {
-  uint3 vertcol = uint3(v_col0.rgb);
+  min16uint3 vertcol = uint3(v_col0.rgb);
 
   bool semitransparent;
-  uint3 icolor;
-  float ialpha;
-  float oalpha;
+  min16uint3 icolor;
+  min16float ialpha;
+  min16float oalpha;
 
   #if INTERLACING
     if ((fixYCoord(uint(v_pos.y)) & 1u) == u_interlaced_displayed_field)
@@ -865,7 +866,7 @@ float4 SampleFromVRAM(uint4 texpage, float2 coords)
   #endif
 
   #if TEXTURED
-    float4 texcol;
+    min16float4 texcol;
     #if TEXTURE_FILTERING
       FilteredSampleFromVRAM(v_texpage, v_tex0, v_uv_limits, texcol, ialpha);
       if (ialpha < 0.5)
@@ -928,12 +929,12 @@ float4 SampleFromVRAM(uint4 texpage, float2 coords)
   #endif
 
   // Premultiply alpha so we don't need to use a colour output for it.
-  float premultiply_alpha = ialpha;
+  min16float premultiply_alpha = ialpha;
   #if TRANSPARENCY
     premultiply_alpha = ialpha * (semitransparent ? u_src_alpha_factor : 1.0);
   #endif
 
-  float3 color;
+  min16float3 color;
   #if !TRUE_COLOR
     // We want to apply the alpha before the truncation to 16-bit, otherwise we'll be passing a 32-bit precision color
     // into the blend unit, which can cause a small amount of error to accumulate.
@@ -1302,7 +1303,7 @@ std::string GPU_HW_ShaderGen::GenerateVRAMCopyFragmentShader()
   DeclareFragmentEntryPoint(ss, 0, 1, {}, true, 1, true, false, false, msaa);
   ss << R"(
 {
-  uint2 dst_coords = uint2(v_pos.xy);
+  min16uint2 dst_coords = uint2(v_pos.xy);
 
   // make sure it's not oversized and out of range
   if ((dst_coords.x < u_dst_coords.x && dst_coords.x >= u_end_coords.x) ||
@@ -1312,18 +1313,18 @@ std::string GPU_HW_ShaderGen::GenerateVRAMCopyFragmentShader()
   }
 
   // find offset from the start of the row/column
-  uint2 offset;
+  min16uint2 offset;
   offset.x = (dst_coords.x < u_dst_coords.x) ? (VRAM_SIZE.x - u_dst_coords.x + dst_coords.x) : (dst_coords.x - u_dst_coords.x);
   offset.y = (dst_coords.y < u_dst_coords.y) ? (VRAM_SIZE.y - u_dst_coords.y + dst_coords.y) : (dst_coords.y - u_dst_coords.y);
 
   // find the source coordinates to copy from
-  uint2 src_coords = (u_src_coords + offset) % VRAM_SIZE;
+  min16uint2 src_coords = (u_src_coords + offset) % VRAM_SIZE;
 
   // sample and apply mask bit
 #if MSAA_COPY
-  float4 color = LOAD_TEXTURE_MS(samp0, int2(src_coords), f_sample_index);
+  min16float4 color = LOAD_TEXTURE_MS(samp0, int2(src_coords), f_sample_index);
 #else
-  float4 color = LOAD_TEXTURE(samp0, int2(src_coords), 0);
+  min16float4 color = LOAD_TEXTURE(samp0, int2(src_coords), 0);
 #endif
   o_col0 = float4(color.xyz, u_set_mask_bit ? 1.0 : color.a);
 #if !PGXP_DEPTH

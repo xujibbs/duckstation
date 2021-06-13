@@ -139,13 +139,13 @@ void ShaderGen::WriteHeader(std::stringstream& ss)
   {
     ss << "precision highp float;\n";
     ss << "precision highp int;\n";
-    ss << "precision highp sampler2D;\n";
+    ss << "precision mediump sampler2D;\n";
 
     if (GLAD_GL_ES_VERSION_3_1)
-      ss << "precision highp sampler2DMS;\n";
+      ss << "precision mediump sampler2DMS;\n";
 
     if (GLAD_GL_ES_VERSION_3_2)
-      ss << "precision highp usamplerBuffer;\n";
+      ss << "precision mediump usamplerBuffer;\n";
 
     ss << "\n";
   }
@@ -169,6 +169,19 @@ void ShaderGen::WriteHeader(std::stringstream& ss)
     ss << "#define nointerpolation flat\n";
     ss << "#define frac fract\n";
     ss << "#define lerp mix\n";
+
+    ss << "#define min16int mediump int\n";
+    ss << "#define min16uint mediump uint\n";
+    ss << "#define min16float mediump float\n";
+    ss << "#define min16float2 mediump vec2\n";
+    ss << "#define min16float3 mediump vec3\n";
+    ss << "#define min16float4 mediump vec4\n";
+    ss << "#define min16int2 mediump ivec2\n";
+    ss << "#define min16int3 mediump ivec3\n";
+    ss << "#define min16int4 mediump ivec4\n";
+    ss << "#define min16uint2 mediump uvec2\n";
+    ss << "#define min16uint3 mediump uvec3\n";
+    ss << "#define min16uint4 mediump uvec4\n";
 
     ss << "#define CONSTANT const\n";
     ss << "#define GLOBAL\n";
@@ -211,6 +224,22 @@ void ShaderGen::WriteHeader(std::stringstream& ss)
     ss << "#define mat2 float2x2\n";
     ss << "#define mat3 float3x3\n";
     ss << "#define mat4 float4x4\n";
+
+#if 0
+    ss << "#define min16int int\n";
+    ss << "#define min16uint uint\n";
+    ss << "#define min16float float\n";
+    ss << "#define min16float2 float2\n";
+    ss << "#define min16float3 float3\n";
+    ss << "#define min16float4 float4\n";
+    ss << "#define min16int2 ivec2\n";
+    ss << "#define min16int3 ivec3\n";
+    ss << "#define min16int4 ivec4\n";
+    ss << "#define min16uint2 uint2\n";
+    ss << "#define min16uint3 uint3\n";
+    ss << "#define min16uint4 uint4\n";
+#endif
+
     ss << "#define CONSTANT static const\n";
     ss << "#define GLOBAL static\n";
     ss << "#define VECTOR_EQ(a, b) (all((a) == (b)))\n";
@@ -348,7 +377,7 @@ void ShaderGen::DeclareVertexEntryPoint(
 
       ss << "out VertexData" << output_block_suffix << " {\n";
       for (u32 i = 0; i < num_color_outputs; i++)
-        ss << "  " << qualifier << "float4 v_col" << i << ";\n";
+        ss << "  " << qualifier << "min16float4 v_col" << i << ";\n";
 
       for (u32 i = 0; i < num_texcoord_outputs; i++)
         ss << "  " << qualifier << "float2 v_tex" << i << ";\n";
@@ -365,7 +394,7 @@ void ShaderGen::DeclareVertexEntryPoint(
       const char* qualifier = GetInterpolationQualifier(false, centroid_interpolation, sample_interpolation, true);
 
       for (u32 i = 0; i < num_color_outputs; i++)
-        ss << qualifier << "out float4 v_col" << i << ";\n";
+        ss << qualifier << "out min16float4 v_col" << i << ";\n";
 
       for (u32 i = 0; i < num_texcoord_outputs; i++)
         ss << qualifier << "out float2 v_tex" << i << ";\n";
@@ -406,7 +435,7 @@ void ShaderGen::DeclareVertexEntryPoint(
     }
 
     for (u32 i = 0; i < num_color_outputs; i++)
-      ss << "  " << qualifier << "out float4 v_col" << i << " : COLOR" << i << ",\n";
+      ss << "  " << qualifier << "out min16float4 v_col" << i << " : COLOR" << i << ",\n";
 
     for (u32 i = 0; i < num_texcoord_outputs; i++)
       ss << "  " << qualifier << "out float2 v_tex" << i << " : TEXCOORD" << i << ",\n";
@@ -441,7 +470,7 @@ void ShaderGen::DeclareFragmentEntryPoint(
 
       ss << "in VertexData {\n";
       for (u32 i = 0; i < num_color_inputs; i++)
-        ss << "  " << qualifier << "float4 v_col" << i << ";\n";
+        ss << "  " << qualifier << "min16float4 v_col" << i << ";\n";
 
       for (u32 i = 0; i < num_texcoord_inputs; i++)
         ss << "  " << qualifier << "float2 v_tex" << i << ";\n";
@@ -458,7 +487,7 @@ void ShaderGen::DeclareFragmentEntryPoint(
       const char* qualifier = GetInterpolationQualifier(false, centroid_interpolation, sample_interpolation, false);
 
       for (u32 i = 0; i < num_color_inputs; i++)
-        ss << qualifier << "in float4 v_col" << i << ";\n";
+        ss << qualifier << "in min16float4 v_col" << i << ";\n";
 
       for (u32 i = 0; i < num_texcoord_inputs; i++)
         ss << qualifier << "in float2 v_tex" << i << ";\n";
@@ -510,7 +539,7 @@ void ShaderGen::DeclareFragmentEntryPoint(
     ss << "void main(\n";
 
     for (u32 i = 0; i < num_color_inputs; i++)
-      ss << "  " << qualifier << "in float4 v_col" << i << " : COLOR" << i << ",\n";
+      ss << "  " << qualifier << "in min16float4 v_col" << i << " : COLOR" << i << ",\n";
 
     for (u32 i = 0; i < num_texcoord_inputs; i++)
       ss << "  " << qualifier << "in float2 v_tex" << i << " : TEXCOORD" << i << ",\n";
