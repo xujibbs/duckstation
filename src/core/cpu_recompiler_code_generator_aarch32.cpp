@@ -1312,7 +1312,7 @@ void CodeGenerator::EmitLoadGuestMemoryFastmem(const CodeBlockInstruction& cbi, 
   fastmem_base = GetFastmemLoadBase();
 
   // return to the block code
-  EmitBranch(GetCurrentNearCodePointer(), false);
+  EmitBranch(GetCurrentNearCodePointer());
 
   SwitchToNearCode();
   m_register_cache.UninhibitAllocation();
@@ -1469,7 +1469,7 @@ void CodeGenerator::EmitStoreGuestMemoryFastmem(const CodeBlockInstruction& cbi,
   fastmem_base = GetFastmemStoreBase();
 
   // return to the block code
-  EmitBranch(GetCurrentNearCodePointer(), false);
+  EmitBranch(GetCurrentNearCodePointer());
 
   SwitchToNearCode();
   m_register_cache.UninhibitAllocation();
@@ -1809,7 +1809,7 @@ void CodeGenerator::EmitStallUntilGTEComplete()
   m_emit->str(GetHostReg32(RARG1), a32::MemOperand(GetCPUPtrReg(), offsetof(State, pending_ticks)));
 }
 
-void CodeGenerator::EmitBranch(const void* address, bool allow_scratch)
+void CodeGenerator::EmitBranch(const void* address, bool allow_short /* = true */)
 {
   const s32 displacement = GetPCDisplacement(GetCurrentCodePointer(), address);
   if (IsPCDisplacementInImmediateRange(displacement))

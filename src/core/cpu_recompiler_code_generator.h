@@ -99,8 +99,7 @@ public:
                                    const Value& value, bool in_far_code);
   void EmitUpdateFastmemBase();
 
-  // Unconditional branch to pointer. May allocate a scratch register.
-  void EmitBranch(const void* address, bool allow_scratch = true);
+  void EmitBranch(const void* address, bool allow_short = true);
   void EmitBranch(LabelType* label);
 
   // Branching, generates two paths.

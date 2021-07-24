@@ -1491,7 +1491,7 @@ void CodeGenerator::EmitLoadGuestMemoryFastmem(const CodeBlockInstruction& cbi, 
                         Value::FromConstantU32(static_cast<u32>(-m_delayed_cycles_add)));
 
   // return to the block code
-  EmitBranch(GetCurrentNearCodePointer(), false);
+  EmitBranch(GetCurrentNearCodePointer());
 
   SwitchToNearCode();
   m_register_cache.UninhibitAllocation();
@@ -1664,7 +1664,7 @@ void CodeGenerator::EmitStoreGuestMemoryFastmem(const CodeBlockInstruction& cbi,
                         Value::FromConstantU32(static_cast<u32>(-m_delayed_cycles_add)));
 
   // return to the block code
-  EmitBranch(GetCurrentNearCodePointer(), false);
+  EmitBranch(GetCurrentNearCodePointer());
 
   SwitchToNearCode();
   m_register_cache.UninhibitAllocation();
@@ -1996,7 +1996,7 @@ void CodeGenerator::EmitStallUntilGTEComplete()
   m_emit->str(GetHostReg32(RARG1), a64::MemOperand(GetCPUPtrReg(), offsetof(State, pending_ticks)));
 }
 
-void CodeGenerator::EmitBranch(const void* address, bool allow_scratch)
+void CodeGenerator::EmitBranch(const void* address, bool allow_short /* = true */)
 {
   const s64 jump_distance =
     static_cast<s64>(reinterpret_cast<intptr_t>(address) - reinterpret_cast<intptr_t>(GetCurrentCodePointer()));
@@ -2006,8 +2006,6 @@ void CodeGenerator::EmitBranch(const void* address, bool allow_scratch)
     m_emit->b(jump_distance >> 2);
     return;
   }
-
-  Assert(allow_scratch);
 
   m_emit->Mov(GetHostReg64(RSCRATCH), reinterpret_cast<uintptr_t>(address));
   m_emit->br(GetHostReg64(RSCRATCH));

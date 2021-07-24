@@ -140,6 +140,9 @@ void Reinitialize();
 /// Invalidates all blocks which are in the range of the specified code page.
 void InvalidateBlocksWithPageIndex(u32 page_index);
 
+/// Looks up the block in the cache if it's already been compiled.
+CodeBlock* LookupBlock(CodeBlockKey key);
+
 template<PGXPMode pgxp_mode>
 void InterpretCachedBlock(const CodeBlock& block);
 
@@ -157,6 +160,12 @@ ALWAYS_INLINE void InvalidateCodePages(PhysicalMemoryAddress address, u32 word_c
       CPU::CodeCache::InvalidateBlocksWithPageIndex(page);
   }
 }
+
+/// Returns true if the two specified blocks can be linked.
+bool CanLinkBlocks(CodeBlock* block, CodeBlock* successor_block);
+
+/// Link block from to to.
+void LinkBlock(CodeBlock* from, CodeBlock* to, void* host_pc, void* host_resolve_pc, u32 host_pc_size);
 
 }; // namespace CodeCache
 

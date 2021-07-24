@@ -2185,6 +2185,14 @@ bool CodeGenerator::Compile_SetLess(const CodeBlockInstruction& cbi)
   return true;
 }
 
+static CodeBlockKey GetBlockKeyForBranchTarget(const Value& value)
+{
+  CodeBlockKey key = {};
+  key.SetPC(static_cast<u32>(value.constant_value));
+  key.user_mode = CPU::InUserMode();
+  return key;
+}
+
 bool CodeGenerator::Compile_Branch(const CodeBlockInstruction& cbi)
 {
   InstructionPrologue(cbi, 1);
@@ -2192,6 +2200,7 @@ bool CodeGenerator::Compile_Branch(const CodeBlockInstruction& cbi)
   auto DoBranch = [this, &cbi](Condition condition, const Value& lhs, const Value& rhs, Reg lr_reg,
                                Value&& branch_target) {
     const bool can_link_block = cbi.is_direct_branch_instruction && g_settings.cpu_recompiler_block_linking;
+    Assert(!can_link_block || branch_target.IsConstant());
 
     // ensure the lr register is flushed, since we want it's correct value after the branch
     // we don't want to invalidate it yet because of "jalr r0, r0", branch_target could be the lr_reg.
@@ -2344,11 +2353,27 @@ bool CodeGenerator::Compile_Branch(const CodeBlockInstruction& cbi)
           // we're committed at this point :D
           EmitEndBlock(true, false);
 
-          const void* jump_pointer = GetCurrentCodePointer();
-          const void* resolve_pointer = GetCurrentFarCodePointer();
-          EmitBranch(resolve_pointer);
-          const u32 jump_size = static_cast<u32>(static_cast<const char*>(GetCurrentCodePointer()) -
-                                                 static_cast<const char*>(jump_pointer));
+          void* jump_pointer = GetCurrentCodePointer();
+          void* resolve_pointer = GetCurrentFarCodePointer();
+          u32 jump_size;
+
+          // is the block we're going to already compiled? save backpatching later...
+          CodeBlock* successor_block = CPU::CodeCache::LookupBlock(GetBlockKeyForBranchTarget(branch_target));
+          if (successor_block && successor_block->host_code && CPU::CodeCache::CanLinkBlocks(m_block, successor_block))
+          {
+            EmitBranch(successor_block->host_code, false);
+            jump_size = static_cast<u32>(static_cast<const char*>(GetCurrentCodePointer()) -
+                                         static_cast<const char*>(jump_pointer));
+
+            CodeCache::LinkBlock(m_block, successor_block, jump_pointer, resolve_pointer, jump_size);
+          }
+          else
+          {
+            EmitBranch(resolve_pointer, false);
+            jump_size = static_cast<u32>(static_cast<const char*>(GetCurrentCodePointer()) -
+                                         static_cast<const char*>(jump_pointer));
+          }
+
           SwitchToFarCode();
 
           EmitBeginBlock(true);
@@ -2379,11 +2404,28 @@ bool CodeGenerator::Compile_Branch(const CodeBlockInstruction& cbi)
 
       EmitEndBlock(true, false);
 
-      const void* jump_pointer = GetCurrentCodePointer();
-      const void* resolve_pointer = GetCurrentFarCodePointer();
-      EmitBranch(GetCurrentFarCodePointer());
-      const u32 jump_size =
-        static_cast<u32>(static_cast<const char*>(GetCurrentCodePointer()) - static_cast<const char*>(jump_pointer));
+      void* jump_pointer = GetCurrentCodePointer();
+      void* resolve_pointer = GetCurrentFarCodePointer();
+      u32 jump_size;
+
+      // is the block we're going to already compiled? save backpatching later...
+      CodeBlock* successor_block = CPU::CodeCache::LookupBlock(
+        GetBlockKeyForBranchTarget(condition != Condition::Always ? next_pc : branch_target));
+      if (successor_block && successor_block->host_code && CPU::CodeCache::CanLinkBlocks(m_block, successor_block))
+      {
+        EmitBranch(successor_block->host_code, false);
+        jump_size =
+          static_cast<u32>(static_cast<const char*>(GetCurrentCodePointer()) - static_cast<const char*>(jump_pointer));
+
+        CodeCache::LinkBlock(m_block, successor_block, jump_pointer, resolve_pointer, jump_size);
+      }
+      else
+      {
+        EmitBranch(resolve_pointer, false);
+        jump_size =
+          static_cast<u32>(static_cast<const char*>(GetCurrentCodePointer()) - static_cast<const char*>(jump_pointer));
+      }
+
       SwitchToFarCode();
 
       EmitBeginBlock(true);

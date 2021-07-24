@@ -2696,21 +2696,18 @@ void CodeGenerator::EmitStallUntilGTEComplete()
   m_emit->mov(m_emit->dword[GetCPUPtrReg() + offsetof(State, pending_ticks)], GetHostReg32(RRETURN));
 }
 
-void CodeGenerator::EmitBranch(const void* address, bool allow_scratch)
+void CodeGenerator::EmitBranch(const void* address, bool allow_short /* = true */)
 {
   const s64 jump_distance =
     static_cast<s64>(reinterpret_cast<intptr_t>(address) - reinterpret_cast<intptr_t>(GetCurrentCodePointer()));
   if (Xbyak::inner::IsInInt32(static_cast<u64>(jump_distance)))
   {
-    m_emit->jmp(address);
+    m_emit->jmp(address, allow_short ? Xbyak::CodeGenerator::T_AUTO : Xbyak::CodeGenerator::T_NEAR);
     return;
   }
 
-  Assert(allow_scratch);
-
-  Value temp = m_register_cache.AllocateScratch(RegSize_64);
-  m_emit->mov(GetHostReg64(temp), reinterpret_cast<uintptr_t>(address));
-  m_emit->jmp(GetHostReg64(temp));
+  m_emit->mov(GetHostReg64(RRETURN), reinterpret_cast<uintptr_t>(address));
+  m_emit->jmp(GetHostReg64(RRETURN));
 }
 
 void CodeGenerator::EmitBranch(LabelType* label)

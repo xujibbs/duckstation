@@ -195,7 +195,7 @@ void LogCurrentState();
 static CodeBlockKey GetNextBlockKey();
 
 /// Looks up the block in the cache if it's already been compiled.
-static CodeBlock* LookupBlock(CodeBlockKey key);
+static CodeBlock* LookupOrCompileBlock(CodeBlockKey key);
 
 /// Can the current block execute? This will re-validate the block if necessary.
 /// The block can also be flushed if recompilation failed, so ignore the pointer if false is returned.
@@ -205,9 +205,6 @@ static bool CompileBlock(CodeBlock* block);
 static void RemoveReferencesToBlock(CodeBlock* block);
 static void AddBlockToPageMap(CodeBlock* block);
 static void RemoveBlockFromPageMap(CodeBlock* block);
-
-/// Link block from to to. Returns the successor index.
-static void LinkBlock(CodeBlock* from, CodeBlock* to, void* host_pc, void* host_resolve_pc, u32 host_pc_size);
 
 /// Unlink all blocks which point to this block, and any that this block links to.
 static void UnlinkBlock(CodeBlock* block);
@@ -310,7 +307,7 @@ static void ExecuteImpl()
     next_block_key = GetNextBlockKey();
     while (g_state.pending_ticks < g_state.downcount)
     {
-      CodeBlock* block = LookupBlock(next_block_key);
+      CodeBlock* block = LookupOrCompileBlock(next_block_key);
       if (!block)
       {
         InterpretUncachedBlock<pgxp_mode>();
@@ -371,7 +368,7 @@ static void ExecuteImpl()
         }
 
         // No acceptable blocks found in the successor list, try a new one.
-        CodeBlock* next_block = LookupBlock(next_block_key);
+        CodeBlock* next_block = LookupOrCompileBlock(next_block_key);
         if (next_block)
         {
           // Link the previous block to this new block if we find a new block.
@@ -537,6 +534,24 @@ static void FallbackExistingBlockToInterpreter(CodeBlock* block)
 }
 
 CodeBlock* LookupBlock(CodeBlockKey key)
+{
+  BlockMap::iterator iter = s_blocks.find(key.bits);
+  if (iter == s_blocks.end())
+    return nullptr;
+
+  // ensure it hasn't been invalidated
+  CodeBlock* existing_block = iter->second;
+  if (!existing_block || !existing_block->invalidated)
+    return existing_block;
+
+  // if compilation fails or we're forced back to the interpreter, bail out
+  if (RevalidateBlock(existing_block))
+    return existing_block;
+  else
+    return nullptr;
+}
+
+CodeBlock* LookupOrCompileBlock(CodeBlockKey key)
 {
   BlockMap::iterator iter = s_blocks.find(key.bits);
   if (iter != s_blocks.end())
@@ -797,7 +812,7 @@ bool CompileBlock(CodeBlock* block)
 
 void FastCompileBlockFunction()
 {
-  CodeBlock* block = LookupBlock(GetNextBlockKey());
+  CodeBlock* block = LookupOrCompileBlock(GetNextBlockKey());
   if (block)
   {
     s_single_block_asm_dispatcher(block->host_code);
@@ -938,15 +953,6 @@ void LinkBlock(CodeBlock* from, CodeBlock* to, void* host_pc, void* host_resolve
 
   li.block = from;
   to->link_predecessors.push_back(li);
-
-  // apply in code
-  if (host_pc)
-  {
-    Log_ProfilePrintf("Backpatching %p(%08x) to jump to block %p (%08x)", host_pc, from->GetPC(), to, to->GetPC());
-    s_code_buffer.WriteProtect(false);
-    Recompiler::CodeGenerator::BackpatchBranch(host_pc, host_pc_size, reinterpret_cast<void*>(to->host_code));
-    s_code_buffer.WriteProtect(true);
-  }
 }
 
 void UnlinkBlock(CodeBlock* block)
@@ -1174,6 +1180,12 @@ Common::PageFaultHandler::HandlerResult LUTPageFaultHandler(void* exception_pc, 
   return Common::PageFaultHandler::HandlerResult::ExecuteNextHandler;
 }
 
+bool CanLinkBlocks(CodeBlock* block, CodeBlock* successor_block)
+{
+  return (block->can_link && successor_block->can_link &&
+          (!successor_block->invalidated || RevalidateBlock(successor_block)));
+}
+
 #endif // WITH_RECOMPILER
 
 } // namespace CPU::CodeCache
@@ -1185,9 +1197,8 @@ void CPU::Recompiler::Thunks::ResolveBranch(CodeBlock* block, void* host_pc, voi
   using namespace CPU::CodeCache;
 
   CodeBlockKey key = GetNextBlockKey();
-  CodeBlock* successor_block = LookupBlock(key);
-  if (!successor_block || (successor_block->invalidated && !RevalidateBlock(successor_block)) || !block->can_link ||
-      !successor_block->can_link)
+  CodeBlock* successor_block = LookupOrCompileBlock(key);
+  if (!successor_block || !successor_block->host_code || !CanLinkBlocks(block, successor_block))
   {
     // just turn it into a return to the dispatcher instead.
     s_code_buffer.WriteProtect(false);
@@ -1198,6 +1209,13 @@ void CPU::Recompiler::Thunks::ResolveBranch(CodeBlock* block, void* host_pc, voi
   {
     // link blocks!
     LinkBlock(block, successor_block, host_pc, host_resolve_pc, host_pc_size);
+
+    Log_ProfilePrintf("Backpatching %p(%08x) to jump to block %p (%08x)", host_pc, block->GetPC(), successor_block,
+                      successor_block->GetPC());
+    s_code_buffer.WriteProtect(false);
+    Recompiler::CodeGenerator::BackpatchBranch(host_pc, host_pc_size,
+                                               reinterpret_cast<void*>(successor_block->host_code));
+    s_code_buffer.WriteProtect(true);
   }
 }
 
