@@ -51,13 +51,14 @@ public:
   Texture& operator=(const Texture&) = delete;
   Texture& operator=(Texture&& texture);
 
-  bool BeginStreamUpdate(u32 x, u32 y, u32 width, u32 height, void** out_data, u32* out_data_pitch);
-  void EndStreamUpdate(u32 x, u32 y, u32 width, u32 height);
+  bool BeginStreamUpdate(u32 subresource, u32 x, u32 y, u32 width, u32 height, void** out_data, u32* out_data_pitch);
+  void EndStreamUpdate(u32 subresource, u32 x, u32 y, u32 width, u32 height);
 
-  bool LoadData(u32 x, u32 y, u32 width, u32 height, const void* data, u32 pitch);
+  bool LoadData(u32 subresource, u32 x, u32 y, u32 width, u32 height, const void* data, u32 pitch);
 
   static void CopyToUploadBuffer(const void* src_data, u32 src_pitch, u32 height, void* dst_data, u32 dst_pitch);
-  void CopyFromBuffer(u32 x, u32 y, u32 width, u32 height, u32 pitch, ID3D12Resource* buffer, u32 buffer_offset);
+  void CopyFromBuffer(u32 subresource, u32 x, u32 y, u32 width, u32 height, u32 pitch, ID3D12Resource* buffer,
+                      u32 buffer_offset);
 
 private:
   static bool CreateSRVDescriptor(ID3D12Resource* resource, DXGI_FORMAT format, u32 layers, u32 mip_levels,

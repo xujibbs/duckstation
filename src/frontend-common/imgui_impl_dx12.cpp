@@ -261,7 +261,7 @@ bool ImGui_ImplDX12_CreateFontsTexture()
   // Upload texture to graphics system
   D3D12::Texture texture;
   if (!texture.Create(width, height, 1, 1, 1, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_UNKNOWN, DXGI_FORMAT_UNKNOWN, D3D12_RESOURCE_FLAG_NONE) ||
-      !texture.LoadData(0, 0, width, height, pixels, width * sizeof(u32)))
+      !texture.LoadData(0, 0, 0, width, height, pixels, width * sizeof(u32)))
   {
     return false;
   }

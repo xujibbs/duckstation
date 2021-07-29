@@ -102,7 +102,7 @@ std::unique_ptr<HostDisplayTexture> D3D12HostDisplay::CreateTexture(u32 width, u
     return {};
   }
 
-  if (data && !tex.LoadData(0, 0, width, height, data, data_stride))
+  if (data && !tex.LoadData(0, 0, 0, width, height, data, data_stride))
     return {};
 
   return std::make_unique<D3D12HostDisplayTexture>(std::move(tex));
@@ -111,7 +111,7 @@ std::unique_ptr<HostDisplayTexture> D3D12HostDisplay::CreateTexture(u32 width, u
 void D3D12HostDisplay::UpdateTexture(HostDisplayTexture* texture, u32 x, u32 y, u32 width, u32 height,
                                      const void* texture_data, u32 texture_data_stride)
 {
-  static_cast<D3D12HostDisplayTexture*>(texture)->GetTexture().LoadData(x, y, width, height, texture_data,
+  static_cast<D3D12HostDisplayTexture*>(texture)->GetTexture().LoadData(0, x, y, width, height, texture_data,
                                                                         texture_data_stride);
 }
 
@@ -156,7 +156,7 @@ bool D3D12HostDisplay::BeginSetDisplayPixels(HostDisplayPixelFormat format, u32 
     }
   }
 
-  if (!m_display_pixels_texture.BeginStreamUpdate(0, 0, width, height, out_buffer, out_pitch))
+  if (!m_display_pixels_texture.BeginStreamUpdate(0, 0, 0, width, height, out_buffer, out_pitch))
     return false;
 
   SetDisplayTexture(&m_display_pixels_texture, format, m_display_pixels_texture.GetWidth(),
@@ -166,7 +166,7 @@ bool D3D12HostDisplay::BeginSetDisplayPixels(HostDisplayPixelFormat format, u32 
 
 void D3D12HostDisplay::EndSetDisplayPixels()
 {
-  m_display_pixels_texture.EndStreamUpdate(0, 0, static_cast<u32>(m_display_texture_view_width),
+  m_display_pixels_texture.EndStreamUpdate(0, 0, 0, static_cast<u32>(m_display_texture_view_width),
                                            static_cast<u32>(m_display_texture_view_height));
 }
 

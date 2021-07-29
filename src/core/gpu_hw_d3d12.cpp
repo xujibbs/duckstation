@@ -805,7 +805,7 @@ bool GPU_HW_D3D12::BlitVRAMReplacementTexture(const TextureReplacementTexture* t
   D3D12::Texture::CopyToUploadBuffer(tex->GetPixels(), tex->GetByteStride(), tex->GetHeight(),
                                      m_texture_replacment_stream_buffer.GetCurrentHostPointer(), copy_pitch);
   m_texture_replacment_stream_buffer.CommitMemory(required_size);
-  m_vram_write_replacement_texture.CopyFromBuffer(0, 0, tex->GetWidth(), tex->GetHeight(), copy_pitch,
+  m_vram_write_replacement_texture.CopyFromBuffer(0, 0, 0, tex->GetWidth(), tex->GetHeight(), copy_pitch,
                                                   m_texture_replacment_stream_buffer.GetBuffer(), sb_offset);
   m_vram_write_replacement_texture.TransitionToState(D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
