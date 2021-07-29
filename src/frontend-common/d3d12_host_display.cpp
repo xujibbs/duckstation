@@ -96,8 +96,8 @@ std::unique_ptr<HostDisplayTexture> D3D12HostDisplay::CreateTexture(u32 width, u
 
   const DXGI_FORMAT dxgi_format = s_display_pixel_format_mapping[static_cast<u32>(format)];
   D3D12::Texture tex;
-  if (!tex.Create(width, height, samples, dxgi_format, dxgi_format, DXGI_FORMAT_UNKNOWN, DXGI_FORMAT_UNKNOWN,
-                  D3D12_RESOURCE_FLAG_NONE))
+  if (!tex.Create(width, height, layers, levels, samples, dxgi_format, dxgi_format, DXGI_FORMAT_UNKNOWN,
+                  DXGI_FORMAT_UNKNOWN, D3D12_RESOURCE_FLAG_NONE))
   {
     return {};
   }
@@ -149,7 +149,7 @@ bool D3D12HostDisplay::BeginSetDisplayPixels(HostDisplayPixelFormat format, u32 
   if (m_display_pixels_texture.GetWidth() < width || m_display_pixels_texture.GetHeight() < height ||
       m_display_pixels_texture.GetFormat() != dxgi_format)
   {
-    if (!m_display_pixels_texture.Create(width, height, 1, dxgi_format, dxgi_format, DXGI_FORMAT_UNKNOWN,
+    if (!m_display_pixels_texture.Create(width, height, 1, 1, 1, dxgi_format, dxgi_format, DXGI_FORMAT_UNKNOWN,
                                          DXGI_FORMAT_UNKNOWN, D3D12_RESOURCE_FLAG_NONE))
     {
       return false;
@@ -703,7 +703,7 @@ bool D3D12HostDisplay::RenderScreenshot(u32 width, u32 height, std::vector<u32>*
   static constexpr HostDisplayPixelFormat hdformat = HostDisplayPixelFormat::RGBA8;
 
   D3D12::Texture render_texture;
-  if (!render_texture.Create(width, height, 1, format, DXGI_FORMAT_UNKNOWN, format, DXGI_FORMAT_UNKNOWN,
+  if (!render_texture.Create(width, height, 1, 1, 1, format, DXGI_FORMAT_UNKNOWN, format, DXGI_FORMAT_UNKNOWN,
                              D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET) ||
       !m_readback_staging_texture.EnsureSize(width, height, format, false))
   {

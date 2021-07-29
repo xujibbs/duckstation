@@ -15,22 +15,26 @@ Texture::Texture() = default;
 Texture::Texture(ID3D12Resource* resource, D3D12_RESOURCE_STATES state) : m_resource(std::move(resource))
 {
   const D3D12_RESOURCE_DESC desc = GetDesc();
-  m_width = static_cast<u32>(desc.Width);
-  m_height = desc.Height;
-  m_samples = desc.SampleDesc.Count;
+  m_width = static_cast<u16>(desc.Width);
+  m_height = static_cast<u16>(desc.Height);
+  m_layers = static_cast<u16>(desc.DepthOrArraySize);
+  m_levels = static_cast<u8>(desc.MipLevels);
+  m_samples = static_cast<u8>(desc.SampleDesc.Count);
   m_format = desc.Format;
 }
 
 Texture::Texture(Texture&& texture)
   : m_resource(std::move(texture.m_resource)), m_srv_descriptor(texture.m_srv_descriptor),
     m_rtv_or_dsv_descriptor(texture.m_rtv_or_dsv_descriptor), m_width(texture.m_width), m_height(texture.m_height),
-    m_samples(texture.m_samples), m_format(texture.m_format), m_state(texture.m_state),
-    m_is_depth_view(texture.m_is_depth_view)
+    m_layers(texture.m_layers), m_levels(texture.m_levels), m_samples(texture.m_samples), m_format(texture.m_format),
+    m_state(texture.m_state), m_is_depth_view(texture.m_is_depth_view)
 {
   texture.m_srv_descriptor = {};
   texture.m_rtv_or_dsv_descriptor = {};
   texture.m_width = 0;
   texture.m_height = 0;
+  texture.m_layers = 0;
+  texture.m_levels = 0;
   texture.m_samples = 0;
   texture.m_format = DXGI_FORMAT_UNKNOWN;
   texture.m_state = D3D12_RESOURCE_STATE_COMMON;
@@ -50,6 +54,8 @@ Texture& Texture::operator=(Texture&& texture)
   m_rtv_or_dsv_descriptor = texture.m_rtv_or_dsv_descriptor;
   m_width = texture.m_width;
   m_height = texture.m_height;
+  m_layers = texture.m_layers;
+  m_levels = texture.m_levels;
   m_samples = texture.m_samples;
   m_format = texture.m_format;
   m_state = texture.m_state;
@@ -58,6 +64,8 @@ Texture& Texture::operator=(Texture&& texture)
   texture.m_rtv_or_dsv_descriptor = {};
   texture.m_width = 0;
   texture.m_height = 0;
+  texture.m_layers = 0;
+  texture.m_levels = 0;
   texture.m_samples = 0;
   texture.m_format = DXGI_FORMAT_UNKNOWN;
   texture.m_state = D3D12_RESOURCE_STATE_COMMON;
@@ -70,17 +78,25 @@ D3D12_RESOURCE_DESC Texture::GetDesc() const
   return m_resource->GetDesc();
 }
 
-bool Texture::Create(u32 width, u32 height, u32 samples, DXGI_FORMAT format, DXGI_FORMAT srv_format,
-                     DXGI_FORMAT rtv_format, DXGI_FORMAT dsv_format, D3D12_RESOURCE_FLAGS flags)
+bool Texture::Create(u32 width, u32 height, u32 layers, u32 levels, u32 samples, DXGI_FORMAT format,
+                     DXGI_FORMAT srv_format, DXGI_FORMAT rtv_format, DXGI_FORMAT dsv_format, D3D12_RESOURCE_FLAGS flags)
 {
+  if (width > D3D12_REQ_TEXTURE2D_U_OR_V_DIMENSION || height > D3D12_REQ_TEXTURE2D_U_OR_V_DIMENSION ||
+      layers > D3D12_REQ_TEXTURE2D_ARRAY_AXIS_DIMENSION || (layers > 1 && samples > 1))
+  {
+    Log_ErrorPrintf("Texture bounds (%ux%ux%u, %u mips, %u samples) are too large", width, height, layers, levels,
+                    samples);
+    return false;
+  }
+
   constexpr D3D12_HEAP_PROPERTIES heap_properties = {D3D12_HEAP_TYPE_DEFAULT};
 
   D3D12_RESOURCE_DESC desc = {};
   desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
   desc.Width = width;
   desc.Height = height;
-  desc.DepthOrArraySize = 1;
-  desc.MipLevels = 1;
+  desc.DepthOrArraySize = static_cast<u16>(layers);
+  desc.MipLevels = static_cast<u16>(levels);
   desc.Format = format;
   desc.SampleDesc.Count = samples;
   desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
@@ -118,14 +134,14 @@ bool Texture::Create(u32 width, u32 height, u32 samples, DXGI_FORMAT format, DXG
   bool is_depth_view = false;
   if (srv_format != DXGI_FORMAT_UNKNOWN)
   {
-    if (!CreateSRVDescriptor(resource.Get(), srv_format, samples > 1, &srv_descriptor))
+    if (!CreateSRVDescriptor(resource.Get(), srv_format, layers, levels, samples > 1, &srv_descriptor))
       return false;
   }
 
   if (rtv_format != DXGI_FORMAT_UNKNOWN)
   {
     Assert(dsv_format == DXGI_FORMAT_UNKNOWN);
-    if (!CreateRTVDescriptor(resource.Get(), rtv_format, samples > 1, &rtv_descriptor))
+    if (!CreateRTVDescriptor(resource.Get(), rtv_format, layers, samples > 1, &rtv_descriptor))
     {
       g_d3d12_context->GetDescriptorHeapManager().Free(&srv_descriptor);
       return false;
@@ -133,7 +149,7 @@ bool Texture::Create(u32 width, u32 height, u32 samples, DXGI_FORMAT format, DXG
   }
   else if (dsv_format != DXGI_FORMAT_UNKNOWN)
   {
-    if (!CreateDSVDescriptor(resource.Get(), dsv_format, samples > 1, &rtv_descriptor))
+    if (!CreateDSVDescriptor(resource.Get(), dsv_format, layers, samples > 1, &rtv_descriptor))
     {
       g_d3d12_context->GetDescriptorHeapManager().Free(&srv_descriptor);
       return false;
@@ -147,9 +163,11 @@ bool Texture::Create(u32 width, u32 height, u32 samples, DXGI_FORMAT format, DXG
   m_resource = std::move(resource);
   m_srv_descriptor = std::move(srv_descriptor);
   m_rtv_or_dsv_descriptor = std::move(rtv_descriptor);
-  m_width = width;
-  m_height = height;
-  m_samples = samples;
+  m_width = static_cast<u16>(width);
+  m_height = static_cast<u16>(height);
+  m_layers = static_cast<u16>(layers);
+  m_levels = static_cast<u8>(levels);
+  m_samples = static_cast<u8>(samples);
   m_format = format;
   m_state = state;
   m_is_depth_view = is_depth_view;
@@ -164,14 +182,18 @@ bool Texture::Adopt(ComPtr<ID3D12Resource> texture, DXGI_FORMAT srv_format, DXGI
   DescriptorHandle srv_descriptor, rtv_descriptor;
   if (srv_format != DXGI_FORMAT_UNKNOWN)
   {
-    if (!CreateSRVDescriptor(texture.Get(), srv_format, desc.SampleDesc.Count > 1, &srv_descriptor))
+    if (!CreateSRVDescriptor(texture.Get(), srv_format, desc.DepthOrArraySize, desc.MipLevels,
+                             desc.SampleDesc.Count > 1, &srv_descriptor))
+    {
       return false;
+    }
   }
 
   if (rtv_format != DXGI_FORMAT_UNKNOWN)
   {
     Assert(dsv_format == DXGI_FORMAT_UNKNOWN);
-    if (!CreateRTVDescriptor(texture.Get(), rtv_format, desc.SampleDesc.Count > 1, &rtv_descriptor))
+    if (!CreateRTVDescriptor(texture.Get(), rtv_format, desc.DepthOrArraySize, desc.SampleDesc.Count > 1,
+                             &rtv_descriptor))
     {
       g_d3d12_context->GetDescriptorHeapManager().Free(&srv_descriptor);
       return false;
@@ -179,7 +201,8 @@ bool Texture::Adopt(ComPtr<ID3D12Resource> texture, DXGI_FORMAT srv_format, DXGI
   }
   else if (dsv_format != DXGI_FORMAT_UNKNOWN)
   {
-    if (!CreateDSVDescriptor(texture.Get(), dsv_format, desc.SampleDesc.Count > 1, &rtv_descriptor))
+    if (!CreateDSVDescriptor(texture.Get(), dsv_format, desc.DepthOrArraySize, desc.SampleDesc.Count > 1,
+                             &rtv_descriptor))
     {
       g_d3d12_context->GetDescriptorHeapManager().Free(&srv_descriptor);
       return false;
@@ -189,9 +212,11 @@ bool Texture::Adopt(ComPtr<ID3D12Resource> texture, DXGI_FORMAT srv_format, DXGI
   m_resource = std::move(texture);
   m_srv_descriptor = std::move(srv_descriptor);
   m_rtv_or_dsv_descriptor = std::move(rtv_descriptor);
-  m_width = static_cast<u32>(desc.Width);
-  m_height = desc.Height;
-  m_samples = desc.SampleDesc.Count;
+  m_width = static_cast<u16>(desc.Width);
+  m_height = static_cast<u16>(desc.Height);
+  m_layers = static_cast<u16>(desc.DepthOrArraySize);
+  m_levels = static_cast<u8>(desc.MipLevels);
+  m_samples = static_cast<u8>(desc.SampleDesc.Count);
   m_format = desc.Format;
   m_state = state;
   return true;
@@ -222,6 +247,8 @@ void Texture::Destroy(bool defer /* = true */)
 
   m_width = 0;
   m_height = 0;
+  m_layers = 0;
+  m_levels = 0;
   m_samples = 0;
   m_format = DXGI_FORMAT_UNKNOWN;
   m_is_depth_view = false;
@@ -344,7 +371,8 @@ void Texture::CopyToUploadBuffer(const void* src_data, u32 src_pitch, u32 height
   }
 }
 
-bool Texture::CreateSRVDescriptor(ID3D12Resource* resource, DXGI_FORMAT format, bool multisampled, DescriptorHandle* dh)
+bool Texture::CreateSRVDescriptor(ID3D12Resource* resource, DXGI_FORMAT format, u32 layers, u32 mip_levels,
+                                  bool multisampled, DescriptorHandle* dh)
 {
   if (!g_d3d12_context->GetDescriptorHeapManager().Allocate(dh))
   {
@@ -353,16 +381,34 @@ bool Texture::CreateSRVDescriptor(ID3D12Resource* resource, DXGI_FORMAT format, 
   }
 
   D3D12_SHADER_RESOURCE_VIEW_DESC desc = {
-    format, multisampled ? D3D12_SRV_DIMENSION_TEXTURE2DMS : D3D12_SRV_DIMENSION_TEXTURE2D,
+    format,
+    multisampled ? (layers > 1 ? D3D12_SRV_DIMENSION_TEXTURE2DMSARRAY : D3D12_SRV_DIMENSION_TEXTURE2DMS) :
+                   (layers > 1 ? D3D12_SRV_DIMENSION_TEXTURE2DARRAY : D3D12_SRV_DIMENSION_TEXTURE2D),
     D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING};
   if (!multisampled)
-    desc.Texture2D.MipLevels = 1;
+  {
+    if (layers > 1)
+    {
+      desc.Texture2DArray.ArraySize = layers;
+      desc.Texture2DArray.MipLevels = mip_levels;
+    }
+    else
+    {
+      desc.Texture2D.MipLevels = mip_levels;
+    }
+  }
+  else
+  {
+    if (layers > 1)
+      desc.Texture2DMSArray.ArraySize = layers;
+  }
 
   g_d3d12_context->GetDevice()->CreateShaderResourceView(resource, &desc, dh->cpu_handle);
   return true;
 }
 
-bool Texture::CreateRTVDescriptor(ID3D12Resource* resource, DXGI_FORMAT format, bool multisampled, DescriptorHandle* dh)
+bool Texture::CreateRTVDescriptor(ID3D12Resource* resource, DXGI_FORMAT format, u32 layers, bool multisampled,
+                                  DescriptorHandle* dh)
 {
   if (!g_d3d12_context->GetRTVHeapManager().Allocate(dh))
   {
@@ -370,14 +416,27 @@ bool Texture::CreateRTVDescriptor(ID3D12Resource* resource, DXGI_FORMAT format, 
     return false;
   }
 
-  D3D12_RENDER_TARGET_VIEW_DESC desc = {format,
-                                        multisampled ? D3D12_RTV_DIMENSION_TEXTURE2DMS : D3D12_RTV_DIMENSION_TEXTURE2D};
+  D3D12_RENDER_TARGET_VIEW_DESC desc = {
+    format, multisampled ? (layers > 1 ? D3D12_RTV_DIMENSION_TEXTURE2DMSARRAY : D3D12_RTV_DIMENSION_TEXTURE2DMS) :
+                           (layers > 1 ? D3D12_RTV_DIMENSION_TEXTURE2DARRAY : D3D12_RTV_DIMENSION_TEXTURE2D)};
+
+  if (multisampled)
+  {
+    if (layers > 1)
+      desc.Texture2DMSArray.ArraySize = layers;
+  }
+  else
+  {
+    if (layers > 1)
+      desc.Texture2DArray.ArraySize = layers;
+  }
 
   g_d3d12_context->GetDevice()->CreateRenderTargetView(resource, &desc, dh->cpu_handle);
   return true;
 }
 
-bool Texture::CreateDSVDescriptor(ID3D12Resource* resource, DXGI_FORMAT format, bool multisampled, DescriptorHandle* dh)
+bool Texture::CreateDSVDescriptor(ID3D12Resource* resource, DXGI_FORMAT format, u32 layers, bool multisampled,
+                                  DescriptorHandle* dh)
 {
   if (!g_d3d12_context->GetDSVHeapManager().Allocate(dh))
   {
@@ -386,7 +445,21 @@ bool Texture::CreateDSVDescriptor(ID3D12Resource* resource, DXGI_FORMAT format, 
   }
 
   D3D12_DEPTH_STENCIL_VIEW_DESC desc = {
-    format, multisampled ? D3D12_DSV_DIMENSION_TEXTURE2DMS : D3D12_DSV_DIMENSION_TEXTURE2D, D3D12_DSV_FLAG_NONE};
+    format,
+    multisampled ? (layers > 1 ? D3D12_DSV_DIMENSION_TEXTURE2DMSARRAY : D3D12_DSV_DIMENSION_TEXTURE2DMS) :
+                   (layers > 1 ? D3D12_DSV_DIMENSION_TEXTURE2DARRAY : D3D12_DSV_DIMENSION_TEXTURE2D),
+    D3D12_DSV_FLAG_NONE};
+
+  if (multisampled)
+  {
+    if (layers > 1)
+      desc.Texture2DMSArray.ArraySize = layers;
+  }
+  else
+  {
+    if (layers > 1)
+      desc.Texture2DArray.ArraySize = layers;
+  }
 
   g_d3d12_context->GetDevice()->CreateDepthStencilView(resource, &desc, dh->cpu_handle);
   return true;
