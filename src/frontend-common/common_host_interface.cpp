@@ -3736,6 +3736,8 @@ void CommonHostInterface::SetCheatCodeState(u32 index, bool enabled, bool save_t
     return;
 
   cc.enabled = enabled;
+  if (!enabled)
+    cc.ApplyOnDisable();
 
   if (enabled)
   {
