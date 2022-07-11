@@ -14,6 +14,7 @@
 #include "fmt/chrono.h"
 #include "gpu.h"
 #include "gte.h"
+#include "host.h"
 #include "host_display.h"
 #include "pgxp.h"
 #include "save_state_version.h"
@@ -231,6 +232,21 @@ bool HostInterface::ConfirmFormattedMessage(const char* format, ...)
   return ConfirmMessage(message.c_str());
 }
 
+void HostInterface::AddOSDMessage(std::string message, float duration /*= 2.0f*/)
+{
+  Host::AddOSDMessage(std::move(message), duration);
+}
+
+void HostInterface::AddKeyedOSDMessage(std::string key, std::string message, float duration /*= 2.0f*/)
+{
+  Host::AddKeyedOSDMessage(std::move(key), std::move(message), duration);
+}
+
+void HostInterface::RemoveKeyedOSDMessage(std::string key)
+{
+  Host::RemoveKeyedOSDMessage(std::move(key));
+}
+
 void HostInterface::AddFormattedOSDMessage(float duration, const char* format, ...)
 {
   std::va_list ap;
@@ -238,7 +254,7 @@ void HostInterface::AddFormattedOSDMessage(float duration, const char* format, .
   std::string message = StringUtil::StdStringFromFormatV(format, ap);
   va_end(ap);
 
-  AddOSDMessage(std::move(message), duration);
+  Host::AddOSDMessage(std::move(message), duration);
 }
 
 void HostInterface::AddKeyedFormattedOSDMessage(std::string key, float duration, const char* format, ...)
@@ -248,7 +264,7 @@ void HostInterface::AddKeyedFormattedOSDMessage(std::string key, float duration,
   std::string message = StringUtil::StdStringFromFormatV(format, ap);
   va_end(ap);
 
-  AddKeyedOSDMessage(std::move(key), std::move(message), duration);
+  Host::AddKeyedOSDMessage(std::move(key), std::move(message), duration);
 }
 
 std::string HostInterface::GetBIOSDirectory()

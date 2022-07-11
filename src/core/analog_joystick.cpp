@@ -7,6 +7,8 @@
 #include <cmath>
 Log_SetChannel(AnalogJoystick);
 
+#if 0
+
 AnalogJoystick::AnalogJoystick(u32 index)
 {
   m_index = index;
@@ -373,3 +375,5 @@ void AnalogJoystick::LoadSettings(const char* section)
   Controller::LoadSettings(section);
   m_axis_scale = std::clamp(g_host_interface->GetFloatSettingValue(section, "AxisScale", 1.00f), 0.01f, 1.50f);
 }
+
+#endif

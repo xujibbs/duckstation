@@ -161,10 +161,5 @@ else()
 endif()
 
 if(ENABLE_CHEEVOS)
-  target_sources(core PRIVATE
-    cheevos.cpp
-    cheevos.h
-  )
-  target_compile_definitions(core PUBLIC -DWITH_CHEEVOS=1)
-  target_link_libraries(core PRIVATE rcheevos rapidjson)
+  target_compile_definitions(core PRIVATE -DWITH_CHEEVOS=1)
 endif()

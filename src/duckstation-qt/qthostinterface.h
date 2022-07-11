@@ -82,8 +82,6 @@ public:
   ALWAYS_INLINE GameList* getGameList() { return m_game_list.get(); }
   void refreshGameList(bool invalidate_cache = false, bool invalidate_database = false);
 
-  ALWAYS_INLINE const HotkeyInfoList& getHotkeyInfoList() const { return GetHotkeyInfoList(); }
-  ALWAYS_INLINE ControllerInterface* getControllerInterface() const { return GetControllerInterface(); }
   ALWAYS_INLINE bool inBatchMode() const { return InBatchMode(); }
   ALWAYS_INLINE void requestExit() { RequestExit(); }
 
@@ -107,11 +105,6 @@ public:
   /// Fills menu with the current cheat options.
   void populateCheatsMenu(QMenu* menu);
 
-  ALWAYS_INLINE QString getSavePathForInputProfile(const QString& name) const
-  {
-    return QString::fromStdString(GetSavePathForInputProfile(name.toUtf8().constData()));
-  }
-  ALWAYS_INLINE InputProfileList getInputProfileList() const { return GetInputProfileList(); }
   void saveInputProfile(const QString& profile_path);
 
   /// Returns a path relative to the user directory.
@@ -155,7 +148,8 @@ Q_SIGNALS:
 public Q_SLOTS:
   void setDefaultSettings();
   void applySettings(bool display_osd_messages = false);
-  void updateInputMap();
+  void reloadGameSettings();
+  void reloadInputBindings();
   void applyInputProfile(const QString& profile_path);
   void bootSystem(std::shared_ptr<SystemBootParameters> params);
   void resumeSystemFromState(const QString& filename, bool boot_on_failure);
@@ -194,14 +188,13 @@ public Q_SLOTS:
 
 private Q_SLOTS:
   void doStopThread();
-  void onDisplayWindowMouseMoveEvent(int x, int y);
+  void onDisplayWindowMouseMoveEvent(float x, float y);
   void onDisplayWindowMouseButtonEvent(int button, bool pressed);
   void onDisplayWindowMouseWheelEvent(const QPoint& delta_angle);
   void onDisplayWindowResized(int width, int height);
   void onDisplayWindowFocused();
-  void onDisplayWindowKeyEvent(int key, int mods, bool pressed);
+  void onDisplayWindowKeyEvent(int key, bool pressed);
   void doBackgroundControllerPoll();
-  void doSaveSettings();
 
 protected:
   bool AcquireHostDisplay() override;
@@ -210,7 +203,6 @@ protected:
   bool SetFullscreen(bool enabled) override;
 
   void RequestExit() override;
-  std::optional<HostKeyCode> GetHostKeyCode(const std::string_view key_code) const override;
 
   void OnSystemCreated() override;
   void OnSystemPaused(bool paused) override;
@@ -230,11 +222,6 @@ private:
   {
     BACKGROUND_CONTROLLER_POLLING_INTERVAL =
       100, /// Interval at which the controllers are polled when the system is not active.
-
-    SETTINGS_SAVE_DELAY = 1000,
-
-    /// Crappy solution to the Qt indices being massive.
-    IMGUI_KEY_MASK = 511,
   };
 
   using InputButtonHandler = std::function<void(bool)>;
@@ -264,7 +251,6 @@ private:
   void stopBackgroundControllerPollTimer();
 
   void setImGuiFont();
-  void setImGuiKeyMap();
 
   void createThread();
   void stopThread();
@@ -287,7 +273,6 @@ private:
   std::atomic_bool m_shutdown_flag{false};
 
   QTimer* m_background_controller_polling_timer = nullptr;
-  std::unique_ptr<QTimer> m_settings_save_timer;
   std::vector<QTranslator*> m_translators;
 
   bool m_is_rendering_to_main = false;
@@ -295,3 +280,32 @@ private:
   bool m_is_exclusive_fullscreen = false;
   bool m_lost_exclusive_fullscreen = false;
 };
+
+namespace QtHost {
+/// Sets batch mode (exit after game shutdown).
+//bool InBatchMode();
+//void SetBatchMode(bool enabled);
+
+/// Executes a function on the UI thread.
+void RunOnUIThread(const std::function<void()>& func, bool block = false);
+
+/// Returns the application name and version, optionally including debug/devel config indicator.
+//QString GetAppNameAndVersion();
+
+/// Returns the debug/devel config indicator.
+//QString GetAppConfigSuffix();
+
+/// Returns the base path for resources. This may be : prefixed, if we're using embedded resources.
+//QString GetResourcesBasePath();
+
+/// Thread-safe settings access.
+void SetBaseBoolSettingValue(const char* section, const char* key, bool value);
+void SetBaseIntSettingValue(const char* section, const char* key, int value);
+void SetBaseFloatSettingValue(const char* section, const char* key, float value);
+void SetBaseStringSettingValue(const char* section, const char* key, const char* value);
+void SetBaseStringListSettingValue(const char* section, const char* key, const std::vector<std::string>& values);
+bool AddBaseValueToStringList(const char* section, const char* key, const char* value);
+bool RemoveBaseValueFromStringList(const char* section, const char* key, const char* value);
+void RemoveBaseSettingValue(const char* section, const char* key);
+void QueueSettingsSave();
+} // namespace QtHost

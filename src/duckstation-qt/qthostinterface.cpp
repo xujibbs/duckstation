@@ -8,16 +8,17 @@
 #include "core/cheats.h"
 #include "core/controller.h"
 #include "core/gpu.h"
-#include "core/imgui_fullscreen.h"
-#include "core/imgui_styles.h"
+#include "core/host.h"
+#include "core/host_settings.h"
 #include "core/memory_card.h"
 #include "core/system.h"
 #include "frontend-common/fullscreen_ui.h"
 #include "frontend-common/game_list.h"
+#include "frontend-common/imgui_manager.h"
 #include "frontend-common/ini_settings_interface.h"
+#include "frontend-common/input_manager.h"
 #include "frontend-common/opengl_host_display.h"
 #include "frontend-common/sdl_audio_stream.h"
-#include "frontend-common/sdl_controller_interface.h"
 #include "frontend-common/vulkan_host_display.h"
 #include "imgui.h"
 #include "mainwindow.h"
@@ -49,8 +50,23 @@ Log_SetChannel(QtHostInterface);
 #endif
 
 #ifdef WITH_CHEEVOS
-#include "core/cheevos.h"
+#include "frontend-common/cheevos.h"
 #endif
+
+enum : u32
+{
+  SETTINGS_SAVE_DELAY = 1000,
+};
+
+//////////////////////////////////////////////////////////////////////////
+// Local function declarations
+//////////////////////////////////////////////////////////////////////////
+namespace QtHost {
+static void SaveSettings();
+} // namespace QtHost
+
+static std::unique_ptr<INISettingsInterface> s_base_settings_interface;
+static std::unique_ptr<QTimer> s_settings_save_timer;
 
 QtHostInterface::QtHostInterface(QObject* parent) : QObject(parent), CommonHostInterface()
 {
@@ -108,23 +124,35 @@ void QtHostInterface::Shutdown()
 bool QtHostInterface::initializeOnThread()
 {
   SetUserDirectory();
-  m_settings_interface = std::make_unique<INISettingsInterface>(GetSettingsFileName());
+
+  s_base_settings_interface = std::make_unique<INISettingsInterface>(GetSettingsFileName());
+  Host::Internal::SetBaseSettingsLayer(s_base_settings_interface.get());
+
+  const bool loaded = s_base_settings_interface->Load();
+  if (!loaded)
+    SetDefaultSettings(*s_base_settings_interface.get());
+
+  const int settings_version = s_base_settings_interface->GetIntValue("Main", "SettingsVersion", -1);
+  if (settings_version != SETTINGS_VERSION)
+  {
+    ReportFormattedError("Settings version %d does not match expected version %d, resetting", settings_version,
+                         SETTINGS_VERSION);
+
+    s_base_settings_interface->Clear();
+    s_base_settings_interface->SetIntValue("Main", "SettingsVersion", SETTINGS_VERSION);
+    SetDefaultSettings(*s_base_settings_interface);
+    s_base_settings_interface->Save();
+  }
 
   if (!CommonHostInterface::Initialize())
     return false;
 
   // imgui setup
   setImGuiFont();
-  setImGuiKeyMap();
-
-  // make sure the controllers have been detected
-  if (m_controller_interface)
-    m_controller_interface->PollEvents();
 
   // bind buttons/axises
   createBackgroundControllerPollTimer();
   startBackgroundControllerPollTimer();
-  updateInputMap();
   return true;
 }
 
@@ -238,44 +266,34 @@ bool QtHostInterface::ConfirmMessage(const char* message)
 
 void QtHostInterface::SetBoolSettingValue(const char* section, const char* key, bool value)
 {
-  std::lock_guard<std::recursive_mutex> guard(m_settings_mutex);
-  m_settings_interface->SetBoolValue(section, key, value);
-  queueSettingsSave();
+  QtHost::SetBaseBoolSettingValue(section, key, value);
 }
 
 void QtHostInterface::SetIntSettingValue(const char* section, const char* key, int value)
 {
-  std::lock_guard<std::recursive_mutex> guard(m_settings_mutex);
-  m_settings_interface->SetIntValue(section, key, value);
-  queueSettingsSave();
+  QtHost::SetBaseIntSettingValue(section, key, value);
 }
 
 void QtHostInterface::SetFloatSettingValue(const char* section, const char* key, float value)
 {
-  std::lock_guard<std::recursive_mutex> guard(m_settings_mutex);
-  m_settings_interface->SetFloatValue(section, key, value);
-  queueSettingsSave();
+  QtHost::SetBaseFloatSettingValue(section, key, value);
 }
 
 void QtHostInterface::SetStringSettingValue(const char* section, const char* key, const char* value)
 {
-  std::lock_guard<std::recursive_mutex> guard(m_settings_mutex);
-  m_settings_interface->SetStringValue(section, key, value);
-  queueSettingsSave();
+  QtHost::SetBaseStringSettingValue(section, key, value);
 }
 
 void QtHostInterface::SetStringListSettingValue(const char* section, const char* key,
                                                 const std::vector<std::string>& values)
 {
-  std::lock_guard<std::recursive_mutex> guard(m_settings_mutex);
-  m_settings_interface->SetStringList(section, key, values);
-  queueSettingsSave();
+  QtHost::SetBaseStringListSettingValue(section, key, values);
 }
 
 bool QtHostInterface::AddValueToStringList(const char* section, const char* key, const char* value)
 {
-  std::lock_guard<std::recursive_mutex> guard(m_settings_mutex);
-  if (!m_settings_interface->AddToStringList(section, key, value))
+  auto lock = Host::GetSettingsLock();
+  if (!Host::Internal::GetBaseSettingsLayer()->AddToStringList(section, key, value))
     return false;
 
   queueSettingsSave();
@@ -284,8 +302,8 @@ bool QtHostInterface::AddValueToStringList(const char* section, const char* key,
 
 bool QtHostInterface::RemoveValueFromStringList(const char* section, const char* key, const char* value)
 {
-  std::lock_guard<std::recursive_mutex> guard(m_settings_mutex);
-  if (!m_settings_interface->RemoveFromStringList(section, key, value))
+  auto lock = Host::GetSettingsLock();
+  if (!Host::Internal::GetBaseSettingsLayer()->RemoveFromStringList(section, key, value))
     return false;
 
   queueSettingsSave();
@@ -294,28 +312,12 @@ bool QtHostInterface::RemoveValueFromStringList(const char* section, const char*
 
 void QtHostInterface::RemoveSettingValue(const char* section, const char* key)
 {
-  std::lock_guard<std::recursive_mutex> guard(m_settings_mutex);
-  m_settings_interface->DeleteValue(section, key);
-  queueSettingsSave();
+  QtHost::RemoveBaseSettingValue(section, key);
 }
 
 void QtHostInterface::queueSettingsSave()
 {
-  if (m_settings_save_timer)
-    return;
-
-  m_settings_save_timer = std::make_unique<QTimer>();
-  connect(m_settings_save_timer.get(), &QTimer::timeout, this, &QtHostInterface::doSaveSettings);
-  m_settings_save_timer->setSingleShot(true);
-  m_settings_save_timer->start(SETTINGS_SAVE_DELAY);
-  m_settings_save_timer->moveToThread(m_worker_thread);
-}
-
-void QtHostInterface::doSaveSettings()
-{
-  std::lock_guard<std::recursive_mutex> guard(m_settings_mutex);
-  m_settings_interface->Save();
-  m_settings_save_timer.reset();
+  QtHost::QueueSettingsSave();
 }
 
 void QtHostInterface::setDefaultSettings()
@@ -348,6 +350,16 @@ void QtHostInterface::applySettings(bool display_osd_messages /* = false */)
   ApplySettings(display_osd_messages);
 }
 
+void QtHostInterface::reloadGameSettings()
+{
+  Panic("IMPLEMENT ME");
+}
+
+void QtHostInterface::reloadInputBindings()
+{
+  Panic("IMPLEMENT ME");
+}
+
 void QtHostInterface::ApplySettings(bool display_osd_messages)
 {
   CommonHostInterface::ApplySettings(display_osd_messages);
@@ -359,13 +371,13 @@ void QtHostInterface::checkRenderToMainState()
   // detect when render-to-main flag changes
   if (!System::IsShutdown())
   {
-    const bool render_to_main = m_settings_interface->GetBoolValue("Main", "RenderToMainWindow", true);
+    const bool render_to_main = Host::GetBaseBoolSettingValue("Main", "RenderToMainWindow", true);
     if (m_display && !m_is_fullscreen && render_to_main != m_is_rendering_to_main)
     {
       m_is_rendering_to_main = render_to_main;
       updateDisplayState();
     }
-    else if (!m_fullscreen_ui_enabled)
+    else if (!FullscreenUI::IsInitialized())
     {
       renderDisplay();
     }
@@ -376,8 +388,8 @@ void QtHostInterface::refreshGameList(bool invalidate_cache /* = false */, bool 
 {
   Assert(!isOnWorkerThread());
 
-  std::lock_guard<std::recursive_mutex> lock(m_settings_mutex);
-  m_game_list->SetSearchDirectoriesFromSettings(*m_settings_interface.get());
+  auto lock = Host::GetSettingsLock();
+  m_game_list->SetSearchDirectoriesFromSettings(*s_base_settings_interface.get());
 
   QtProgressCallback progress(m_main_window, invalidate_cache ? 0.0f : 1.0f);
   m_game_list->Refresh(invalidate_cache, invalidate_database, &progress);
@@ -435,91 +447,41 @@ void QtHostInterface::resumeSystemFromMostRecentState()
   loadState(QString::fromStdString(state_filename));
 }
 
-void QtHostInterface::onDisplayWindowKeyEvent(int key, int mods, bool pressed)
+void QtHostInterface::onDisplayWindowKeyEvent(int key, bool pressed)
 {
   DebugAssert(isOnWorkerThread());
 
-  ImGuiIO& io = ImGui::GetIO();
-  const u32 masked_key = static_cast<u32>(key) & IMGUI_KEY_MASK;
-  if (masked_key < countof(ImGuiIO::KeysDown))
-    io.KeysDown[masked_key] = pressed;
-
-  if (m_fullscreen_ui_enabled && FullscreenUI::IsBindingInput())
-  {
-    QString key_string(QtUtils::KeyEventToString(key, static_cast<Qt::KeyboardModifier>(mods)));
-    if (!key_string.isEmpty())
-    {
-      if (FullscreenUI::HandleKeyboardBinding(key_string.toUtf8().constData(), pressed))
-        return;
-    }
-  }
-
-  if (io.WantCaptureKeyboard)
-    return;
-
-  const int key_id = QtUtils::KeyEventToInt(key, static_cast<Qt::KeyboardModifier>(mods));
-  HandleHostKeyEvent(key_id & ~Qt::KeyboardModifierMask, key_id & Qt::KeyboardModifierMask, pressed);
+  InputManager::InvokeEvents(InputManager::MakeHostKeyboardKey(key), static_cast<float>(pressed), GenericInputBinding::Unknown);
 }
 
-void QtHostInterface::onDisplayWindowMouseMoveEvent(int x, int y)
+void QtHostInterface::onDisplayWindowMouseMoveEvent(float x, float y)
 {
   // display might be null here if the event happened after shutdown
   DebugAssert(isOnWorkerThread());
-  if (!m_display)
-    return;
+  if (m_display)
+    m_display->SetMousePosition(static_cast<s32>(x), static_cast<s32>(y));
 
-  ImGuiIO& io = ImGui::GetIO();
-  io.MousePos[0] = static_cast<float>(x);
-  io.MousePos[1] = static_cast<float>(y);
-
-  m_display->SetMousePosition(x, y);
+  InputManager::UpdatePointerAbsolutePosition(0, x, y);
 }
 
 void QtHostInterface::onDisplayWindowMouseButtonEvent(int button, bool pressed)
 {
   DebugAssert(isOnWorkerThread());
 
-  if (ImGui::GetCurrentContext() && (button > 0 && button <= static_cast<int>(countof(ImGuiIO::MouseDown))))
-  {
-    ImGuiIO& io = ImGui::GetIO();
-    io.MouseDown[button - 1] = pressed;
-
-    if (io.WantCaptureMouse)
-    {
-      // don't consume input events if it's hitting the UI instead
-      return;
-    }
-  }
-
-  HandleHostMouseEvent(button, pressed);
+  InputManager::InvokeEvents(InputManager::MakePointerButtonKey(0, button), static_cast<float>(pressed), GenericInputBinding::Unknown);
 }
 
 void QtHostInterface::onDisplayWindowMouseWheelEvent(const QPoint& delta_angle)
 {
   DebugAssert(isOnWorkerThread());
 
-  if (ImGui::GetCurrentContext())
-  {
-    ImGuiIO& io = ImGui::GetIO();
+  const float dx = std::clamp(static_cast<float>(delta_angle.x()) / QtUtils::MOUSE_WHEEL_DELTA, -1.0f, 1.0f);
+  if (dx != 0.0f)
+    InputManager::UpdatePointerRelativeDelta(0, InputPointerAxis::WheelX, dx);
 
-    if (delta_angle.x() > 0)
-      io.MouseWheelH += 1.0f;
-    else if (delta_angle.x() < 0)
-      io.MouseWheelH -= 1.0f;
-
-    if (delta_angle.y() > 0)
-      io.MouseWheel += 1.0f;
-    else if (delta_angle.y() < 0)
-      io.MouseWheel -= 1.0f;
-
-    if (io.WantCaptureMouse)
-    {
-      // don't consume input events if it's hitting the UI instead
-      return;
-    }
-  }
-
-  // HandleHostMouseWheelEvent(delta_angle.x(), delta_angle.y());
+  const float dy = std::clamp(static_cast<float>(delta_angle.y()) / QtUtils::MOUSE_WHEEL_DELTA, -1.0f, 1.0f);
+  if (dy != 0.0f)
+    InputManager::UpdatePointerRelativeDelta(0, InputPointerAxis::WheelY, dy);
 }
 
 void QtHostInterface::onDisplayWindowResized(int width, int height)
@@ -545,7 +507,7 @@ void QtHostInterface::onDisplayWindowResized(int width, int height)
     }
 
     // force redraw if we're paused
-    if (!m_fullscreen_ui_enabled)
+    if (!FullscreenUI::IsInitialized())
       renderDisplay();
   }
 }
@@ -591,7 +553,7 @@ bool QtHostInterface::AcquireHostDisplay()
 {
   Assert(!m_display);
 
-  m_is_rendering_to_main = m_settings_interface->GetBoolValue("Main", "RenderToMainWindow", true);
+  m_is_rendering_to_main = Host::GetBaseBoolSettingValue("Main", "RenderToMainWindow", true);
 
   QtDisplayWidget* display_widget = createDisplayRequested(m_worker_thread, m_is_fullscreen, m_is_rendering_to_main);
   if (!display_widget || !m_display->HasRenderDevice())
@@ -604,8 +566,9 @@ bool QtHostInterface::AcquireHostDisplay()
   if (!m_display->MakeRenderContextCurrent() ||
       !m_display->InitializeRenderDevice(GetShaderCacheBasePath(), g_settings.gpu_use_debug_device,
                                          g_settings.gpu_threaded_presentation) ||
-      !CreateHostDisplayResources())
+      !ImGuiManager::Initialize() || !CreateHostDisplayResources())
   {
+    ImGuiManager::Shutdown();
     ReleaseHostDisplayResources();
     m_display->DestroyRenderDevice();
     emit destroyDisplayRequested();
@@ -683,7 +646,7 @@ void QtHostInterface::updateDisplayState()
   {
     UpdateSoftwareCursor();
 
-    if (!m_fullscreen_ui_enabled)
+    if (!FullscreenUI::IsInitialized())
       redrawDisplayWindow();
   }
 
@@ -695,6 +658,7 @@ void QtHostInterface::ReleaseHostDisplay()
   Assert(m_display);
 
   ReleaseHostDisplayResources();
+  ImGuiManager::Shutdown();
   m_display->DestroyRenderDevice();
   emit destroyDisplayRequested();
   m_display.reset();
@@ -735,16 +699,6 @@ void QtHostInterface::RequestExit()
   emit exitRequested();
 }
 
-std::optional<CommonHostInterface::HostKeyCode> QtHostInterface::GetHostKeyCode(const std::string_view key_code) const
-{
-  const std::optional<int> code =
-    QtUtils::ParseKeyString(QString::fromUtf8(key_code.data(), static_cast<int>(key_code.length())));
-  if (!code)
-    return std::nullopt;
-
-  return static_cast<s32>(*code);
-}
-
 void QtHostInterface::OnSystemCreated()
 {
   CommonHostInterface::OnSystemCreated();
@@ -779,7 +733,7 @@ void QtHostInterface::OnSystemDestroyed()
 {
   CommonHostInterface::OnSystemDestroyed();
 
-  ClearOSDMessages();
+  Host::ClearOSDMessages();
   startBackgroundControllerPollTimer();
   emit emulationStopped();
 }
@@ -838,18 +792,6 @@ void QtHostInterface::SetMouseMode(bool relative, bool hide_cursor)
   emit mouseModeRequested(relative, hide_cursor);
 }
 
-void QtHostInterface::updateInputMap()
-{
-  if (!isOnWorkerThread())
-  {
-    QMetaObject::invokeMethod(this, "updateInputMap", Qt::QueuedConnection);
-    return;
-  }
-
-  std::lock_guard<std::recursive_mutex> lock(m_settings_mutex);
-  CommonHostInterface::UpdateInputMap(*m_settings_interface.get());
-}
-
 void QtHostInterface::applyInputProfile(const QString& profile_path)
 {
   if (!isOnWorkerThread())
@@ -858,14 +800,16 @@ void QtHostInterface::applyInputProfile(const QString& profile_path)
     return;
   }
 
-  ApplyInputProfile(profile_path.toUtf8().data());
+  Panic("Fixme");
+  // ApplyInputProfile(profile_path.toUtf8().data());
   emit inputProfileLoaded();
 }
 
 void QtHostInterface::saveInputProfile(const QString& profile_name)
 {
-  std::lock_guard<std::recursive_mutex> lock(m_settings_mutex);
-  SaveInputProfile(profile_name.toUtf8().data());
+  // std::lock_guard<std::recursive_mutex> lock(m_settings_mutex);
+  // SaveInputProfile(profile_name.toUtf8().data());
+  Panic("Fixme");
 }
 
 QString QtHostInterface::getUserDirectoryRelativePath(const QString& arg) const
@@ -1590,7 +1534,7 @@ void QtHostInterface::destroyBackgroundControllerPollTimer()
 
 void QtHostInterface::startBackgroundControllerPollTimer()
 {
-  if (m_background_controller_polling_timer->isActive() || !m_controller_interface)
+  if (m_background_controller_polling_timer->isActive())
     return;
 
   m_background_controller_polling_timer->start(BACKGROUND_CONTROLLER_POLLING_INTERVAL);
@@ -1598,7 +1542,7 @@ void QtHostInterface::startBackgroundControllerPollTimer()
 
 void QtHostInterface::stopBackgroundControllerPollTimer()
 {
-  if (!m_background_controller_polling_timer->isActive() || !m_controller_interface)
+  if (!m_background_controller_polling_timer->isActive())
     return;
 
   m_background_controller_polling_timer->stop();
@@ -1643,7 +1587,7 @@ void QtHostInterface::threadEntryPoint()
       else
         System::RunFrames();
 
-      UpdateControllerMetaState();
+      InputManager::PollSources();
       if (m_frame_step_request)
       {
         m_frame_step_request = false;
@@ -1660,7 +1604,7 @@ void QtHostInterface::threadEntryPoint()
     else
     {
       // we want to keep rendering the UI when paused and fullscreen UI is enabled
-      if (!m_fullscreen_ui_enabled || !System::IsValid())
+      if (!FullscreenUI::IsInitialized() || !System::IsValid())
       {
         // wait until we have a system before running
         m_worker_thread_event_loop->exec();
@@ -1678,10 +1622,10 @@ void QtHostInterface::threadEntryPoint()
 
   delete m_worker_thread_event_loop;
   m_worker_thread_event_loop = nullptr;
-  if (m_settings_save_timer)
+  if (s_settings_save_timer)
   {
-    m_settings_save_timer.reset();
-    doSaveSettings();
+    s_settings_save_timer.reset();
+    QtHost::SaveSettings();
   }
 
   // move back to UI thread
@@ -1690,10 +1634,9 @@ void QtHostInterface::threadEntryPoint()
 
 void QtHostInterface::renderDisplay()
 {
-  ImGui::NewFrame();
-  DrawImGuiWindows();
+  ImGuiManager::RenderOSD();
   m_display->Render();
-  ImGui::EndFrame();
+  ImGuiManager::NewFrame();
 }
 
 void QtHostInterface::wakeThread()
@@ -1740,36 +1683,16 @@ void QtHostInterface::setImGuiFont()
   }
 #endif
 
+#if 0
   if (!path.empty())
     ImGuiFullscreen::SetFontFilename(std::move(path));
   if (range)
     ImGuiFullscreen::SetFontGlyphRanges(range);
-}
-
-void QtHostInterface::setImGuiKeyMap()
-{
-  ImGuiIO& io = ImGui::GetIO();
-  io.KeyMap[ImGuiKey_Tab] = Qt::Key_Tab & IMGUI_KEY_MASK;
-  io.KeyMap[ImGuiKey_LeftArrow] = Qt::Key_Left & IMGUI_KEY_MASK;
-  io.KeyMap[ImGuiKey_RightArrow] = Qt::Key_Right & IMGUI_KEY_MASK;
-  io.KeyMap[ImGuiKey_UpArrow] = Qt::Key_Up & IMGUI_KEY_MASK;
-  io.KeyMap[ImGuiKey_DownArrow] = Qt::Key_Down & IMGUI_KEY_MASK;
-  io.KeyMap[ImGuiKey_PageUp] = Qt::Key_PageUp & IMGUI_KEY_MASK;
-  io.KeyMap[ImGuiKey_PageDown] = Qt::Key_PageDown & IMGUI_KEY_MASK;
-  io.KeyMap[ImGuiKey_Home] = Qt::Key_Home & IMGUI_KEY_MASK;
-  io.KeyMap[ImGuiKey_End] = Qt::Key_End & IMGUI_KEY_MASK;
-  io.KeyMap[ImGuiKey_Insert] = Qt::Key_Insert & IMGUI_KEY_MASK;
-  io.KeyMap[ImGuiKey_Delete] = Qt::Key_Delete & IMGUI_KEY_MASK;
-  io.KeyMap[ImGuiKey_Backspace] = Qt::Key_Backspace & IMGUI_KEY_MASK;
-  io.KeyMap[ImGuiKey_Space] = Qt::Key_Space & IMGUI_KEY_MASK;
-  io.KeyMap[ImGuiKey_Enter] = Qt::Key_Enter & IMGUI_KEY_MASK;
-  io.KeyMap[ImGuiKey_Escape] = Qt::Key_Escape & IMGUI_KEY_MASK;
-  io.KeyMap[ImGuiKey_A] = Qt::Key_A & IMGUI_KEY_MASK;
-  io.KeyMap[ImGuiKey_C] = Qt::Key_C & IMGUI_KEY_MASK;
-  io.KeyMap[ImGuiKey_V] = Qt::Key_V & IMGUI_KEY_MASK;
-  io.KeyMap[ImGuiKey_X] = Qt::Key_X & IMGUI_KEY_MASK;
-  io.KeyMap[ImGuiKey_Y] = Qt::Key_Y & IMGUI_KEY_MASK;
-  io.KeyMap[ImGuiKey_Z] = Qt::Key_Z & IMGUI_KEY_MASK;
+#endif
+  if (!path.empty())
+    Panic("Fixme");
+  if (range)
+    Panic("Fixme");
 }
 
 TinyString QtHostInterface::TranslateString(const char* context, const char* str,
@@ -1807,3 +1730,122 @@ bool QtHostInterface::Thread::waitForInit()
 
   return m_init_result.load();
 }
+
+void Host::OnInputDeviceConnected(const std::string_view& identifier, const std::string_view& device_name)
+{
+
+}
+
+void Host::OnInputDeviceDisconnected(const std::string_view& identifier)
+{
+
+}
+
+std::optional<std::vector<u8>> Host::ReadResourceFile(const char* filename)
+{
+  //const std::string path(Path::Combine(EmuFolders::Resources, filename));
+  const std::string path(QtHostInterface::GetInstance()->GetProgramDirectoryRelativePath("resources" FS_OSPATH_SEPARATOR_STR "%s", filename));
+  std::optional<std::vector<u8>> ret(FileSystem::ReadBinaryFile(path.c_str()));
+  if (!ret.has_value())
+    Log_ErrorPrintf("Failed to read resource file '%s'", filename);
+  return ret;
+}
+
+std::optional<std::string> Host::ReadResourceFileToString(const char* filename)
+{
+  const std::string path(QtHostInterface::GetInstance()->GetProgramDirectoryRelativePath("resources" FS_OSPATH_SEPARATOR_STR "%s", filename));
+  std::optional<std::string> ret(FileSystem::ReadFileToString(path.c_str()));
+  if (!ret.has_value())
+    Log_ErrorPrintf("Failed to read resource file to string '%s'", filename);
+  return ret;
+}
+
+void QtHost::SetBaseBoolSettingValue(const char* section, const char* key, bool value)
+{
+  auto lock = Host::GetSettingsLock();
+  s_base_settings_interface->SetBoolValue(section, key, value);
+  QueueSettingsSave();
+}
+
+void QtHost::SetBaseIntSettingValue(const char* section, const char* key, int value)
+{
+  auto lock = Host::GetSettingsLock();
+  s_base_settings_interface->SetIntValue(section, key, value);
+  QueueSettingsSave();
+}
+
+void QtHost::SetBaseFloatSettingValue(const char* section, const char* key, float value)
+{
+  auto lock = Host::GetSettingsLock();
+  s_base_settings_interface->SetFloatValue(section, key, value);
+  QueueSettingsSave();
+}
+
+void QtHost::SetBaseStringSettingValue(const char* section, const char* key, const char* value)
+{
+  auto lock = Host::GetSettingsLock();
+  s_base_settings_interface->SetStringValue(section, key, value);
+  QueueSettingsSave();
+}
+
+void QtHost::SetBaseStringListSettingValue(const char* section, const char* key, const std::vector<std::string>& values)
+{
+  auto lock = Host::GetSettingsLock();
+  s_base_settings_interface->SetStringList(section, key, values);
+  QueueSettingsSave();
+}
+
+bool QtHost::AddBaseValueToStringList(const char* section, const char* key, const char* value)
+{
+  auto lock = Host::GetSettingsLock();
+  if (!s_base_settings_interface->AddToStringList(section, key, value))
+    return false;
+
+  QueueSettingsSave();
+  return true;
+}
+
+bool QtHost::RemoveBaseValueFromStringList(const char* section, const char* key, const char* value)
+{
+  auto lock = Host::GetSettingsLock();
+  if (!s_base_settings_interface->RemoveFromStringList(section, key, value))
+    return false;
+
+  QueueSettingsSave();
+  return true;
+}
+
+void QtHost::RemoveBaseSettingValue(const char* section, const char* key)
+{
+  auto lock = Host::GetSettingsLock();
+  s_base_settings_interface->DeleteValue(section, key);
+  QueueSettingsSave();
+}
+
+void QtHost::SaveSettings()
+{
+  AssertMsg(!QtHostInterface::GetInstance()->isOnWorkerThread(), "Saving should happen on the UI thread.");
+
+  {
+    auto lock = Host::GetSettingsLock();
+    if (!s_base_settings_interface->Save())
+      Log_ErrorPrintf("Failed to save settings.");
+  }
+
+  s_settings_save_timer->deleteLater();
+  s_settings_save_timer.release();
+}
+
+void QtHost::QueueSettingsSave()
+{
+  if (s_settings_save_timer)
+    return;
+
+  s_settings_save_timer = std::make_unique<QTimer>();
+  s_settings_save_timer->connect(s_settings_save_timer.get(), &QTimer::timeout, SaveSettings);
+  s_settings_save_timer->setSingleShot(true);
+  s_settings_save_timer->start(SETTINGS_SAVE_DELAY);
+}
+
+BEGIN_HOTKEY_LIST(g_host_hotkeys)
+END_HOTKEY_LIST()

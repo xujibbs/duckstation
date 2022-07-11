@@ -13,6 +13,9 @@
     <ClCompile Include="cheatcodeeditordialog.cpp" />
     <ClCompile Include="collapsiblewidget.cpp" />
     <ClCompile Include="consolesettingswidget.cpp" />
+    <ClCompile Include="controllerbindingwidgets.cpp" />
+    <ClCompile Include="controllerglobalsettingswidget.cpp" />
+    <ClCompile Include="controllersettingsdialog.cpp" />
     <ClCompile Include="emulationsettingswidget.cpp" />
     <ClCompile Include="debuggermodels.cpp" />
     <ClCompile Include="debuggerwindow.cpp" />
@@ -23,7 +26,6 @@
     <ClCompile Include="displaysettingswidget.cpp" />
     <ClCompile Include="hotkeysettingswidget.cpp" />
     <ClCompile Include="inputbindingdialog.cpp" />
-    <ClCompile Include="inputbindingmonitor.cpp" />
     <ClCompile Include="inputbindingwidgets.cpp" />
     <ClCompile Include="memoryviewwidget.cpp" />
     <ClCompile Include="qtdisplaywidget.cpp" />
@@ -34,13 +36,13 @@
     <ClCompile Include="gdbserver.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="mainwindow.cpp" />
-    <ClCompile Include="controllersettingswidget.cpp" />
     <ClCompile Include="memorycardsettingswidget.cpp" />
     <ClCompile Include="memorycardeditordialog.cpp" />
     <ClCompile Include="postprocessingchainconfigwidget.cpp" />
     <ClCompile Include="postprocessingshaderconfigwidget.cpp" />
     <ClCompile Include="postprocessingsettingswidget.cpp" />
     <ClCompile Include="qthostinterface.cpp" />
+    <ClCompile Include="qtkeycodes.cpp" />
     <ClCompile Include="qtprogresscallback.cpp" />
     <ClCompile Include="qtutils.cpp" />
     <ClCompile Include="settingsdialog.cpp" />
@@ -51,7 +53,6 @@
     <QtMoc Include="biossettingswidget.h" />
     <QtMoc Include="cheatmanagerdialog.h" />
     <QtMoc Include="cheatcodeeditordialog.h" />
-    <QtMoc Include="controllersettingswidget.h" />
     <QtMoc Include="enhancementsettingswidget.h" />
     <QtMoc Include="memorycardsettingswidget.h" />
     <QtMoc Include="memorycardeditordialog.h" />
@@ -71,7 +72,10 @@
     <QtMoc Include="achievementsettingswidget.h" />
     <QtMoc Include="achievementlogindialog.h" />
     <QtMoc Include="collapsiblewidget.h" />
-    <ClInclude Include="inputbindingmonitor.h" />
+    <QtMoc Include="controllerbindingwidgets.h" />
+    <QtMoc Include="controllerglobalsettingswidget.h" />
+    <QtMoc Include="controllersettingsdialog.h" />
+    <ClInclude Include="controllersettingwidgetbinder.h" />
     <QtMoc Include="memoryviewwidget.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="settingwidgetbinder.h" />
@@ -145,6 +149,33 @@
     <QtUi Include="cheatcodeeditordialog.ui">
       <FileType>Document</FileType>
     </QtUi>
+    <QtUi Include="inputbindingdialog.ui">
+      <FileType>Document</FileType>
+    </QtUi>
+    <QtUi Include="autoupdaterdialog.ui">
+      <FileType>Document</FileType>
+    </QtUi>
+    <QtUi Include="achievementsettingswidget.ui">
+      <FileType>Document</FileType>
+    </QtUi>
+    <QtUi Include="achievementlogindialog.ui">
+      <FileType>Document</FileType>
+    </QtUi>
+    <QtUi Include="debuggerwindow.ui">
+      <FileType>Document</FileType>
+    </QtUi>
+    <QtUi Include="controllerbindingwidget.ui">
+      <FileType>Document</FileType>
+    </QtUi>
+    <QtUi Include="controllerbindingwidget_analog_controller.ui">
+      <FileType>Document</FileType>
+    </QtUi>
+    <QtUi Include="controllerglobalsettingswidget.ui">
+      <FileType>Document</FileType>
+    </QtUi>
+    <QtUi Include="controllersettingsdialog.ui">
+      <FileType>Document</FileType>
+    </QtUi>
   </ItemGroup>
   <ItemGroup>
     <QtResource Include="resources\resources.qrc">
@@ -163,7 +194,9 @@
     <ClCompile Include="$(IntDir)moc_cheatcodeeditordialog.cpp" />
     <ClCompile Include="$(IntDir)moc_collapsiblewidget.cpp" />
     <ClCompile Include="$(IntDir)moc_consolesettingswidget.cpp" />
-    <ClCompile Include="$(IntDir)moc_controllersettingswidget.cpp" />
+    <ClCompile Include="$(IntDir)moc_controllerbindingwidgets.cpp" />
+    <ClCompile Include="$(IntDir)moc_controllerglobalsettingswidget.cpp" />
+    <ClCompile Include="$(IntDir)moc_controllersettingsdialog.cpp" />
     <ClCompile Include="$(IntDir)moc_emulationsettingswidget.cpp" />
     <ClCompile Include="$(IntDir)moc_enhancementsettingswidget.cpp" />
     <ClCompile Include="$(IntDir)moc_gamelistmodel.cpp" />
@@ -201,16 +234,6 @@
   </ItemGroup>
   <ItemGroup>
     <Image Include="duckstation-qt.ico" />
-  </ItemGroup>
-  <ItemGroup>
-    <QtUi Include="inputbindingdialog.ui">
-      <FileType>Document</FileType>
-    </QtUi>
-  </ItemGroup>
-  <ItemGroup>
-    <QtUi Include="autoupdaterdialog.ui">
-      <FileType>Document</FileType>
-    </QtUi>
   </ItemGroup>
   <ItemGroup>
     <QtTs Include="translations\duckstation-qt_de.ts">
@@ -256,13 +279,6 @@
   <ItemGroup>
     <None Include="translations\duckstation-qt_es-es.ts" />
     <None Include="translations\duckstation-qt_tr.ts" />
-    <QtUi Include="achievementsettingswidget.ui">
-      <FileType>Document</FileType>
-    </QtUi>
-    <QtUi Include="achievementlogindialog.ui">
-      <FileType>Document</FileType>
-    </QtUi>
-    <None Include="debuggerwindow.ui" />
   </ItemGroup>
   <ItemGroup>
     <CommonDataFiles Include="$(SolutionDir)data\**\*.*">
@@ -283,6 +299,9 @@
     <Link>
       <AdditionalDependencies>$(RootBuildDir)frontend-common\frontend-common.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <ClCompile>
+      <DisableSpecificWarnings Condition="'$(Configuration)|$(Platform)'=='DebugFast|x64'">4127;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+    </ClCompile>
   </ItemDefinitionGroup>
   <Import Project="..\..\dep\msvc\vsprops\Targets.props" />
   <Import Project="..\..\dep\msvc\vsprops\QtCompile.targets" />

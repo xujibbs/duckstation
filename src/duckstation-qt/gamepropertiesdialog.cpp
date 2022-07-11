@@ -200,8 +200,10 @@ void GamePropertiesDialog::setupAdditionalUi()
       qApp->translate("ControllerType", Settings::GetControllerTypeDisplayName(static_cast<ControllerType>(i))));
   }
   m_ui.userInputProfile->addItem(tr("(unchanged)"));
+#if 0
   for (const auto& it : m_host_interface->getInputProfileList())
     m_ui.userInputProfile->addItem(QString::fromStdString(it.name));
+#endif
 
   m_ui.userMemoryCard1Type->addItem(tr("(unchanged)"));
   for (u32 i = 0; i < static_cast<u32>(MemoryCardType::Count); i++)

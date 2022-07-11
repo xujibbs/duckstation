@@ -130,8 +130,7 @@ bool QtDisplayWidget::event(QEvent* event)
       const QKeyEvent* key_event = static_cast<QKeyEvent*>(event);
       if (!key_event->isAutoRepeat())
       {
-        emit windowKeyEvent(key_event->key(), static_cast<int>(key_event->modifiers()),
-                            event->type() == QEvent::KeyPress);
+        emit windowKeyEvent(key_event->key(), event->type() == QEvent::KeyPress);
       }
 
       return true;

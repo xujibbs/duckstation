@@ -387,3 +387,18 @@ struct Settings
 };
 
 extern Settings g_settings;
+
+namespace EmuFolders
+{
+extern std::string AppRoot;
+extern std::string DataRoot;
+extern std::string Bios;
+extern std::string Cache;
+extern std::string Covers;
+extern std::string Dump;
+extern std::string InputProfiles;
+extern std::string MemoryCards;
+extern std::string SaveStates;
+extern std::string Screenshots;
+extern std::string Textures;
+}

@@ -1,46 +1,32 @@
 #include "generalsettingswidget.h"
 #include "autoupdaterdialog.h"
-#include "frontend-common/controller_interface.h"
 #include "mainwindow.h"
 #include "qtutils.h"
 #include "scmversion/scmversion.h"
 #include "settingsdialog.h"
 #include "settingwidgetbinder.h"
 
-GeneralSettingsWidget::GeneralSettingsWidget(QtHostInterface* host_interface, QWidget* parent, SettingsDialog* dialog)
-  : QWidget(parent), m_host_interface(host_interface)
+GeneralSettingsWidget::GeneralSettingsWidget(SettingsDialog* dialog, QWidget* parent)
+  : QWidget(parent), m_dialog(dialog)
 {
+  SettingsInterface* sif = dialog->getSettingsInterface();
+
   m_ui.setupUi(this);
 
-  for (u32 i = 0; i < static_cast<u32>(ControllerInterface::Backend::Count); i++)
-  {
-    m_ui.controllerBackend->addItem(qApp->translate(
-      "ControllerInterface", ControllerInterface::GetBackendName(static_cast<ControllerInterface::Backend>(i))));
-  }
-
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.pauseOnStart, "Main", "StartPaused", false);
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.pauseOnFocusLoss, "Main", "PauseOnFocusLoss",
-                                               false);
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.startFullscreen, "Main", "StartFullscreen",
-                                               false);
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.hideCursorInFullscreen, "Main",
-                                               "HideCursorInFullscreen", true);
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.inhibitScreensaver, "Main", "InhibitScreensaver",
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.pauseOnStart, "Main", "StartPaused", false);
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.pauseOnFocusLoss, "Main", "PauseOnFocusLoss", false);
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.startFullscreen, "Main", "StartFullscreen", false);
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.hideCursorInFullscreen, "Main", "HideCursorInFullscreen",
                                                true);
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.renderToMain, "Main", "RenderToMainWindow", true);
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.saveStateOnExit, "Main", "SaveStateOnExit", true);
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.confirmPowerOff, "Main", "ConfirmPowerOff", true);
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.loadDevicesFromSaveStates, "Main",
-                                               "LoadDevicesFromSaveStates", false);
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.applyGameSettings, "Main", "ApplyGameSettings",
-                                               true);
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.autoLoadCheats, "Main", "AutoLoadCheats", true);
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.enableFullscreenUI, "Main", "EnableFullscreenUI",
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.inhibitScreensaver, "Main", "InhibitScreensaver", true);
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.renderToMain, "Main", "RenderToMainWindow", true);
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.saveStateOnExit, "Main", "SaveStateOnExit", true);
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.confirmPowerOff, "Main", "ConfirmPowerOff", true);
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.loadDevicesFromSaveStates, "Main", "LoadDevicesFromSaveStates",
                                                false);
-
-  SettingWidgetBinder::BindWidgetToEnumSetting(
-    m_host_interface, m_ui.controllerBackend, "Main", "ControllerBackend", &ControllerInterface::ParseBackendName,
-    &ControllerInterface::GetBackendName, ControllerInterface::GetDefaultBackend());
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.applyGameSettings, "Main", "ApplyGameSettings", true);
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.autoLoadCheats, "Main", "AutoLoadCheats", true);
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.enableFullscreenUI, "Main", "EnableFullscreenUI", false);
 
   dialog->registerWidgetHelp(
     m_ui.confirmPowerOff, tr("Confirm Power Off"), tr("Checked"),
@@ -76,11 +62,6 @@ GeneralSettingsWidget::GeneralSettingsWidget(QtHostInterface* host_interface, QW
        "leave this option enabled except when testing enhancements with incompatible games."));
   dialog->registerWidgetHelp(m_ui.autoLoadCheats, tr("Automatically Load Cheats"), tr("Unchecked"),
                              tr("Automatically loads and applies cheats on game start."));
-  dialog->registerWidgetHelp(m_ui.controllerBackend, tr("Controller Backend"),
-                             qApp->translate("ControllerInterface", ControllerInterface::GetBackendName(
-                                                                      ControllerInterface::GetDefaultBackend())),
-                             tr("Determines the backend which is used for controller input. Windows users may prefer "
-                                "to use XInput over SDL2 for compatibility."));
   dialog->registerWidgetHelp(
     m_ui.enableFullscreenUI, tr("Enable Fullscreen UI"), tr("Unchecked"),
     tr("Enables the fullscreen UI mode, suitable for controller operation which is used in the NoGUI frontend."));
@@ -91,8 +72,7 @@ GeneralSettingsWidget::GeneralSettingsWidget(QtHostInterface* host_interface, QW
 #ifdef WITH_DISCORD_PRESENCE
   {
     QCheckBox* enableDiscordPresence = new QCheckBox(tr("Enable Discord Presence"), m_ui.groupBox_4);
-    SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, enableDiscordPresence, "Main",
-                                                 "EnableDiscordPresence");
+    SettingWidgetBinder::BindWidgetToBoolSetting(sif, enableDiscordPresence, "Main", "EnableDiscordPresence", false);
     m_ui.formLayout_4->addWidget(enableDiscordPresence, current_row, current_col);
     dialog->registerWidgetHelp(enableDiscordPresence, tr("Enable Discord Presence"), tr("Unchecked"),
                                tr("Shows the game you are currently playing as part of your profile in Discord."));
@@ -103,19 +83,18 @@ GeneralSettingsWidget::GeneralSettingsWidget(QtHostInterface* host_interface, QW
 #endif
   if (AutoUpdaterDialog::isSupported())
   {
-    SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.autoUpdateEnabled, "AutoUpdater",
-                                                 "CheckAtStartup", true);
+    SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.autoUpdateEnabled, "AutoUpdater", "CheckAtStartup", true);
     dialog->registerWidgetHelp(m_ui.autoUpdateEnabled, tr("Enable Automatic Update Check"), tr("Checked"),
                                tr("Automatically checks for updates to the program on startup. Updates can be deferred "
                                   "until later or skipped entirely."));
 
     m_ui.autoUpdateTag->addItems(AutoUpdaterDialog::getTagList());
-    SettingWidgetBinder::BindWidgetToStringSetting(m_host_interface, m_ui.autoUpdateTag, "AutoUpdater", "UpdateTag",
+    SettingWidgetBinder::BindWidgetToStringSetting(sif, m_ui.autoUpdateTag, "AutoUpdater", "UpdateTag",
                                                    AutoUpdaterDialog::getDefaultTag());
 
     m_ui.autoUpdateCurrentVersion->setText(tr("%1 (%2)").arg(g_scm_tag_str).arg(g_scm_date_str));
     connect(m_ui.checkForUpdates, &QPushButton::clicked,
-            [this]() { m_host_interface->getMainWindow()->checkForUpdates(true); });
+            [this]() { QtHostInterface::GetInstance()->getMainWindow()->checkForUpdates(true); });
     current_col++;
     current_row += (current_col / 2);
     current_col %= 2;

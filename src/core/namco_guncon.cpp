@@ -10,6 +10,8 @@
 #include <array>
 Log_SetChannel(NamcoGunCon);
 
+#if 0
+
 NamcoGunCon::NamcoGunCon() = default;
 
 NamcoGunCon::~NamcoGunCon() = default;
@@ -312,3 +314,5 @@ bool NamcoGunCon::GetSoftwareCursor(const Common::RGBA8Image** image, float* ima
   *relative_mode = false;
   return true;
 }
+
+#endif

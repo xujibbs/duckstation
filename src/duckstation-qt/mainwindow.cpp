@@ -22,7 +22,7 @@
 #include "util/cd_image.h"
 
 #ifdef WITH_CHEEVOS
-#include "core/cheevos.h"
+#include "frontend-common/cheevos.h"
 #endif
 
 #include <QtCore/QDebug>
@@ -1218,9 +1218,9 @@ void MainWindow::connectSignals()
   connect(m_ui.actionGameListSettings, &QAction::triggered,
           [this]() { doSettings(SettingsDialog::Category::GameListSettings); });
   connect(m_ui.actionHotkeySettings, &QAction::triggered,
-          [this]() { doSettings(SettingsDialog::Category::HotkeySettings); });
+          [this]() { doControllerSettings(ControllerSettingsDialog::Category::HotkeySettings); });
   connect(m_ui.actionControllerSettings, &QAction::triggered,
-          [this]() { doSettings(SettingsDialog::Category::ControllerSettings); });
+          [this]() { doControllerSettings(ControllerSettingsDialog::Category::GlobalSettings); });
   connect(m_ui.actionMemoryCardSettings, &QAction::triggered,
           [this]() { doSettings(SettingsDialog::Category::MemoryCardSettings); });
   connect(m_ui.actionDisplaySettings, &QAction::triggered,
@@ -1295,16 +1295,15 @@ void MainWindow::connectSignals()
   connect(m_game_list_widget, &GameListWidget::entryContextMenuRequested, this,
           &MainWindow::onGameListContextMenuRequested);
 
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.actionDisableAllEnhancements, "Main",
-                                               "DisableAllEnhancements");
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.actionDisableInterlacing, "GPU",
-                                               "DisableInterlacing");
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.actionForceNTSCTimings, "GPU",
-                                               "ForceNTSCTimings");
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.actionDebugDumpCPUtoVRAMCopies, "Debug",
-                                               "DumpCPUToVRAMCopies");
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.actionDebugDumpVRAMtoCPUCopies, "Debug",
-                                               "DumpVRAMToCPUCopies");
+  SettingWidgetBinder::BindWidgetToBoolSetting(nullptr, m_ui.actionDisableAllEnhancements, "Main",
+                                               "DisableAllEnhancements", false);
+  SettingWidgetBinder::BindWidgetToBoolSetting(nullptr, m_ui.actionDisableInterlacing, "GPU", "DisableInterlacing",
+                                               true);
+  SettingWidgetBinder::BindWidgetToBoolSetting(nullptr, m_ui.actionForceNTSCTimings, "GPU", "ForceNTSCTimings", false);
+  SettingWidgetBinder::BindWidgetToBoolSetting(nullptr, m_ui.actionDebugDumpCPUtoVRAMCopies, "Debug",
+                                               "DumpCPUToVRAMCopies", false);
+  SettingWidgetBinder::BindWidgetToBoolSetting(nullptr, m_ui.actionDebugDumpVRAMtoCPUCopies, "Debug",
+                                               "DumpVRAMToCPUCopies", false);
   connect(m_ui.actionDumpAudio, &QAction::toggled, [this](bool checked) {
     if (checked)
       m_host_interface->startDumpingAudio();
@@ -1335,16 +1334,15 @@ void MainWindow::connectSignals()
 
     m_host_interface->dumpSPURAM(filename);
   });
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.actionDebugShowVRAM, "Debug", "ShowVRAM");
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.actionDebugShowGPUState, "Debug", "ShowGPUState");
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.actionDebugShowCDROMState, "Debug",
-                                               "ShowCDROMState");
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.actionDebugShowSPUState, "Debug", "ShowSPUState");
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.actionDebugShowTimersState, "Debug",
-                                               "ShowTimersState");
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.actionDebugShowMDECState, "Debug",
-                                               "ShowMDECState");
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.actionDebugShowDMAState, "Debug", "ShowDMAState");
+  SettingWidgetBinder::BindWidgetToBoolSetting(nullptr, m_ui.actionDebugShowVRAM, "Debug", "ShowVRAM", false);
+  SettingWidgetBinder::BindWidgetToBoolSetting(nullptr, m_ui.actionDebugShowGPUState, "Debug", "ShowGPUState", false);
+  SettingWidgetBinder::BindWidgetToBoolSetting(nullptr, m_ui.actionDebugShowCDROMState, "Debug", "ShowCDROMState",
+                                               false);
+  SettingWidgetBinder::BindWidgetToBoolSetting(nullptr, m_ui.actionDebugShowSPUState, "Debug", "ShowSPUState", false);
+  SettingWidgetBinder::BindWidgetToBoolSetting(nullptr, m_ui.actionDebugShowTimersState, "Debug", "ShowTimersState",
+                                               false);
+  SettingWidgetBinder::BindWidgetToBoolSetting(nullptr, m_ui.actionDebugShowMDECState, "Debug", "ShowMDECState", false);
+  SettingWidgetBinder::BindWidgetToBoolSetting(nullptr, m_ui.actionDebugShowDMAState, "Debug", "ShowDMAState", false);
 
   addThemeToMenu(tr("Default"), QStringLiteral("default"));
   addThemeToMenu(tr("Fusion"), QStringLiteral("fusion"));
@@ -1490,7 +1488,7 @@ void MainWindow::onSettingsResetToDefault()
 
     m_settings_dialog->hide();
     m_settings_dialog->deleteLater();
-    m_settings_dialog = new SettingsDialog(m_host_interface, this);
+    m_settings_dialog = new SettingsDialog(this);
     if (shown)
     {
       m_settings_dialog->setModal(false);
@@ -1573,7 +1571,7 @@ void MainWindow::restoreDisplayWindowGeometryFromConfig()
 SettingsDialog* MainWindow::getSettingsDialog()
 {
   if (!m_settings_dialog)
-    m_settings_dialog = new SettingsDialog(m_host_interface, this);
+    m_settings_dialog = new SettingsDialog(this);
 
   return m_settings_dialog;
 }
@@ -1588,6 +1586,28 @@ void MainWindow::doSettings(SettingsDialog::Category category)
   }
 
   if (category != SettingsDialog::Category::Count)
+    dlg->setCategory(category);
+}
+
+ControllerSettingsDialog* MainWindow::getControllerSettingsDialog()
+{
+  if (!m_controller_settings_dialog)
+    m_controller_settings_dialog = new ControllerSettingsDialog(this);
+
+  return m_controller_settings_dialog;
+}
+
+void MainWindow::doControllerSettings(
+  ControllerSettingsDialog::Category category /*= ControllerSettingsDialog::Category::Count*/)
+{
+  ControllerSettingsDialog* dlg = getControllerSettingsDialog();
+  if (!dlg->isVisible())
+  {
+    dlg->setModal(false);
+    dlg->show();
+  }
+
+  if (category != ControllerSettingsDialog::Category::Count)
     dlg->setCategory(category);
 }
 

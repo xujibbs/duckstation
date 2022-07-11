@@ -4,7 +4,6 @@
 
 #include "ui_emulationsettingswidget.h"
 
-class QtHostInterface;
 class SettingsDialog;
 
 class EmulationSettingsWidget : public QWidget
@@ -12,7 +11,7 @@ class EmulationSettingsWidget : public QWidget
   Q_OBJECT
 
 public:
-  explicit EmulationSettingsWidget(QtHostInterface* host_interface, QWidget* parent, SettingsDialog* dialog);
+  explicit EmulationSettingsWidget(SettingsDialog* dialog, QWidget* parent);
   ~EmulationSettingsWidget();
 
 private Q_SLOTS:
@@ -26,5 +25,5 @@ private:
 
   Ui::EmulationSettingsWidget m_ui;
 
-  QtHostInterface* m_host_interface;
+  SettingsDialog* m_dialog;
 };

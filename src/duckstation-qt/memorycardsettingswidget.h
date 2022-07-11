@@ -8,7 +8,6 @@
 #include <array>
 #include <vector>
 
-class QtHostInterface;
 class SettingsDialog;
 
 class MemoryCardSettingsWidget : public QWidget
@@ -16,11 +15,11 @@ class MemoryCardSettingsWidget : public QWidget
   Q_OBJECT
 
 public:
-  MemoryCardSettingsWidget(QtHostInterface* host_interface, QWidget* parent, SettingsDialog* dialog);
+  MemoryCardSettingsWidget(SettingsDialog* dialog, QWidget* parent);
   ~MemoryCardSettingsWidget();
 
 private:
-  QtHostInterface* m_host_interface;
+  SettingsDialog* m_dialog;
 
   struct PortSettingsUI
   {

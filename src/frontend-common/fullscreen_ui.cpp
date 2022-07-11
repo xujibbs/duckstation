@@ -10,14 +10,12 @@
 #include "common/string.h"
 #include "common/string_util.h"
 #include "common_host_interface.h"
-#include "controller_interface.h"
 #include "core/cheats.h"
 #include "core/cpu_core.h"
 #include "core/gpu.h"
 #include "core/host_display.h"
 #include "core/host_interface_progress_callback.h"
-#include "core/imgui_fullscreen.h"
-#include "core/imgui_styles.h"
+#include "imgui_fullscreen.h"
 #include "core/resources.h"
 #include "core/settings.h"
 #include "core/system.h"
@@ -35,8 +33,10 @@
 Log_SetChannel(FullscreenUI);
 
 #ifdef WITH_CHEEVOS
-#include "core/cheevos.h"
+#include "cheevos.h"
 #endif
+
+#if 0
 
 static constexpr float LAYOUT_MAIN_MENU_BAR_SIZE = 20.0f; // Should be DPI scaled, not layout scaled!
 
@@ -4714,3 +4714,85 @@ void SetImGuiNavInputs()
 }
 
 } // namespace FullscreenUI
+
+#else
+
+namespace FullscreenUI {
+bool Initialize(CommonHostInterface* host_interface)
+{
+  return false;
+}
+
+bool IsInitialized()
+{
+  return false;
+}
+
+bool HasActiveWindow()
+{
+  return false;
+}
+
+void UpdateSettings() {}
+
+void SystemCreated() {}
+
+void SystemDestroyed() {}
+
+void OpenQuickMenu() {}
+
+void CloseQuickMenu() {}
+
+#ifdef WITH_CHEEVOS
+bool OpenAchievementsWindow()
+{
+  return false;
+}
+bool OpenLeaderboardsWindow()
+{
+  return false;
+}
+#endif
+
+void Shutdown() {}
+
+void Render() {}
+
+bool IsBindingInput()
+{
+  return false;
+}
+
+bool HandleKeyboardBinding(const char* keyName, bool pressed)
+{
+  return false;
+}
+
+std::unique_ptr<HostDisplayTexture> LoadTextureResource(const char* name, bool allow_fallback)
+{
+  return {};
+}
+
+// Returns true if the message has been dismissed.
+bool DrawErrorWindow(const char* message)
+{
+  return false;
+}
+bool DrawConfirmWindow(const char* message, bool* result)
+{
+  return false;
+}
+
+void QueueGameListRefresh() {}
+void EnsureGameListLoaded() {}
+
+Settings& GetSettingsCopy()
+{
+  static Settings unused;
+  return unused;
+}
+
+void SaveAndApplySettings() {}
+void SetDebugMenuAllowed(bool allowed) {}
+} // namespace FullscreenUI
+#endif

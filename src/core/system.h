@@ -137,12 +137,15 @@ const std::string& GetRunningPath();
 const std::string& GetRunningCode();
 const std::string& GetRunningTitle();
 
+// TODO: Move to PerformanceMetrics
 float GetFPS();
 float GetVPS();
 float GetEmulationSpeed();
 float GetAverageFrameTime();
 float GetWorstFrameTime();
 float GetThrottleFrequency();
+float GetCPUThreadUsage();
+float GetCPUThreadAverageTime();
 
 bool Boot(const SystemBootParameters& params);
 void Reset();

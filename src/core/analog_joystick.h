@@ -5,6 +5,8 @@
 #include <optional>
 #include <string_view>
 
+#if 0
+
 class AnalogJoystick final : public Controller
 {
 public:
@@ -103,3 +105,5 @@ private:
 
   TransferState m_transfer_state = TransferState::Idle;
 };
+
+#endif

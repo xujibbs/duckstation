@@ -115,24 +115,6 @@
      </item>
      <item>
       <property name="text">
-       <string>Hotkey Settings</string>
-      </property>
-      <property name="icon">
-       <iconset theme="HotkeySettings">
-        <normaloff>.</normaloff>.</iconset>
-      </property>
-     </item>
-     <item>
-      <property name="text">
-       <string>Controller Settings</string>
-      </property>
-      <property name="icon">
-       <iconset theme="ControllerSettings">
-        <normaloff>.</normaloff>.</iconset>
-      </property>
-     </item>
-     <item>
-      <property name="text">
        <string>Memory Card Settings</string>
       </property>
       <property name="icon">

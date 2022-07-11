@@ -15,9 +15,8 @@
 static constexpr char MEMORY_CARD_IMAGE_FILTER[] =
   QT_TRANSLATE_NOOP("MemoryCardSettingsWidget", "All Memory Card Types (*.mcd *.mcr *.mc)");
 
-MemoryCardSettingsWidget::MemoryCardSettingsWidget(QtHostInterface* host_interface, QWidget* parent,
-                                                   SettingsDialog* dialog)
-  : QWidget(parent), m_host_interface(host_interface)
+MemoryCardSettingsWidget::MemoryCardSettingsWidget(SettingsDialog* dialog, QWidget* parent)
+  : QWidget(parent), m_dialog(dialog)
 {
   createUi(dialog);
 }
@@ -45,12 +44,12 @@ void MemoryCardSettingsWidget::createUi(SettingsDialog* dialog)
 
       QHBoxLayout* hbox = new QHBoxLayout();
       m_memory_card_directory = new QLineEdit(box);
-      SettingWidgetBinder::BindWidgetToStringSetting(m_host_interface, m_memory_card_directory, "MemoryCards",
+      SettingWidgetBinder::BindWidgetToStringSetting(m_dialog->getSettingsInterface(), m_memory_card_directory, "MemoryCards",
                                                      "Directory");
       if (m_memory_card_directory->text().isEmpty())
       {
         QSignalBlocker sb(m_memory_card_directory);
-        m_memory_card_directory->setText(QString::fromStdString(m_host_interface->GetMemoryCardDirectory()));
+        m_memory_card_directory->setText(QString::fromStdString(QtHostInterface::GetInstance()->GetMemoryCardDirectory()));
       }
       hbox->addWidget(m_memory_card_directory);
 
@@ -66,7 +65,7 @@ void MemoryCardSettingsWidget::createUi(SettingsDialog* dialog)
     }
 
     QCheckBox* playlist_title_as_game_title = new QCheckBox(tr("Use Single Card For Sub-Images"), box);
-    SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, playlist_title_as_game_title, "MemoryCards",
+    SettingWidgetBinder::BindWidgetToBoolSetting(m_dialog->getSettingsInterface(), playlist_title_as_game_title, "MemoryCards",
                                                  "UsePlaylistTitle", true);
     box_layout->addWidget(playlist_title_as_game_title);
     dialog->registerWidgetHelp(
@@ -129,20 +128,20 @@ void MemoryCardSettingsWidget::createPortSettingsUi(SettingsDialog* dialog, int 
 
   const MemoryCardType default_value = (index == 0) ? MemoryCardType::PerGameTitle : MemoryCardType::None;
   SettingWidgetBinder::BindWidgetToEnumSetting(
-    m_host_interface, ui->memory_card_type, "MemoryCards", StringUtil::StdStringFromFormat("Card%dType", index + 1),
+    m_dialog->getSettingsInterface(), ui->memory_card_type, "MemoryCards", StringUtil::StdStringFromFormat("Card%dType", index + 1),
     &Settings::ParseMemoryCardTypeName, &Settings::GetMemoryCardTypeName, default_value);
   ui->layout->addWidget(new QLabel(tr("Memory Card Type:"), ui->container));
   ui->layout->addWidget(ui->memory_card_type);
 
   QHBoxLayout* memory_card_layout = new QHBoxLayout();
   ui->memory_card_path = new QLineEdit(ui->container);
-  SettingWidgetBinder::BindWidgetToStringSetting(m_host_interface, ui->memory_card_path, "MemoryCards",
+  SettingWidgetBinder::BindWidgetToStringSetting(m_dialog->getSettingsInterface(), ui->memory_card_path, "MemoryCards",
                                                  StringUtil::StdStringFromFormat("Card%dPath", index + 1));
   if (ui->memory_card_path->text().isEmpty())
   {
     QSignalBlocker sb(ui->memory_card_path);
     ui->memory_card_path->setText(
-      QString::fromStdString(m_host_interface->GetSharedMemoryCardPath(static_cast<u32>(index))));
+      QString::fromStdString(QtHostInterface::GetInstance()->GetSharedMemoryCardPath(static_cast<u32>(index))));
   }
   memory_card_layout->addWidget(ui->memory_card_path);
 
@@ -172,11 +171,10 @@ void MemoryCardSettingsWidget::onBrowseMemoryCardPathClicked(int index)
 
 void MemoryCardSettingsWidget::onResetMemoryCardPathClicked(int index)
 {
-  m_host_interface->RemoveSettingValue("MemoryCards", TinyString::FromFormat("Card%dPath", index + 1));
-  m_host_interface->applySettings();
+  m_dialog->removeSettingValue("MemoryCards", TinyString::FromFormat("Card%dPath", index + 1));
 
   QSignalBlocker db(m_port_ui[index].memory_card_path);
-  m_port_ui[index].memory_card_path->setText(QString::fromStdString(m_host_interface->GetSharedMemoryCardPath(index)));
+  m_port_ui[index].memory_card_path->setText(QString::fromStdString(QtHostInterface::GetInstance()->GetSharedMemoryCardPath(index)));
 }
 
 void MemoryCardSettingsWidget::onOpenMemCardsDirectoryClicked()
@@ -192,16 +190,14 @@ void MemoryCardSettingsWidget::onBrowseMemCardsDirectoryClicked()
     return;
 
   m_memory_card_directory->setText(path);
-  m_host_interface->applySettings();
 }
 
 void MemoryCardSettingsWidget::onResetMemCardsDirectoryClicked()
 {
-  m_host_interface->RemoveSettingValue("MemoryCards", "Directory");
-  m_host_interface->applySettings();
+  m_dialog->removeSettingValue("MemoryCards", "Directory");
 
   // This sucks.. settings are applied asynchronously, so we have to manually build the path here.
-  QString memory_card_directory(m_host_interface->getUserDirectoryRelativePath(QStringLiteral("memcards")));
+  QString memory_card_directory(QtHostInterface::GetInstance()->getUserDirectoryRelativePath(QStringLiteral("memcards")));
   QSignalBlocker db(m_memory_card_directory);
   m_memory_card_directory->setText(memory_card_directory);
 }

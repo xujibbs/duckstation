@@ -19,63 +19,18 @@ class HostDisplayTexture;
 class GameList;
 struct GameDatabaseEntry;
 
-class ControllerInterface;
-
 namespace FrontendCommon {
 class SaveStateSelectorUI;
-
-enum class ControllerNavigationButton : u32
-{
-  Activate,      // A on XBox Controller, Cross on PS Controller
-  Cancel,        // B on XBox Controller, Circle on PS Controller
-  LeftShoulder,  // LB on XBox Controller, L1 on PS Controller
-  RightShoulder, // RB on XBox Controller, R1 on PS Controller
-  DPadLeft,
-  DPadRight,
-  DPadUp,
-  DPadDown,
-  Count
-};
-
 } // namespace FrontendCommon
 
 class CommonHostInterface : public HostInterface
 {
 public:
-  friend ControllerInterface;
-
   enum : s32
   {
     PER_GAME_SAVE_STATE_SLOTS = 10,
-    GLOBAL_SAVE_STATE_SLOTS = 10,
-    NUM_CONTROLLER_AUTOFIRE_BUTTONS = 4,
-    DEFAULT_AUTOFIRE_FREQUENCY = 2
+    GLOBAL_SAVE_STATE_SLOTS = 10
   };
-
-  using HostKeyCode = s32;
-  using HostMouseButton = s32;
-
-  using InputButtonHandler = std::function<void(bool)>;
-  using InputAxisHandler = std::function<void(float)>;
-  using ControllerRumbleCallback = std::function<void(const float*, u32)>;
-
-  struct HotkeyInfo
-  {
-    String category;
-    String name;
-    String display_name;
-    InputButtonHandler handler;
-  };
-
-  using HotkeyInfoList = std::vector<HotkeyInfo>;
-
-  struct InputProfileEntry
-  {
-    std::string name;
-    std::string path;
-  };
-  using InputProfileList = std::vector<InputProfileEntry>;
-
   struct SaveStateInfo
   {
     std::string path;
@@ -120,9 +75,6 @@ public:
   /// Loads new settings and applies them.
   virtual void ApplySettings(bool display_osd_messages);
 
-  /// Reloads the input map from config. Callable from controller interface.
-  void UpdateInputMap();
-
   virtual bool IsFullscreen() const;
   virtual bool SetFullscreen(bool enabled);
 
@@ -134,45 +86,17 @@ public:
   virtual void ResetSystem() override;
   virtual void DestroySystem() override;
 
-  /// Returns the settings interface.
-  SettingsInterface* GetSettingsInterface() override;
-  std::lock_guard<std::recursive_mutex> GetSettingsLock() override;
-
   /// Returns the game list.
   ALWAYS_INLINE GameList* GetGameList() const { return m_game_list.get(); }
 
-  /// Returns a list of all available hotkeys.
-  ALWAYS_INLINE const HotkeyInfoList& GetHotkeyInfoList() const { return m_hotkeys; }
-
-  /// Access to current controller interface.
-  ALWAYS_INLINE ControllerInterface* GetControllerInterface() const { return m_controller_interface.get(); }
-
   /// Returns true if running in batch mode, i.e. exit after emulation.
   ALWAYS_INLINE bool InBatchMode() const { return m_flags.batch_mode; }
-
-  /// Returns true if the fullscreen UI is enabled.
-  ALWAYS_INLINE bool IsFullscreenUIEnabled() const { return m_fullscreen_ui_enabled; }
 
   /// Returns true if an undo load state exists.
   ALWAYS_INLINE bool CanUndoLoadState() const { return static_cast<bool>(m_undo_load_state); }
 
   /// Parses command line parameters for all frontends.
   bool ParseCommandLineParameters(int argc, char* argv[], std::unique_ptr<SystemBootParameters>* out_boot_params);
-
-  /// Returns a path where an input profile with the specified name would be saved.
-  std::string GetSavePathForInputProfile(const char* name) const;
-
-  /// Returns a list of all input profiles. first - name, second - path
-  InputProfileList GetInputProfileList() const;
-
-  /// Returns the path for an input profile.
-  std::string GetInputProfilePath(const char* name) const;
-
-  /// Applies the specified input profile.
-  bool ApplyInputProfile(const char* profile_path);
-
-  /// Saves the current input configuration to the specified profile name.
-  bool SaveInputProfile(const char* profile_path);
 
   /// Powers off the system, optionally saving the resume state.
   void PowerOffSystem(bool save_resume_state);
@@ -218,15 +142,6 @@ public:
 
   /// Deletes save states for the specified game code. If resume is set, the resume state is deleted too.
   void DeleteSaveStates(const char* game_code, bool resume);
-
-  /// Adds OSD messages, duration is in seconds.
-  void AddOSDMessage(std::string message, float duration = 2.0f) override;
-  void AddKeyedOSDMessage(std::string key, std::string message, float duration = 2.0f) override;
-  void RemoveKeyedOSDMessage(std::string key) override;
-  void ClearOSDMessages();
-
-  /// async message queue bookeeping for. Should be called on UI thread.
-  void AcquirePendingOSDMessages();
 
   /// Displays a loading screen with the logo, rendered with ImGui. Use when executing possibly-time-consuming tasks
   /// such as compiling shaders when starting up.
@@ -316,15 +231,6 @@ public:
   /// This is the APK for Android builds, or the program directory for standalone builds.
   virtual std::unique_ptr<ByteStream> OpenPackageFile(const char* path, u32 flags) override;
 
-  /// Returns true if the fullscreen UI is intercepting controller input.
-  bool IsControllerNavigationActive() const;
-
-  /// Controller navigation, used by fullscreen mode.
-  void SetControllerNavigationButtonState(FrontendCommon::ControllerNavigationButton button, bool pressed);
-
-  /// Alters autofire state for controllers (activates/deactivates).
-  void SetControllerAutoFireSlotState(u32 controller_index, u32 slot_index, bool active);
-
   /// Toggles fast forward state.
   bool IsFastForwardEnabled() const { return m_fast_forward_enabled; }
   void SetFastForwardEnabled(bool enabled);
@@ -335,12 +241,6 @@ public:
 
   /// Toggles rewind state.
   void SetRewindState(bool enabled);
-
-  /// ImGui window drawing.
-  void DrawStatsOverlay();
-  void DrawEnhancementsOverlay();
-  void DrawOSDMessages();
-  void DrawDebugWindows();
 
   /// Returns true if features such as save states should be disabled.
   bool IsCheevosChallengeModeActive() const;
@@ -362,9 +262,6 @@ protected:
   CommonHostInterface();
   ~CommonHostInterface();
 
-  /// Registers frontend-specific hotkeys.
-  virtual void RegisterHotkeys();
-
   /// Executes per-frame tasks such as controller polling.
   virtual void PollAndUpdate();
 
@@ -373,7 +270,6 @@ protected:
 
   virtual std::unique_ptr<AudioStream> CreateAudioStream(AudioBackend backend) override;
   virtual s32 GetAudioOutputVolume() const override;
-  virtual void UpdateControllerInterface();
 
   virtual void OnSystemCreated() override;
   virtual void OnSystemPaused(bool paused) override;
@@ -382,31 +278,8 @@ protected:
                                     const std::string& game_title) override;
   virtual void OnControllerTypeChanged(u32 slot) override;
 
-  virtual std::optional<HostKeyCode> GetHostKeyCode(const std::string_view key_code) const;
-
-  virtual bool AddButtonToInputMap(const std::string& binding, const std::string_view& device,
-                                   const std::string_view& button, InputButtonHandler handler);
-  virtual bool AddAxisToInputMap(const std::string& binding, const std::string_view& device,
-                                 const std::string_view& axis, Controller::AxisType axis_type,
-                                 InputAxisHandler handler);
-  virtual bool AddRumbleToInputMap(const std::string& binding, u32 controller_index, u32 num_motors);
-
-  void RegisterHotkey(String category, String name, String display_name, InputButtonHandler handler);
-  bool HandleHostKeyEvent(HostKeyCode code, HostKeyCode modifiers, bool pressed);
-  bool HandleHostMouseEvent(HostMouseButton button, bool pressed);
-  virtual void UpdateInputMap(SettingsInterface& si);
-  void ClearInputMap();
-
-  /// Updates controller metastate, including turbo and rumble.
-  void UpdateControllerMetaState();
-
-  void AddControllerRumble(u32 controller_index, u32 num_motors, ControllerRumbleCallback callback);
-  void UpdateControllerRumble();
-  void StopControllerRumble();
-
-  void SetControllerAutoFireState(u32 controller_index, s32 button_code, bool active);
-  void StopControllerAutoFire();
-  void UpdateControllerAutoFire();
+  /// Returns the path of the settings file.
+  std::string GetSettingsFileName() const;
 
   /// Returns the path to a save state file. Specifying an index of -1 is the "resume" save state.
   std::string GetGameSaveStateFileName(const char* game_code, s32 slot) const;
@@ -423,9 +296,6 @@ protected:
   /// Updates logging settings.
   virtual void UpdateLogSettings(LOGLEVEL level, const char* filter, bool log_to_console, bool log_to_debug,
                                  bool log_to_window, bool log_to_file);
-
-  /// Returns the path of the settings file.
-  std::string GetSettingsFileName() const;
 
   /// Returns the most recent resume save state.
   std::string GetMostRecentResumeSaveStatePath() const;
@@ -466,25 +336,13 @@ protected:
   bool CreateHostDisplayResources();
   void ReleaseHostDisplayResources();
 
-  virtual void DrawImGuiWindows();
-
   void DoFrameStep();
   void DoToggleCheats();
 
-  std::unique_ptr<SettingsInterface> m_settings_interface;
-  std::recursive_mutex m_settings_mutex;
-
   std::unique_ptr<GameList> m_game_list;
-
-  std::unique_ptr<ControllerInterface> m_controller_interface;
 
   std::unique_ptr<HostDisplayTexture> m_logo_texture;
 
-  std::deque<OSDMessage> m_osd_active_messages; // accessed only by GUI/OSD thread (no lock reqs)
-  std::deque<OSDMessage> m_osd_posted_messages; // written to by multiple threads.
-  std::mutex m_osd_messages_lock;
-
-  bool m_fullscreen_ui_enabled = false;
   bool m_frame_step_request = false;
   bool m_fast_forward_enabled = false;
   bool m_turbo_enabled = false;
@@ -509,19 +367,7 @@ protected:
   } m_flags = {};
 
 private:
-  void LoadSettings();
   void InitializeUserDirectory();
-  void RegisterGeneralHotkeys();
-  void RegisterSystemHotkeys();
-  void RegisterGraphicsHotkeys();
-  void RegisterSaveStateHotkeys();
-  void RegisterAudioHotkeys();
-  void FindInputProfiles(const std::string& base_path, InputProfileList* out_list) const;
-  void UpdateControllerInputMap(SettingsInterface& si);
-  bool UpdateControllerInputMapFromGameSettings();
-  void UpdateHotkeyInputMap(SettingsInterface& si);
-  void ClearAllControllerBindings();
-  void CreateImGuiContext();
 
 #ifdef WITH_DISCORD_PRESENCE
   void SetDiscordPresenceEnabled(bool enabled);
@@ -532,45 +378,10 @@ private:
 #endif
 
 #ifdef WITH_CHEEVOS
-  void UpdateCheevosActive();
+  void UpdateCheevosActive(SettingsInterface& si);
 #endif
 
-  HotkeyInfoList m_hotkeys;
-
   std::unique_ptr<FrontendCommon::SaveStateSelectorUI> m_save_state_selector_ui;
-
-  // input key maps
-  std::map<HostKeyCode, InputButtonHandler> m_keyboard_input_handlers;
-  std::map<HostMouseButton, InputButtonHandler> m_mouse_input_handlers;
-
-  // controller vibration motors/rumble
-  struct ControllerRumbleState
-  {
-    enum : u32
-    {
-      MAX_MOTORS = 2
-    };
-
-    u32 controller_index;
-    u32 num_motors;
-    std::array<float, MAX_MOTORS> last_strength;
-    u64 last_update_time;
-    ControllerRumbleCallback update_callback;
-  };
-  std::vector<ControllerRumbleState> m_controller_vibration_motors;
-
-  // controller turbo buttons
-  struct ControllerAutoFireState
-  {
-    u32 controller_index;
-    u32 slot_index;
-    s32 button_code;
-    u8 frequency;
-    u8 countdown;
-    bool active;
-    bool state;
-  };
-  std::vector<ControllerAutoFireState> m_controller_autofires;
 
   // temporary save state, created when loading, used to undo load state
   std::unique_ptr<ByteStream> m_undo_load_state;

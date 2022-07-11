@@ -71,9 +71,9 @@ public:
   bool ConfirmFormattedMessage(const char* format, ...) printflike(2, 3);
 
   /// Adds OSD messages, duration is in seconds.
-  virtual void AddOSDMessage(std::string message, float duration = 2.0f) = 0;
-  virtual void AddKeyedOSDMessage(std::string key, std::string message, float duration = 2.0f) = 0;
-  virtual void RemoveKeyedOSDMessage(std::string key) = 0;
+  void AddOSDMessage(std::string message, float duration = 2.0f);
+  void AddKeyedOSDMessage(std::string key, std::string message, float duration = 2.0f);
+  void RemoveKeyedOSDMessage(std::string key);
   void AddFormattedOSDMessage(float duration, const char* format, ...) printflike(3, 4);
   void AddKeyedFormattedOSDMessage(std::string key, float duration, const char* format, ...) printflike(4, 5);
 
@@ -123,10 +123,6 @@ public:
 
   /// Returns a string list from the configuration.
   virtual std::vector<std::string> GetSettingStringList(const char* section, const char* key) = 0;
-
-  /// Returns the settings interface.
-  virtual SettingsInterface* GetSettingsInterface() = 0;
-  virtual std::lock_guard<std::recursive_mutex> GetSettingsLock() = 0;
 
   /// Translates a string to the current language.
   virtual TinyString TranslateString(const char* context, const char* str, const char* disambiguation = nullptr,

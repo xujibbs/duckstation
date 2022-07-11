@@ -5,6 +5,7 @@
 #include <QtWidgets/QStackedWidget>
 #include <memory>
 
+#include "controllersettingsdialog.h"
 #include "core/types.h"
 #include "qtdisplaywidget.h"
 #include "settingsdialog.h"
@@ -142,8 +143,13 @@ private:
   void destroyDisplayWidget();
   void setDisplayFullscreen(const std::string& fullscreen_mode);
   bool shouldHideCursorInFullscreen() const;
+
   SettingsDialog* getSettingsDialog();
   void doSettings(SettingsDialog::Category category = SettingsDialog::Category::Count);
+
+  ControllerSettingsDialog* getControllerSettingsDialog();
+  void doControllerSettings(ControllerSettingsDialog::Category category = ControllerSettingsDialog::Category::Count);
+
   void updateDebugMenuCPUExecutionMode();
   void updateDebugMenuGPURenderer();
   void updateDebugMenuCropMode();
@@ -171,6 +177,8 @@ private:
   QLabel* m_status_resolution_widget = nullptr;
 
   SettingsDialog* m_settings_dialog = nullptr;
+  ControllerSettingsDialog* m_controller_settings_dialog = nullptr;
+
   AutoUpdaterDialog* m_auto_updater_dialog = nullptr;
   MemoryCardEditorDialog* m_memory_card_editor_dialog = nullptr;
   CheatManagerDialog* m_cheat_manager_dialog = nullptr;

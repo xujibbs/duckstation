@@ -11,8 +11,10 @@
 #include "core/bus.h"
 #include "core/cpu_core.h"
 #include "core/host_display.h"
+#include "core/host_interface.h"
+#include "core/host_settings.h"
 #include "core/system.h"
-#include "host_interface.h"
+#include "fullscreen_ui.h"
 #include "imgui_fullscreen.h"
 #include "rapidjson/document.h"
 #include "rc_url.h"
@@ -540,12 +542,12 @@ void Cheevos::LoginCallback(s32 status_code, const FrontendCommon::HTTPDownloade
 
   // save to config
   {
-    std::lock_guard<std::recursive_mutex> guard(g_host_interface->GetSettingsLock());
-    g_host_interface->GetSettingsInterface()->SetStringValue("Cheevos", "Username", username.c_str());
-    g_host_interface->GetSettingsInterface()->SetStringValue("Cheevos", "Token", login_token.c_str());
-    g_host_interface->GetSettingsInterface()->SetStringValue(
-      "Cheevos", "LoginTimestamp", TinyString::FromFormat("%" PRIu64, static_cast<u64>(std::time(nullptr))));
-    g_host_interface->GetSettingsInterface()->Save();
+    auto lock = Host::GetSettingsLock();
+    Host::SetBaseStringSettingValue("Cheevos", "Username", username.c_str());
+    Host::SetBaseStringSettingValue("Cheevos", "Token", login_token.c_str());
+    Host::SetBaseStringSettingValue("Cheevos", "LoginTimestamp",
+                                    TinyString::FromFormat("%" PRIu64, static_cast<u64>(std::time(nullptr))));
+    Host::CommitBaseSettingChanges();
   }
 
   if (g_active)
@@ -562,7 +564,7 @@ void Cheevos::LoginCallback(s32 status_code, const FrontendCommon::HTTPDownloade
 
 void Cheevos::LoginASyncCallback(s32 status_code, const FrontendCommon::HTTPDownloader::Request::Data& data)
 {
-  if (ImGuiFullscreen::IsInitialized())
+  if (FullscreenUI::IsInitialized())
     ImGuiFullscreen::CloseBackgroundProgressDialog("cheevos_async_login");
 
   LoginCallback(status_code, data);
@@ -585,7 +587,7 @@ bool Cheevos::LoginAsync(const char* username, const char* password)
   if (s_logged_in || std::strlen(username) == 0 || std::strlen(password) == 0 || IsUsingRAIntegration())
     return false;
 
-  if (ImGuiFullscreen::IsInitialized())
+  if (FullscreenUI::IsInitialized())
   {
     ImGuiFullscreen::OpenBackgroundProgressDialog(
       "cheevos_async_login", g_host_interface->TranslateStdString("Cheevos", "Logging in to RetroAchivements..."), 0, 1,
@@ -640,12 +642,12 @@ void Cheevos::Logout()
   }
 
   // remove from config
-  std::lock_guard<std::recursive_mutex> guard(g_host_interface->GetSettingsLock());
   {
-    g_host_interface->GetSettingsInterface()->DeleteValue("Cheevos", "Username");
-    g_host_interface->GetSettingsInterface()->DeleteValue("Cheevos", "Token");
-    g_host_interface->GetSettingsInterface()->DeleteValue("Cheevos", "LoginTimestamp");
-    g_host_interface->GetSettingsInterface()->Save();
+    auto lock = Host::GetSettingsLock();
+    Host::DeleteBaseSettingValue("Cheevos", "Username");
+    Host::DeleteBaseSettingValue("Cheevos", "Token");
+    Host::DeleteBaseSettingValue("Cheevos", "LoginTimestamp");
+    Host::CommitBaseSettingChanges();
   }
 }
 
@@ -667,7 +669,7 @@ void Cheevos::UpdateImageDownloadProgress()
     return;
   }
 
-  if (!ImGuiFullscreen::IsInitialized())
+  if (!FullscreenUI::IsInitialized())
     return;
 
   std::string message(g_host_interface->TranslateStdString("Cheevos", "Downloading achievement resources..."));

@@ -1,6 +1,7 @@
 #include "analog_controller.h"
 #include "common/log.h"
 #include "common/string_util.h"
+#include "host.h"
 #include "host_interface.h"
 #include "settings.h"
 #include "system.h"
@@ -8,7 +9,7 @@
 #include <cmath>
 Log_SetChannel(AnalogController);
 
-AnalogController::AnalogController(u32 index) : m_index(index)
+AnalogController::AnalogController(u32 index) : Controller(index)
 {
   m_axis_state.fill(0x80);
   Reset();
@@ -99,38 +100,6 @@ bool AnalogController::DoState(StateWrapper& sw, bool apply_input_state)
   return true;
 }
 
-std::optional<s32> AnalogController::GetAxisCodeByName(std::string_view axis_name) const
-{
-  return StaticGetAxisCodeByName(axis_name);
-}
-
-std::optional<s32> AnalogController::GetButtonCodeByName(std::string_view button_name) const
-{
-  return StaticGetButtonCodeByName(button_name);
-}
-
-float AnalogController::GetAxisState(s32 axis_code) const
-{
-  if (axis_code < 0 || axis_code >= static_cast<s32>(Axis::Count))
-    return 0.0f;
-
-  // 0..255 -> -1..1
-  const float value = (((static_cast<float>(m_axis_state[static_cast<s32>(axis_code)]) / 255.0f) * 2.0f) - 1.0f);
-  return std::clamp(value / m_axis_scale, -1.0f, 1.0f);
-}
-
-void AnalogController::SetAxisState(s32 axis_code, float value)
-{
-  if (axis_code < 0 || axis_code >= static_cast<s32>(Axis::Count))
-    return;
-
-  // -1..1 -> 0..255
-  const float scaled_value = std::clamp(value * m_axis_scale, -1.0f, 1.0f);
-  const u8 u8_value = static_cast<u8>(std::clamp(std::round(((scaled_value + 1.0f) / 2.0f) * 255.0f), 0.0f, 255.0f));
-
-  SetAxisState(static_cast<Axis>(axis_code), u8_value);
-}
-
 void AnalogController::SetAxisState(Axis axis, u8 value)
 {
   if (value != m_axis_state[static_cast<u8>(axis)])
@@ -139,21 +108,12 @@ void AnalogController::SetAxisState(Axis axis, u8 value)
   m_axis_state[static_cast<u8>(axis)] = value;
 }
 
-bool AnalogController::GetButtonState(s32 button_code) const
+void AnalogController::SetBindState(u32 index, float value)
 {
-  if (button_code < 0 || button_code >= static_cast<s32>(Button::Analog))
-    return false;
-
-  const u16 bit = u16(1) << static_cast<u8>(button_code);
-  return ((m_button_state & bit) == 0);
-}
-
-void AnalogController::SetButtonState(Button button, bool pressed)
-{
-  if (button == Button::Analog)
+  if (index == static_cast<s32>(Button::Analog))
   {
     // analog toggle
-    if (pressed)
+    if (value > 0.0f)
     {
       if (m_command == Command::Idle)
         ProcessAnalogModeToggle();
@@ -163,10 +123,56 @@ void AnalogController::SetButtonState(Button button, bool pressed)
 
     return;
   }
+  else if (index >= static_cast<u32>(Button::Count))
+  {
+    const u32 sub_index = index - static_cast<u32>(Button::Count);
+    if (sub_index >= static_cast<u32>(m_half_axis_state.size()))
+      return;
 
-  const u16 bit = u16(1) << static_cast<u8>(button);
+#if 0
+    m_button_pressure[pad][index] = static_cast<u8>(std::clamp(((value < m_axis_scale[pad][0]) ? 0.0f : value) * m_axis_scale[pad][1] * 255.0f, 0.0f, 255.0f));
+#endif
+    m_half_axis_state[sub_index] = static_cast<u8>(std::clamp(value * 255.0f, 0.0f, 255.0f));
 
-  if (pressed)
+#define MERGE(pos, neg)                                                                                                \
+  ((m_half_axis_state[static_cast<u32>(pos)] != 0) ? (127u + ((m_half_axis_state[static_cast<u32>(pos)] + 1u) / 2u)) : \
+                                                     (127u - (m_half_axis_state[static_cast<u32>(neg)] / 2u)))
+
+    switch (static_cast<HalfAxis>(sub_index))
+    {
+      case HalfAxis::LLeft:
+      case HalfAxis::LRight:
+        m_axis_state[static_cast<u8>(Axis::LeftX)] = MERGE(HalfAxis::LLeft, HalfAxis::LRight);
+        break;
+
+      case HalfAxis::LDown:
+      case HalfAxis::LUp:
+        m_axis_state[static_cast<u8>(Axis::LeftX)] = MERGE(HalfAxis::LDown, HalfAxis::LUp);
+        break;
+
+      case HalfAxis::RLeft:
+      case HalfAxis::RRight:
+        m_axis_state[static_cast<u8>(Axis::RightX)] = MERGE(HalfAxis::RLeft, HalfAxis::RRight);
+        break;
+
+      case HalfAxis::RDown:
+      case HalfAxis::RUp:
+        m_axis_state[static_cast<u8>(Axis::RightY)] = MERGE(HalfAxis::RDown, HalfAxis::RUp);
+        break;
+
+      default:
+        break;
+    }
+
+#undef MERGE
+
+    return;
+  }
+
+  const u16 bit = u16(1) << static_cast<u8>(index);
+
+  // todo: deadzone
+  if (value > 0.0f)
   {
     if (m_button_state & bit)
       System::SetRunaheadReplayFlag();
@@ -182,14 +188,6 @@ void AnalogController::SetButtonState(Button button, bool pressed)
   }
 }
 
-void AnalogController::SetButtonState(s32 button_code, bool pressed)
-{
-  if (button_code < 0 || button_code >= static_cast<s32>(Button::Count))
-    return;
-
-  SetButtonState(static_cast<Button>(button_code), pressed);
-}
-
 u32 AnalogController::GetButtonStateBits() const
 {
   // flip bits, native data is active low
@@ -202,6 +200,7 @@ std::optional<u32> AnalogController::GetAnalogInputBytes() const
          m_axis_state[static_cast<size_t>(Axis::RightY)] << 8 | m_axis_state[static_cast<size_t>(Axis::RightX)];
 }
 
+#if 0
 u32 AnalogController::GetVibrationMotorCount() const
 {
   return NUM_MOTORS;
@@ -221,6 +220,7 @@ float AnalogController::GetVibrationMotorStrength(u32 motor)
 
   return static_cast<float>(strength / 65535.0);
 }
+#endif
 
 void AnalogController::ResetTransferState()
 {
@@ -706,122 +706,82 @@ std::unique_ptr<AnalogController> AnalogController::Create(u32 index)
   return std::make_unique<AnalogController>(index);
 }
 
-std::optional<s32> AnalogController::StaticGetAxisCodeByName(std::string_view axis_name)
-{
-#define AXIS(name)                                                                                                     \
-  if (axis_name == #name)                                                                                              \
+static const Controller::ControllerBindingInfo s_binding_info[] = {
+#define BUTTON(name, display_name, genb)                                                                               \
   {                                                                                                                    \
-    return static_cast<s32>(ZeroExtend32(static_cast<u8>(Axis::name)));                                                \
+    name, display_name, Controller::ControllerBindingType::Button, genb                                                \
+  }
+#define AXIS(name, display_name, genb)                                                                                 \
+  {                                                                                                                    \
+    name, display_name, Controller::ControllerBindingType::HalfAxis, genb                                              \
   }
 
-  AXIS(LeftX);
-  AXIS(LeftY);
-  AXIS(RightX);
-  AXIS(RightY);
+  BUTTON("Select", "Select", GenericInputBinding::Select),
+  BUTTON("L3", "Select", GenericInputBinding::L3),
+  BUTTON("R3", "Select", GenericInputBinding::R3),
+  BUTTON("Start", "Select", GenericInputBinding::Start),
+  BUTTON("Up", "D-Pad Up", GenericInputBinding::DPadUp),
+  BUTTON("Right", "D-Pad Right", GenericInputBinding::DPadRight),
+  BUTTON("Down", "D-Pad Down", GenericInputBinding::DPadDown),
+  BUTTON("Left", "D-Pad Left", GenericInputBinding::DPadLeft),
+  BUTTON("L2", "L2", GenericInputBinding::L2),
+  BUTTON("R2", "R2", GenericInputBinding::R2),
+  BUTTON("L1", "L1", GenericInputBinding::L1),
+  BUTTON("R1", "R1", GenericInputBinding::R1),
+  BUTTON("Triangle", "Triangle", GenericInputBinding::Triangle),
+  BUTTON("Circle", "Circle", GenericInputBinding::Circle),
+  BUTTON("Cross", "Cross", GenericInputBinding::Cross),
+  BUTTON("Square", "Square", GenericInputBinding::Square),
+  BUTTON("Analog", "Analog Toggle", GenericInputBinding::System),
 
-  return std::nullopt;
+  AXIS("LLeft", "Left Stick Left", GenericInputBinding::LeftStickLeft),
+  AXIS("LRight", "Left Stick Right", GenericInputBinding::LeftStickRight),
+  AXIS("LDown", "Left Stick Down", GenericInputBinding::LeftStickDown),
+  AXIS("LUp", "Left Stick Up", GenericInputBinding::LeftStickUp),
+  AXIS("RLeft", "Right Stick Left", GenericInputBinding::LeftStickLeft),
+  AXIS("RRight", "Right Stick Right", GenericInputBinding::LeftStickRight),
+  AXIS("RDown", "Right Stick Down", GenericInputBinding::LeftStickDown),
+  AXIS("RUp", "Right Stick Up", GenericInputBinding::LeftStickUp),
 
 #undef AXIS
-}
-
-std::optional<s32> AnalogController::StaticGetButtonCodeByName(std::string_view button_name)
-{
-#define BUTTON(name)                                                                                                   \
-  if (button_name == #name)                                                                                            \
-  {                                                                                                                    \
-    return static_cast<s32>(ZeroExtend32(static_cast<u8>(Button::name)));                                              \
-  }
-
-  BUTTON(Select);
-  BUTTON(L3);
-  BUTTON(R3);
-  BUTTON(Start);
-  BUTTON(Up);
-  BUTTON(Right);
-  BUTTON(Down);
-  BUTTON(Left);
-  BUTTON(L2);
-  BUTTON(R2);
-  BUTTON(L1);
-  BUTTON(R1);
-  BUTTON(Triangle);
-  BUTTON(Circle);
-  BUTTON(Cross);
-  BUTTON(Square);
-  BUTTON(Analog);
-
-  return std::nullopt;
-
 #undef BUTTON
-}
+};
 
-Controller::AxisList AnalogController::StaticGetAxisNames()
+static const SettingInfo s_settings[] = {
+  {SettingInfo::Type::Boolean, "ForceAnalogOnReset", TRANSLATABLE("AnalogController", "Force Analog Mode on Reset"),
+   TRANSLATABLE("AnalogController", "Forces the controller to analog mode when the console is reset/powered on. May "
+                                    "cause issues with games, so it is recommended to leave this option off."),
+   "false"},
+  {SettingInfo::Type::Boolean, "AnalogDPadInDigitalMode",
+   TRANSLATABLE("AnalogController", "Use Analog Sticks for D-Pad in Digital Mode"),
+   TRANSLATABLE("AnalogController",
+                "Allows you to use the analog sticks to control the d-pad in digital mode, as well as the buttons."),
+   "false"},
+  {SettingInfo::Type::Float, "AxisScale", TRANSLATABLE("AnalogController", "Analog Axis Scale"),
+   TRANSLATABLE(
+     "AnalogController",
+     "Sets the analog stick axis scaling factor. A value between 1.30 and 1.40 is recommended when using recent "
+     "controllers, e.g. DualShock 4, Xbox One Controller."),
+   "1.00f", "0.01f", "1.50f", "0.01f"},
+  {SettingInfo::Type::Integer, "VibrationBias", TRANSLATABLE("AnalogController", "Vibration Bias"),
+   TRANSLATABLE("AnalogController", "Sets the rumble bias value. If rumble in some games is too weak or not "
+                                    "functioning, try increasing this value."),
+   "8", "0", "255", "1"}};
+
+const Controller::ControllerInfo AnalogController::INFO = {ControllerType::AnalogController,
+                                                           "AnalogController",
+                                                           TRANSLATABLE("ControllerType", "Analog Controller"),
+                                                           s_binding_info,
+                                                           countof(s_binding_info),
+                                                           s_settings,
+                                                           countof(s_settings),
+                                                           Controller::VibrationCapabilities::LargeSmallMotors};
+
+void AnalogController::LoadSettings(SettingsInterface& si, const char* section)
 {
-  return {{TRANSLATABLE("AnalogController", "LeftX"), static_cast<s32>(Axis::LeftX), AxisType::Full},
-          {TRANSLATABLE("AnalogController", "LeftY"), static_cast<s32>(Axis::LeftY), AxisType::Full},
-          {TRANSLATABLE("AnalogController", "RightX"), static_cast<s32>(Axis::RightX), AxisType::Full},
-          {TRANSLATABLE("AnalogController", "RightY"), static_cast<s32>(Axis::RightY), AxisType::Full}};
-}
-
-Controller::ButtonList AnalogController::StaticGetButtonNames()
-{
-  return {{TRANSLATABLE("AnalogController", "Up"), static_cast<s32>(Button::Up)},
-          {TRANSLATABLE("AnalogController", "Down"), static_cast<s32>(Button::Down)},
-          {TRANSLATABLE("AnalogController", "Left"), static_cast<s32>(Button::Left)},
-          {TRANSLATABLE("AnalogController", "Right"), static_cast<s32>(Button::Right)},
-          {TRANSLATABLE("AnalogController", "Select"), static_cast<s32>(Button::Select)},
-          {TRANSLATABLE("AnalogController", "Start"), static_cast<s32>(Button::Start)},
-          {TRANSLATABLE("AnalogController", "Triangle"), static_cast<s32>(Button::Triangle)},
-          {TRANSLATABLE("AnalogController", "Cross"), static_cast<s32>(Button::Cross)},
-          {TRANSLATABLE("AnalogController", "Circle"), static_cast<s32>(Button::Circle)},
-          {TRANSLATABLE("AnalogController", "Square"), static_cast<s32>(Button::Square)},
-          {TRANSLATABLE("AnalogController", "L1"), static_cast<s32>(Button::L1)},
-          {TRANSLATABLE("AnalogController", "L2"), static_cast<s32>(Button::L2)},
-          {TRANSLATABLE("AnalogController", "R1"), static_cast<s32>(Button::R1)},
-          {TRANSLATABLE("AnalogController", "R2"), static_cast<s32>(Button::R2)},
-          {TRANSLATABLE("AnalogController", "L3"), static_cast<s32>(Button::L3)},
-          {TRANSLATABLE("AnalogController", "R3"), static_cast<s32>(Button::R3)},
-          {TRANSLATABLE("AnalogController", "Analog"), static_cast<s32>(Button::Analog)}};
-}
-
-u32 AnalogController::StaticGetVibrationMotorCount()
-{
-  return NUM_MOTORS;
-}
-
-Controller::SettingList AnalogController::StaticGetSettings()
-{
-  static constexpr std::array<SettingInfo, 4> settings = {
-    {{SettingInfo::Type::Boolean, "ForceAnalogOnReset", TRANSLATABLE("AnalogController", "Force Analog Mode on Reset"),
-      TRANSLATABLE("AnalogController", "Forces the controller to analog mode when the console is reset/powered on. May "
-                                       "cause issues with games, so it is recommended to leave this option off."),
-      "false"},
-     {SettingInfo::Type::Boolean, "AnalogDPadInDigitalMode",
-      TRANSLATABLE("AnalogController", "Use Analog Sticks for D-Pad in Digital Mode"),
-      TRANSLATABLE("AnalogController",
-                   "Allows you to use the analog sticks to control the d-pad in digital mode, as well as the buttons."),
-      "false"},
-     {SettingInfo::Type::Float, "AxisScale", TRANSLATABLE("AnalogController", "Analog Axis Scale"),
-      TRANSLATABLE(
-        "AnalogController",
-        "Sets the analog stick axis scaling factor. A value between 1.30 and 1.40 is recommended when using recent "
-        "controllers, e.g. DualShock 4, Xbox One Controller."),
-      "1.00f", "0.01f", "1.50f", "0.01f"},
-     {SettingInfo::Type::Integer, "VibrationBias", TRANSLATABLE("AnalogController", "Vibration Bias"),
-      TRANSLATABLE("AnalogController", "Sets the rumble bias value. If rumble in some games is too weak or not "
-                                       "functioning, try increasing this value."),
-      "8", "0", "255", "1"}}};
-
-  return SettingList(settings.begin(), settings.end());
-}
-
-void AnalogController::LoadSettings(const char* section)
-{
-  Controller::LoadSettings(section);
-  m_force_analog_on_reset = g_host_interface->GetBoolSettingValue(section, "ForceAnalogOnReset", false);
-  m_analog_dpad_in_digital_mode = g_host_interface->GetBoolSettingValue(section, "AnalogDPadInDigitalMode", false);
-  m_axis_scale =
-    std::clamp(std::abs(g_host_interface->GetFloatSettingValue(section, "AxisScale", 1.00f)), 0.01f, 1.50f);
-  m_rumble_bias =
-    static_cast<u8>(std::min<u32>(g_host_interface->GetIntSettingValue(section, "VibrationBias", 8), 255));
+  Controller::LoadSettings(si, section);
+  m_force_analog_on_reset = si.GetBoolValue(section, "ForceAnalogOnReset", false);
+  m_analog_dpad_in_digital_mode = si.GetBoolValue(section, "AnalogDPadInDigitalMode", false);
+  m_axis_scale = std::clamp(std::abs(si.GetFloatValue(section, "AxisScale", 1.00f)), 0.01f, 1.50f);
+  m_rumble_bias = static_cast<u8>(std::min<u32>(si.GetIntValue(section, "VibrationBias", 8), 255));
 }

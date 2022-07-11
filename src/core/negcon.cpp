@@ -6,6 +6,8 @@
 #include <array>
 #include <cmath>
 
+#if 0
+
 NeGcon::NeGcon()
 {
   m_axis_state.fill(0x00);
@@ -305,3 +307,5 @@ void NeGcon::LoadSettings(const char* section)
   Controller::LoadSettings(section);
   m_steering_deadzone = g_host_interface->GetFloatSettingValue(section, "SteeringDeadzone", 0.10f);
 }
+
+#endif

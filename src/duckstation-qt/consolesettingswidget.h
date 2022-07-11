@@ -4,7 +4,6 @@
 
 #include "ui_consolesettingswidget.h"
 
-class QtHostInterface;
 class SettingsDialog;
 
 class ConsoleSettingsWidget : public QWidget
@@ -12,7 +11,7 @@ class ConsoleSettingsWidget : public QWidget
   Q_OBJECT
 
 public:
-  explicit ConsoleSettingsWidget(QtHostInterface* host_interface, QWidget* parent, SettingsDialog* dialog);
+  explicit ConsoleSettingsWidget(SettingsDialog* dialog, QWidget* parent);
   ~ConsoleSettingsWidget();
 
 Q_SIGNALS:
@@ -29,5 +28,5 @@ private:
 
   Ui::ConsoleSettingsWidget m_ui;
 
-  QtHostInterface* m_host_interface;
+  SettingsDialog* m_dialog;
 };

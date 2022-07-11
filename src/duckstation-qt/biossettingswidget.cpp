@@ -85,13 +85,15 @@ static void setDropDownValue(QComboBox* cb, const std::string& name)
   cb->setCurrentIndex(cb->count() - 1);
 }
 
-BIOSSettingsWidget::BIOSSettingsWidget(QtHostInterface* host_interface, QWidget* parent, SettingsDialog* dialog)
-  : QWidget(parent), m_host_interface(host_interface)
+BIOSSettingsWidget::BIOSSettingsWidget(SettingsDialog* dialog, QWidget* parent)
+  : QWidget(parent), m_dialog(dialog)
 {
+  SettingsInterface* sif = dialog->getSettingsInterface();
+
   m_ui.setupUi(this);
 
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.enableTTYOutput, "BIOS", "PatchTTYEnable");
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.fastBoot, "BIOS", "PatchFastBoot");
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.enableTTYOutput, "BIOS", "PatchTTYEnable", false);
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.fastBoot, "BIOS", "PatchFastBoot", false);
 
   dialog->registerWidgetHelp(m_ui.fastBoot, tr("Fast Boot"), tr("Unchecked"),
                              tr("Patches the BIOS to skip the console's boot animation. Does not work with all games, "
@@ -102,19 +104,16 @@ BIOSSettingsWidget::BIOSSettingsWidget(QtHostInterface* host_interface, QWidget*
   refreshList();
 
   connect(m_ui.imageNTSCJ, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int index) {
-    m_host_interface->SetStringSettingValue("BIOS", "PathNTSCJ",
+    m_dialog->setStringSettingValue("BIOS", "PathNTSCJ",
                                             m_ui.imageNTSCJ->itemData(index).toString().toStdString().c_str());
-    m_host_interface->applySettings();
   });
   connect(m_ui.imageNTSCU, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int index) {
-    m_host_interface->SetStringSettingValue("BIOS", "PathNTSCU",
+    m_dialog->setStringSettingValue("BIOS", "PathNTSCU",
                                             m_ui.imageNTSCU->itemData(index).toString().toStdString().c_str());
-    m_host_interface->applySettings();
   });
   connect(m_ui.imagePAL, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int index) {
-    m_host_interface->SetStringSettingValue("BIOS", "PathPAL",
+    m_dialog->setStringSettingValue("BIOS", "PathPAL",
                                             m_ui.imagePAL->itemData(index).toString().toStdString().c_str());
-    m_host_interface->applySettings();
   });
 
   connect(m_ui.refresh, &QPushButton::clicked, this, &BIOSSettingsWidget::refreshList);
@@ -124,11 +123,11 @@ BIOSSettingsWidget::BIOSSettingsWidget(QtHostInterface* host_interface, QWidget*
   connect(m_ui.searchDirectory, &QLineEdit::textChanged, [this](const QString& text) {
     if (text.isEmpty())
     {
-      m_host_interface->RemoveSettingValue("BIOS", "SearchDirectory");
+      m_dialog->setStringSettingValue("BIOS", "SearchDirectory", std::nullopt);
     }
     else
     {
-      m_host_interface->SetStringSettingValue("BIOS", "SearchDirectory", text.toStdString().c_str());
+      m_dialog->setStringSettingValue("BIOS", "SearchDirectory", text.toStdString().c_str());
     }
     refreshList();
   });
@@ -140,14 +139,14 @@ BIOSSettingsWidget::~BIOSSettingsWidget() = default;
 
 void BIOSSettingsWidget::refreshList()
 {
-  auto images = m_host_interface->FindBIOSImagesInDirectory(m_host_interface->GetBIOSDirectory().c_str());
+  auto images = QtHostInterface::GetInstance()->FindBIOSImagesInDirectory(QtHostInterface::GetInstance()->GetBIOSDirectory().c_str());
   populateDropDownForRegion(ConsoleRegion::NTSC_J, m_ui.imageNTSCJ, images);
   populateDropDownForRegion(ConsoleRegion::NTSC_U, m_ui.imageNTSCU, images);
   populateDropDownForRegion(ConsoleRegion::PAL, m_ui.imagePAL, images);
 
-  setDropDownValue(m_ui.imageNTSCJ, m_host_interface->GetStringSettingValue("BIOS", "PathNTSCJ", ""));
-  setDropDownValue(m_ui.imageNTSCU, m_host_interface->GetStringSettingValue("BIOS", "PathNTSCU", ""));
-  setDropDownValue(m_ui.imagePAL, m_host_interface->GetStringSettingValue("BIOS", "PathPAL", ""));
+  setDropDownValue(m_ui.imageNTSCJ, m_dialog->getEffectiveStringValue("BIOS", "PathNTSCJ", ""));
+  setDropDownValue(m_ui.imageNTSCU, m_dialog->getEffectiveStringValue("BIOS", "PathNTSCU", ""));
+  setDropDownValue(m_ui.imagePAL, m_dialog->getEffectiveStringValue("BIOS", "PathPAL", ""));
 }
 
 void BIOSSettingsWidget::browseSearchDirectory()
@@ -162,6 +161,6 @@ void BIOSSettingsWidget::browseSearchDirectory()
 
 void BIOSSettingsWidget::openSearchDirectory()
 {
-  QString dir = QString::fromStdString(m_host_interface->GetBIOSDirectory());
+  QString dir = QString::fromStdString(QtHostInterface::GetInstance()->GetBIOSDirectory());
   QtUtils::OpenURL(this, QUrl::fromLocalFile(dir));
 }

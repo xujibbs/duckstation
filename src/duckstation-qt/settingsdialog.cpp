@@ -3,13 +3,13 @@
 #include "audiosettingswidget.h"
 #include "biossettingswidget.h"
 #include "consolesettingswidget.h"
-#include "controllersettingswidget.h"
+#include "core/host.h"
+#include "core/host_settings.h"
 #include "displaysettingswidget.h"
 #include "emulationsettingswidget.h"
 #include "enhancementsettingswidget.h"
 #include "gamelistsettingswidget.h"
 #include "generalsettingswidget.h"
-#include "hotkeysettingswidget.h"
 #include "memorycardsettingswidget.h"
 #include "postprocessingsettingswidget.h"
 #include "qthostinterface.h"
@@ -18,36 +18,49 @@
 
 #ifdef WITH_CHEEVOS
 #include "achievementsettingswidget.h"
-#include "core/cheevos.h"
+#include "frontend-common/cheevos.h"
 #endif
 
 static constexpr char DEFAULT_SETTING_HELP_TEXT[] = "";
 
-SettingsDialog::SettingsDialog(QtHostInterface* host_interface, QWidget* parent /* = nullptr */)
-  : QDialog(parent), m_host_interface(host_interface)
+static QList<SettingsDialog*> s_open_game_properties_dialogs;
+
+SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent)
+{
+  setupUi(nullptr);
+}
+
+SettingsDialog::SettingsDialog(QWidget* parent, std::unique_ptr<SettingsInterface> sif, const GameListEntry* game,
+                               std::string serial)
+  : QDialog(parent), m_sif(std::move(sif))
+{
+  setupUi(game);
+
+  s_open_game_properties_dialogs.push_back(this);
+}
+
+void SettingsDialog::setupUi(const GameListEntry* game)
 {
   m_ui.setupUi(this);
   setCategoryHelpTexts();
 
   setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
 
-  m_general_settings = new GeneralSettingsWidget(host_interface, m_ui.settingsContainer, this);
-  m_bios_settings = new BIOSSettingsWidget(host_interface, m_ui.settingsContainer, this);
-  m_console_settings = new ConsoleSettingsWidget(host_interface, m_ui.settingsContainer, this);
-  m_emulation_settings = new EmulationSettingsWidget(host_interface, m_ui.settingsContainer, this);
-  m_game_list_settings = new GameListSettingsWidget(host_interface, m_ui.settingsContainer);
-  m_hotkey_settings = new HotkeySettingsWidget(host_interface, m_ui.settingsContainer);
-  m_controller_settings = new ControllerSettingsWidget(host_interface, m_ui.settingsContainer);
-  m_memory_card_settings = new MemoryCardSettingsWidget(host_interface, m_ui.settingsContainer, this);
-  m_display_settings = new DisplaySettingsWidget(host_interface, m_ui.settingsContainer, this);
-  m_enhancement_settings = new EnhancementSettingsWidget(host_interface, m_ui.settingsContainer, this);
-  m_post_processing_settings = new PostProcessingSettingsWidget(host_interface, m_ui.settingsContainer, this);
-  m_audio_settings = new AudioSettingsWidget(host_interface, m_ui.settingsContainer, this);
-  m_advanced_settings = new AdvancedSettingsWidget(host_interface, m_ui.settingsContainer, this);
+  m_general_settings = new GeneralSettingsWidget(this, m_ui.settingsContainer);
+  m_bios_settings = new BIOSSettingsWidget(this, m_ui.settingsContainer);
+  m_console_settings = new ConsoleSettingsWidget(this, m_ui.settingsContainer);
+  m_emulation_settings = new EmulationSettingsWidget(this, m_ui.settingsContainer);
+  m_game_list_settings = new GameListSettingsWidget(this, m_ui.settingsContainer);
+  m_memory_card_settings = new MemoryCardSettingsWidget(this, m_ui.settingsContainer);
+  m_display_settings = new DisplaySettingsWidget(this, m_ui.settingsContainer);
+  m_enhancement_settings = new EnhancementSettingsWidget(this, m_ui.settingsContainer);
+  m_post_processing_settings = new PostProcessingSettingsWidget(this, m_ui.settingsContainer);
+  m_audio_settings = new AudioSettingsWidget(this, m_ui.settingsContainer);
+  m_advanced_settings = new AdvancedSettingsWidget(this, m_ui.settingsContainer);
 
 #ifdef WITH_CHEEVOS
   if (!Cheevos::IsUsingRAIntegration())
-    m_achievement_settings = new AchievementSettingsWidget(host_interface, m_ui.settingsContainer, this);
+    m_achievement_settings = new AchievementSettingsWidget(this, m_ui.settingsContainer);
 #endif
 
   m_ui.settingsContainer->insertWidget(static_cast<int>(Category::GeneralSettings), m_general_settings);
@@ -55,8 +68,6 @@ SettingsDialog::SettingsDialog(QtHostInterface* host_interface, QWidget* parent 
   m_ui.settingsContainer->insertWidget(static_cast<int>(Category::ConsoleSettings), m_console_settings);
   m_ui.settingsContainer->insertWidget(static_cast<int>(Category::EmulationSettings), m_emulation_settings);
   m_ui.settingsContainer->insertWidget(static_cast<int>(Category::GameListSettings), m_game_list_settings);
-  m_ui.settingsContainer->insertWidget(static_cast<int>(Category::HotkeySettings), m_hotkey_settings);
-  m_ui.settingsContainer->insertWidget(static_cast<int>(Category::ControllerSettings), m_controller_settings);
   m_ui.settingsContainer->insertWidget(static_cast<int>(Category::MemoryCardSettings), m_memory_card_settings);
   m_ui.settingsContainer->insertWidget(static_cast<int>(Category::DisplaySettings), m_display_settings);
   m_ui.settingsContainer->insertWidget(static_cast<int>(Category::EnhancementSettings), m_enhancement_settings);
@@ -96,9 +107,6 @@ SettingsDialog::SettingsDialog(QtHostInterface* host_interface, QWidget* parent 
       onRestoreDefaultsClicked();
     }
   });
-
-  connect(m_console_settings, &ConsoleSettingsWidget::multitapModeChanged, m_controller_settings,
-          &ControllerSettingsWidget::updateMultitapControllerTitles);
 }
 
 SettingsDialog::~SettingsDialog() = default;
@@ -115,6 +123,7 @@ void SettingsDialog::setCategoryHelpTexts()
     tr("<strong>Game List Settings</strong><hr>The list above shows the directories which will be searched by "
        "DuckStation to populate the game list. Search directories can be added, removed, and switched to "
        "recursive/non-recursive.");
+#if 0
   m_category_help_text[static_cast<int>(Category::HotkeySettings)] = tr(
     "<strong>Hotkey Settings</strong><hr>Binding a hotkey allows you to trigger events such as a resetting or taking "
     "screenshots at the press of a key/controller button. Hotkey titles are self-explanatory. Clicking a binding will "
@@ -128,6 +137,7 @@ void SettingsDialog::setCategoryHelpTexts()
     "press any button/axis on the controller you wish to send rumble to.) If no button is pressed and the timer "
     "lapses, the binding will be unchanged. To clear a binding, right-click the button. To bind multiple buttons, hold "
     "Shift and click the button.");
+#endif
   m_category_help_text[static_cast<int>(Category::MemoryCardSettings)] =
     tr("<strong>Memory Card Settings</strong><hr>This page lets you control what mode the memory card emulation will "
        "function in, and where the images for these cards will be stored on disk.");
@@ -172,7 +182,7 @@ void SettingsDialog::onRestoreDefaultsClicked()
     return;
   }
 
-  m_host_interface->setDefaultSettings();
+  QtHostInterface::GetInstance()->setDefaultSettings();
 }
 
 void SettingsDialog::registerWidgetHelp(QObject* object, QString title, QString recommended_value, QString text)
@@ -213,4 +223,199 @@ bool SettingsDialog::eventFilter(QObject* object, QEvent* event)
   }
 
   return QDialog::eventFilter(object, event);
+}
+
+bool SettingsDialog::getEffectiveBoolValue(const char* section, const char* key, bool default_value) const
+{
+  bool value;
+  if (m_sif && m_sif->GetBoolValue(section, key, &value))
+    return value;
+  else
+    return Host::GetBaseBoolSettingValue(section, key, default_value);
+}
+
+int SettingsDialog::getEffectiveIntValue(const char* section, const char* key, int default_value) const
+{
+  int value;
+  if (m_sif && m_sif->GetIntValue(section, key, &value))
+    return value;
+  else
+    return Host::GetBaseIntSettingValue(section, key, default_value);
+}
+
+float SettingsDialog::getEffectiveFloatValue(const char* section, const char* key, float default_value) const
+{
+  float value;
+  if (m_sif && m_sif->GetFloatValue(section, key, &value))
+    return value;
+  else
+    return Host::GetBaseFloatSettingValue(section, key, default_value);
+}
+
+std::string SettingsDialog::getEffectiveStringValue(const char* section, const char* key,
+                                                    const char* default_value) const
+{
+  std::string value;
+  if (!m_sif || !m_sif->GetStringValue(section, key, &value))
+    value = Host::GetBaseStringSettingValue(section, key, default_value);
+  return value;
+}
+
+std::optional<bool> SettingsDialog::getBoolValue(const char* section, const char* key,
+                                                 std::optional<bool> default_value) const
+{
+  std::optional<bool> value;
+  if (m_sif)
+  {
+    bool bvalue;
+    if (m_sif->GetBoolValue(section, key, &bvalue))
+      value = bvalue;
+    else
+      value = default_value;
+  }
+  else
+  {
+    value = Host::GetBaseBoolSettingValue(section, key, default_value.value_or(false));
+  }
+
+  return value;
+}
+
+std::optional<int> SettingsDialog::getIntValue(const char* section, const char* key,
+                                               std::optional<int> default_value) const
+{
+  std::optional<int> value;
+  if (m_sif)
+  {
+    int ivalue;
+    if (m_sif->GetIntValue(section, key, &ivalue))
+      value = ivalue;
+    else
+      value = default_value;
+  }
+  else
+  {
+    value = Host::GetBaseIntSettingValue(section, key, default_value.value_or(0));
+  }
+
+  return value;
+}
+
+std::optional<float> SettingsDialog::getFloatValue(const char* section, const char* key,
+                                                   std::optional<float> default_value) const
+{
+  std::optional<float> value;
+  if (m_sif)
+  {
+    float fvalue;
+    if (m_sif->GetFloatValue(section, key, &fvalue))
+      value = fvalue;
+    else
+      value = default_value;
+  }
+  else
+  {
+    value = Host::GetBaseFloatSettingValue(section, key, default_value.value_or(0.0f));
+  }
+
+  return value;
+}
+
+std::optional<std::string> SettingsDialog::getStringValue(const char* section, const char* key,
+                                                          std::optional<const char*> default_value) const
+{
+  std::optional<std::string> value;
+  if (m_sif)
+  {
+    std::string svalue;
+    if (m_sif->GetStringValue(section, key, &svalue))
+      value = std::move(svalue);
+    else if (default_value.has_value())
+      value = default_value.value();
+  }
+  else
+  {
+    value = Host::GetBaseStringSettingValue(section, key, default_value.value_or(""));
+  }
+
+  return value;
+}
+
+void SettingsDialog::setBoolSettingValue(const char* section, const char* key, std::optional<bool> value)
+{
+  if (m_sif)
+  {
+    value.has_value() ? m_sif->SetBoolValue(section, key, value.value()) : m_sif->DeleteValue(section, key);
+    m_sif->Save();
+    QtHostInterface::GetInstance()->reloadGameSettings();
+  }
+  else
+  {
+    value.has_value() ? QtHost::SetBaseBoolSettingValue(section, key, value.value()) :
+                        QtHost::RemoveBaseSettingValue(section, key);
+    QtHostInterface::GetInstance()->applySettings();
+  }
+}
+
+void SettingsDialog::setIntSettingValue(const char* section, const char* key, std::optional<int> value)
+{
+  if (m_sif)
+  {
+    value.has_value() ? m_sif->SetIntValue(section, key, value.value()) : m_sif->DeleteValue(section, key);
+    m_sif->Save();
+    QtHostInterface::GetInstance()->reloadGameSettings();
+  }
+  else
+  {
+    value.has_value() ? QtHost::SetBaseIntSettingValue(section, key, value.value()) :
+                        QtHost::RemoveBaseSettingValue(section, key);
+    QtHostInterface::GetInstance()->applySettings();
+  }
+}
+
+void SettingsDialog::setFloatSettingValue(const char* section, const char* key, std::optional<float> value)
+{
+  if (m_sif)
+  {
+    value.has_value() ? m_sif->SetFloatValue(section, key, value.value()) : m_sif->DeleteValue(section, key);
+    m_sif->Save();
+    QtHostInterface::GetInstance()->reloadGameSettings();
+  }
+  else
+  {
+    value.has_value() ? QtHost::SetBaseFloatSettingValue(section, key, value.value()) :
+                        QtHost::RemoveBaseSettingValue(section, key);
+    QtHostInterface::GetInstance()->applySettings();
+  }
+}
+
+void SettingsDialog::setStringSettingValue(const char* section, const char* key, std::optional<const char*> value)
+{
+  if (m_sif)
+  {
+    value.has_value() ? m_sif->SetStringValue(section, key, value.value()) : m_sif->DeleteValue(section, key);
+    m_sif->Save();
+    QtHostInterface::GetInstance()->reloadGameSettings();
+  }
+  else
+  {
+    value.has_value() ? QtHost::SetBaseStringSettingValue(section, key, value.value()) :
+                        QtHost::RemoveBaseSettingValue(section, key);
+    QtHostInterface::GetInstance()->applySettings();
+  }
+}
+
+void SettingsDialog::removeSettingValue(const char* section, const char* key)
+{
+  if (m_sif)
+  {
+    m_sif->DeleteValue(section, key);
+    m_sif->Save();
+    QtHostInterface::GetInstance()->reloadGameSettings();
+  }
+  else
+  {
+    QtHost::RemoveBaseSettingValue(section, key);
+    QtHostInterface::GetInstance()->applySettings();
+  }
 }

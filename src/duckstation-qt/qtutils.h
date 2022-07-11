@@ -1,4 +1,5 @@
 #pragma once
+#include "common/types.h"
 #include <QtCore/QByteArray>
 #include <QtCore/QMetaType>
 #include <QtCore/QString>
@@ -22,6 +23,9 @@ class QUrl;
 
 namespace QtUtils {
 
+/// Wheel delta is 120 as in winapi.
+static constexpr float MOUSE_WHEEL_DELTA = 120.0f;
+
 /// Creates a horizontal line widget.
 QFrame* CreateHorizontalLine(QWidget* parent);
 
@@ -33,20 +37,9 @@ QWidget* GetRootWidget(QWidget* widget, bool stop_at_window_or_dialog = true);
 void ResizeColumnsForTableView(QTableView* view, const std::initializer_list<int>& widths);
 void ResizeColumnsForTreeView(QTreeView* view, const std::initializer_list<int>& widths);
 
-/// Returns a string identifier for a Qt key ID.
-QString GetKeyIdentifier(int key);
-
-/// Returns the integer Qt key ID for an identifier.
-std::optional<int> GetKeyIdForIdentifier(const QString& key_identifier);
-
-/// Stringizes a key event.
-QString KeyEventToString(int key, Qt::KeyboardModifiers mods);
-
-/// Returns an integer id for a stringized key event. Modifiers are in the upper bits.
-std::optional<int> ParseKeyString(const QString& key_str);
-
-/// Returns a key id for a key event, including any modifiers.
-int KeyEventToInt(int key, Qt::KeyboardModifiers mods);
+/// Returns a key id for a key event, including any modifiers that we need (e.g. Keypad).
+/// NOTE: Defined in QtKeyCodes.cpp, not QtUtils.cpp.
+u32 KeyEventToCode(const QKeyEvent* ev);
 
 /// Reads a whole stream to a Qt byte array.
 QByteArray ReadStreamToQByteArray(ByteStream* stream, bool rewind = false);

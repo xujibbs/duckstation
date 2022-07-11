@@ -7,16 +7,16 @@
 #include "common/log.h"
 #include "common/path.h"
 #include "common/string_util.h"
-#include "controller_interface.h"
 #include "core/cdrom.h"
 #include "core/cheats.h"
 #include "core/cpu_code_cache.h"
 #include "core/dma.h"
 #include "core/gpu.h"
 #include "core/gte.h"
+#include "core/host.h"
+#include "core/host_settings.h"
 #include "core/host_display.h"
-#include "core/imgui_fullscreen.h"
-#include "core/imgui_styles.h"
+#include "imgui_fullscreen.h"
 #include "core/mdec.h"
 #include "core/pgxp.h"
 #include "core/save_state_version.h"
@@ -29,8 +29,10 @@
 #include "game_list.h"
 #include "icon.h"
 #include "imgui.h"
+#include "imgui_manager.h"
 #include "inhibit_screensaver.h"
 #include "ini_settings_interface.h"
+#include "input_manager.h"
 #include "input_overlay_ui.h"
 #include "save_state_selector_ui.h"
 #include "scmversion/scmversion.h"
@@ -53,7 +55,7 @@
 #endif
 
 #ifdef WITH_CHEEVOS
-#include "core/cheevos.h"
+#include "cheevos.h"
 #endif
 
 #ifdef _WIN32
@@ -95,7 +97,8 @@ bool CommonHostInterface::Initialize()
   // Set crash handler to dump to user directory, because of permissions.
   CrashHandler::SetWriteDirectory(m_user_directory);
 
-  LoadSettings();
+  LoadSettings(*Host::GetSettingsInterface());
+  FixIncompatibleSettings(false);
   UpdateLogSettings(g_settings.log_level, g_settings.log_filter.empty() ? nullptr : g_settings.log_filter.c_str(),
                     g_settings.log_to_console, g_settings.log_to_debug, g_settings.log_to_window,
                     g_settings.log_to_file);
@@ -107,20 +110,19 @@ bool CommonHostInterface::Initialize()
 
   m_save_state_selector_ui = std::make_unique<FrontendCommon::SaveStateSelectorUI>(this);
 
-  RegisterHotkeys();
-
-  UpdateControllerInterface();
-
-  CreateImGuiContext();
-
 #ifdef WITH_CHEEVOS
 #ifdef WITH_RAINTEGRATION
   if (GetBoolSettingValue("Cheevos", "UseRAIntegration", false))
     Cheevos::SwitchToRAIntegration();
 #endif
 
-  UpdateCheevosActive();
+  UpdateCheevosActive(*Host::GetSettingsInterface());
 #endif
+
+  {
+    auto lock = Host::GetSettingsLock();
+    InputManager::ReloadSources(*Host::GetSettingsInterface(), lock);
+  }
 
   return true;
 }
@@ -131,8 +133,6 @@ void CommonHostInterface::Shutdown()
 
   HostInterface::Shutdown();
 
-  ImGui::DestroyContext();
-
 #ifdef WITH_DISCORD_PRESENCE
   ShutdownDiscordPresence();
 #endif
@@ -141,11 +141,7 @@ void CommonHostInterface::Shutdown()
   Cheevos::Shutdown();
 #endif
 
-  if (m_controller_interface)
-  {
-    m_controller_interface->Shutdown();
-    m_controller_interface.reset();
-  }
+  InputManager::CloseSources();
 }
 
 void CommonHostInterface::InitializeUserDirectory()
@@ -196,7 +192,7 @@ void CommonHostInterface::InitializeUserDirectory()
 bool CommonHostInterface::BootSystem(std::shared_ptr<SystemBootParameters> parameters)
 {
   // If the fullscreen UI is enabled, make sure it's finished loading the game list so we don't race it.
-  if (m_display && m_fullscreen_ui_enabled)
+  if (m_display && FullscreenUI::IsInitialized())
     FullscreenUI::EnsureGameListLoaded();
 
   // In Challenge mode, do not allow loading a save state under any circumstances
@@ -507,11 +503,7 @@ void CommonHostInterface::OnAchievementsRefreshed()
 
 void CommonHostInterface::PollAndUpdate()
 {
-  if (m_controller_interface)
-    m_controller_interface->PollEvents();
-
-  if (m_fullscreen_ui_enabled)
-    FullscreenUI::SetImGuiNavInputs();
+  InputManager::PollSources();
 
 #ifdef WITH_DISCORD_PRESENCE
   PollDiscordPresence();
@@ -533,87 +525,8 @@ bool CommonHostInterface::SetFullscreen(bool enabled)
   return false;
 }
 
-void CommonHostInterface::CreateImGuiContext()
-{
-  ImGui::CreateContext();
-  ImGui::GetIO().IniFilename = nullptr;
-#ifndef __ANDROID__
-  // Android has no keyboard, nor are we using ImGui for any actual user-interactable windows.
-  ImGui::GetIO().ConfigFlags |=
-    ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad | ImGuiConfigFlags_NoMouseCursorChange;
-#endif
-}
-
 bool CommonHostInterface::CreateHostDisplayResources()
 {
-  const float framebuffer_scale = m_display->GetWindowScale();
-  ImGui::GetIO().DisplayFramebufferScale = ImVec2(framebuffer_scale, framebuffer_scale);
-  ImGui::GetIO().DisplaySize.x = static_cast<float>(m_display->GetWindowWidth());
-  ImGui::GetIO().DisplaySize.y = static_cast<float>(m_display->GetWindowHeight());
-  ImGui::GetStyle() = ImGuiStyle();
-  ImGui::GetStyle().WindowMinSize = ImVec2(1.0f, 1.0f);
-  ImGui::StyleColorsDarker();
-  ImGui::GetStyle().ScaleAllSizes(framebuffer_scale);
-
-  if (!m_display->CreateImGuiContext())
-  {
-    ReportError("Failed to create ImGui device context");
-    return false;
-  }
-
-  // load text font
-  {
-    std::unique_ptr<ByteStream> stream = OpenPackageFile("resources" FS_OSPATH_SEPARATOR_STR "roboto-regular.ttf",
-                                                         BYTESTREAM_OPEN_READ | BYTESTREAM_OPEN_STREAMED);
-    std::vector<u8> font_data;
-    if (!stream || (font_data = ByteStream::ReadBinaryStream(stream.get()), font_data.empty()))
-    {
-      ReportError("Failed to load text font");
-      m_display->DestroyImGuiContext();
-      return false;
-    }
-
-    ImGuiFullscreen::SetFontData(std::move(font_data));
-  }
-
-  // load icon font
-  {
-    std::unique_ptr<ByteStream> stream = OpenPackageFile("resources" FS_OSPATH_SEPARATOR_STR "fa-solid-900.ttf",
-                                                         BYTESTREAM_OPEN_READ | BYTESTREAM_OPEN_STREAMED);
-    std::vector<u8> font_data;
-    if (!stream || (font_data = ByteStream::ReadBinaryStream(stream.get()), font_data.empty()))
-    {
-      ReportError("Failed to load icon font");
-      m_display->DestroyImGuiContext();
-      return false;
-    }
-
-    ImGuiFullscreen::SetIconFontData(std::move(font_data));
-  }
-
-  if (m_fullscreen_ui_enabled)
-  {
-    if (!FullscreenUI::Initialize(this))
-    {
-      Log_ErrorPrintf("Failed to initialize fullscreen UI, disabling.");
-      m_fullscreen_ui_enabled = false;
-    }
-  }
-
-  if (!m_fullscreen_ui_enabled)
-    ImGuiFullscreen::ResetFonts();
-
-  if (!m_display->UpdateImGuiFontTexture())
-  {
-    Log_ErrorPrintf("Failed to create ImGui font text");
-    if (m_fullscreen_ui_enabled)
-      FullscreenUI::Shutdown();
-
-    m_display->DestroyImGuiContext();
-    m_logo_texture.reset();
-    return false;
-  }
-
   m_logo_texture = FullscreenUI::LoadTextureResource("logo.png", false);
   if (!m_logo_texture)
     m_logo_texture = FullscreenUI::LoadTextureResource("duck.png", true);
@@ -623,55 +536,13 @@ bool CommonHostInterface::CreateHostDisplayResources()
 
 void CommonHostInterface::ReleaseHostDisplayResources()
 {
-  if (m_fullscreen_ui_enabled)
-    FullscreenUI::Shutdown();
-
-  if (m_display)
-    m_display->DestroyImGuiContext();
-
   m_logo_texture.reset();
 }
 
 void CommonHostInterface::OnHostDisplayResized()
 {
-  const u32 new_width = m_display ? m_display->GetWindowWidth() : 0;
-  const u32 new_height = m_display ? m_display->GetWindowHeight() : 0;
-  const float new_scale = m_display ? m_display->GetWindowScale() : 1.0f;
-
   HostInterface::OnHostDisplayResized();
-
-  ImGui::GetIO().DisplaySize.x = static_cast<float>(new_width);
-  ImGui::GetIO().DisplaySize.y = static_cast<float>(new_height);
-
-  if (new_scale != ImGui::GetIO().DisplayFramebufferScale.x)
-  {
-    ImGui::GetIO().DisplayFramebufferScale = ImVec2(new_scale, new_scale);
-    ImGui::GetStyle() = ImGuiStyle();
-    ImGui::GetStyle().WindowMinSize = ImVec2(1.0f, 1.0f);
-    ImGui::StyleColorsDarker();
-    ImGui::GetStyle().ScaleAllSizes(new_scale);
-
-    if (m_fullscreen_ui_enabled)
-    {
-      ImGuiFullscreen::UpdateLayoutScale();
-      ImGuiFullscreen::UpdateFonts();
-    }
-    else
-    {
-      ImGuiFullscreen::ResetFonts();
-    }
-
-    if (!m_display->UpdateImGuiFontTexture())
-      Panic("Failed to recreate font texture after scale+resize");
-  }
-  else if (m_fullscreen_ui_enabled && ImGuiFullscreen::UpdateLayoutScale())
-  {
-    if (ImGuiFullscreen::UpdateFonts())
-    {
-      if (!m_display->UpdateImGuiFontTexture())
-        Panic("Failed to update font texture after resize");
-    }
-  }
+  ImGuiManager::WindowResized();
 
   if (!System::IsShutdown())
     g_gpu->UpdateResolutionScale();
@@ -707,48 +578,6 @@ std::unique_ptr<AudioStream> CommonHostInterface::CreateAudioStream(AudioBackend
 s32 CommonHostInterface::GetAudioOutputVolume() const
 {
   return g_settings.GetAudioOutputVolume(IsRunningAtNonStandardSpeed());
-}
-
-void CommonHostInterface::UpdateControllerInterface()
-{
-  const std::string backend_str = GetStringSettingValue(
-    "Main", "ControllerBackend", ControllerInterface::GetBackendName(ControllerInterface::GetDefaultBackend()));
-  const std::optional<ControllerInterface::Backend> new_backend =
-    ControllerInterface::ParseBackendName(backend_str.c_str());
-  const ControllerInterface::Backend current_backend =
-    (m_controller_interface ? m_controller_interface->GetBackend() : ControllerInterface::Backend::None);
-  if (new_backend == current_backend || m_flags.disable_controller_interface)
-    return;
-
-  if (m_controller_interface)
-  {
-    ClearInputMap();
-    m_controller_interface->Shutdown();
-    m_controller_interface.reset();
-  }
-
-  if (!new_backend.has_value())
-  {
-    Log_ErrorPrintf("Invalid controller interface type: '%s'", backend_str.c_str());
-    return;
-  }
-
-  if (new_backend == ControllerInterface::Backend::None)
-  {
-    Log_WarningPrintf("No controller interface created, controller bindings are not possible.");
-    return;
-  }
-
-  m_controller_interface = ControllerInterface::Create(new_backend.value());
-  if (!m_controller_interface || !m_controller_interface->Initialize(this))
-  {
-    Log_WarningPrintf("Failed to initialize controller interface, bindings are not possible.");
-    if (m_controller_interface)
-    {
-      m_controller_interface->Shutdown();
-      m_controller_interface.reset();
-    }
-  }
 }
 
 bool CommonHostInterface::UndoLoadState()
@@ -1082,7 +911,7 @@ void CommonHostInterface::SetUserDirectory()
 
 void CommonHostInterface::OnSystemCreated()
 {
-  if (m_fullscreen_ui_enabled)
+  if (FullscreenUI::IsInitialized())
     FullscreenUI::SystemCreated();
 
   if (g_settings.display_post_processing && !m_display->SetPostProcessingChain(g_settings.display_post_process_chain))
@@ -1096,10 +925,10 @@ void CommonHostInterface::OnSystemPaused(bool paused)
 {
   if (paused)
   {
-    if (IsFullscreen() && !m_fullscreen_ui_enabled)
+    if (IsFullscreen() && !FullscreenUI::IsInitialized())
       SetFullscreen(false);
 
-    StopControllerRumble();
+    InputManager::PauseVibration();
     FrontendCommon::ResumeScreensaver();
   }
   else
@@ -1117,10 +946,10 @@ void CommonHostInterface::OnSystemDestroyed()
   if (m_display)
     m_display->SetDisplayMaxFPS(0.0f);
 
-  if (m_fullscreen_ui_enabled)
+  if (FullscreenUI::IsInitialized())
     FullscreenUI::SystemDestroyed();
 
-  StopControllerRumble();
+  InputManager::PauseVibration();
   FrontendCommon::ResumeScreensaver();
 }
 
@@ -1152,405 +981,10 @@ void CommonHostInterface::OnRunningGameChanged(const std::string& path, CDImage*
 
 void CommonHostInterface::OnControllerTypeChanged(u32 slot)
 {
-  UpdateInputMap();
-}
-
-void CommonHostInterface::DrawImGuiWindows()
-{
-  const bool system_valid = System::IsValid();
-  if (system_valid)
   {
-    if (m_save_state_selector_ui->IsOpen())
-      m_save_state_selector_ui->Draw();
-
-    if (s_input_overlay_ui)
-      s_input_overlay_ui->Draw();
-
-    if (g_settings.display_show_enhancements)
-      DrawEnhancementsOverlay();
+    auto lock = Host::GetSettingsLock();
+    InputManager::ReloadBindings(*Host::GetSettingsInterface(), *Host::GetSettingsInterface());
   }
-
-  if (m_fullscreen_ui_enabled)
-  {
-    FullscreenUI::Render();
-    return;
-  }
-
-  if (system_valid)
-  {
-    if (!IsCheevosChallengeModeActive())
-      DrawDebugWindows();
-    DrawStatsOverlay();
-  }
-
-  DrawOSDMessages();
-}
-
-void CommonHostInterface::DrawStatsOverlay()
-{
-  if (!(g_settings.display_show_fps | g_settings.display_show_vps | g_settings.display_show_speed |
-        g_settings.display_show_resolution | System::IsPaused() | IsFastForwardEnabled() | IsTurboEnabled()))
-  {
-    return;
-  }
-
-  float shadow_offset, margin, spacing, position_y;
-  ImFont* font;
-
-  if (m_fullscreen_ui_enabled)
-  {
-    margin = ImGuiFullscreen::LayoutScale(10.0f);
-    spacing = margin;
-    shadow_offset = ImGuiFullscreen::DPIScale(1.0f);
-    position_y = ImGuiFullscreen::g_menu_bar_size + margin;
-    font = ImGuiFullscreen::g_large_font;
-  }
-  else
-  {
-    const float scale = ImGui::GetIO().DisplayFramebufferScale.x;
-    shadow_offset = 1.0f * scale;
-    margin = 10.0f * scale;
-    spacing = 5.0f * scale;
-    position_y = margin;
-    font = ImGui::GetFont();
-  }
-
-  ImDrawList* dl = ImGui::GetBackgroundDrawList();
-  TinyString text;
-  ImVec2 text_size;
-  bool first = true;
-
-#define DRAW_LINE(color)                                                                                               \
-  do                                                                                                                   \
-  {                                                                                                                    \
-    text_size = font->CalcTextSizeA(font->FontSize, std::numeric_limits<float>::max(), -1.0f, text,                    \
-                                    text.GetCharArray() + text.GetLength(), nullptr);                                  \
-    dl->AddText(                                                                                                       \
-      font, font->FontSize,                                                                                            \
-      ImVec2(ImGui::GetIO().DisplaySize.x - margin - text_size.x + shadow_offset, position_y + shadow_offset),         \
-      IM_COL32(0, 0, 0, 100), text, text.GetCharArray() + text.GetLength());                                           \
-    dl->AddText(font, font->FontSize, ImVec2(ImGui::GetIO().DisplaySize.x - margin - text_size.x, position_y), color,  \
-                text, text.GetCharArray() + text.GetLength());                                                         \
-    position_y += text_size.y + spacing;                                                                               \
-  } while (0)
-
-  const System::State state = System::GetState();
-  if (state == System::State::Running)
-  {
-    const float speed = System::GetEmulationSpeed();
-    if (g_settings.display_show_fps)
-    {
-      text.AppendFormattedString("%.2f", System::GetFPS());
-      first = false;
-    }
-    if (g_settings.display_show_vps)
-    {
-      text.AppendFormattedString("%s%.2f", first ? "" : " / ", System::GetVPS());
-      first = false;
-    }
-    if (g_settings.display_show_speed)
-    {
-      text.AppendFormattedString("%s%u%%", first ? "" : " / ", static_cast<u32>(std::round(speed)));
-      first = false;
-    }
-    if (!text.IsEmpty())
-    {
-      ImU32 color;
-      if (speed < 95.0f)
-        color = IM_COL32(255, 100, 100, 255);
-      else if (speed > 105.0f)
-        color = IM_COL32(100, 255, 100, 255);
-      else
-        color = IM_COL32(255, 255, 255, 255);
-
-      DRAW_LINE(color);
-    }
-
-    if (g_settings.display_show_resolution)
-    {
-      const auto [effective_width, effective_height] = g_gpu->GetEffectiveDisplayResolution();
-      const bool interlaced = g_gpu->IsInterlacedDisplayEnabled();
-      text.Format("%ux%u (%s)", effective_width, effective_height, interlaced ? "interlaced" : "progressive");
-      DRAW_LINE(IM_COL32(255, 255, 255, 255));
-    }
-
-    if (g_settings.display_show_status_indicators)
-    {
-      const bool rewinding = System::IsRewinding();
-      if (rewinding || IsFastForwardEnabled() || IsTurboEnabled())
-      {
-        text.Assign(rewinding ? ICON_FA_FAST_BACKWARD : ICON_FA_FAST_FORWARD);
-        DRAW_LINE(IM_COL32(255, 255, 255, 255));
-      }
-    }
-  }
-  else if (g_settings.display_show_status_indicators && state == System::State::Paused)
-  {
-    text.Assign(ICON_FA_PAUSE);
-    DRAW_LINE(IM_COL32(255, 255, 255, 255));
-  }
-
-#undef DRAW_LINE
-}
-
-void CommonHostInterface::DrawEnhancementsOverlay()
-{
-  LargeString text;
-  text.AppendString(Settings::GetConsoleRegionName(System::GetRegion()));
-
-  if (g_settings.rewind_enable)
-    text.AppendFormattedString(" RW=%g/%u", g_settings.rewind_save_frequency, g_settings.rewind_save_slots);
-  if (g_settings.IsRunaheadEnabled())
-    text.AppendFormattedString(" RA=%u", g_settings.runahead_frames);
-
-  if (g_settings.cpu_overclock_active)
-    text.AppendFormattedString(" CPU=%u%%", g_settings.GetCPUOverclockPercent());
-  if (g_settings.enable_8mb_ram)
-    text.AppendString(" 8MB");
-  if (g_settings.cdrom_read_speedup != 1)
-    text.AppendFormattedString(" CDR=%ux", g_settings.cdrom_read_speedup);
-  if (g_settings.cdrom_seek_speedup != 1)
-    text.AppendFormattedString(" CDS=%ux", g_settings.cdrom_seek_speedup);
-  if (g_settings.gpu_resolution_scale != 1)
-    text.AppendFormattedString(" IR=%ux", g_settings.gpu_resolution_scale);
-  if (g_settings.gpu_multisamples != 1)
-  {
-    text.AppendFormattedString(" %ux%s", g_settings.gpu_multisamples,
-                               g_settings.gpu_per_sample_shading ? "MSAA" : "SSAA");
-  }
-  if (g_settings.gpu_true_color)
-    text.AppendString(" TrueCol");
-  if (g_settings.gpu_disable_interlacing)
-    text.AppendString(" ForceProg");
-  if (g_settings.gpu_force_ntsc_timings && System::GetRegion() == ConsoleRegion::PAL)
-    text.AppendString(" PAL60");
-  if (g_settings.gpu_texture_filter != GPUTextureFilter::Nearest)
-    text.AppendFormattedString(" %s", Settings::GetTextureFilterName(g_settings.gpu_texture_filter));
-  if (g_settings.gpu_widescreen_hack && g_settings.display_aspect_ratio != DisplayAspectRatio::Auto &&
-      g_settings.display_aspect_ratio != DisplayAspectRatio::R4_3)
-  {
-    text.AppendString(" WSHack");
-  }
-  if (g_settings.gpu_pgxp_enable)
-  {
-    text.AppendString(" PGXP");
-    if (g_settings.gpu_pgxp_culling)
-      text.AppendString("/Cull");
-    if (g_settings.gpu_pgxp_texture_correction)
-      text.AppendString("/Tex");
-    if (g_settings.gpu_pgxp_vertex_cache)
-      text.AppendString("/VC");
-    if (g_settings.gpu_pgxp_cpu)
-      text.AppendString("/CPU");
-    if (g_settings.gpu_pgxp_depth_buffer)
-      text.AppendString("/Depth");
-  }
-
-  float shadow_offset, margin, position_y;
-  ImFont* font;
-
-  if (m_fullscreen_ui_enabled)
-  {
-    margin = ImGuiFullscreen::LayoutScale(10.0f);
-    shadow_offset = ImGuiFullscreen::DPIScale(1.0f);
-    font = ImGuiFullscreen::g_medium_font;
-    position_y = ImGui::GetIO().DisplaySize.y - margin - font->FontSize;
-  }
-  else
-  {
-    const float scale = ImGui::GetIO().DisplayFramebufferScale.x;
-    shadow_offset = 1.0f * scale;
-    margin = 10.0f * scale;
-    font = ImGui::GetFont();
-    position_y = ImGui::GetIO().DisplaySize.y - margin - font->FontSize;
-  }
-
-  ImDrawList* dl = ImGui::GetBackgroundDrawList();
-  ImVec2 text_size = font->CalcTextSizeA(font->FontSize, std::numeric_limits<float>::max(), -1.0f, text,
-                                         text.GetCharArray() + text.GetLength(), nullptr);
-  dl->AddText(font, font->FontSize,
-              ImVec2(ImGui::GetIO().DisplaySize.x - margin - text_size.x + shadow_offset, position_y + shadow_offset),
-              IM_COL32(0, 0, 0, 100), text, text.GetCharArray() + text.GetLength());
-  dl->AddText(font, font->FontSize, ImVec2(ImGui::GetIO().DisplaySize.x - margin - text_size.x, position_y),
-              IM_COL32(255, 255, 255, 255), text, text.GetCharArray() + text.GetLength());
-}
-
-void CommonHostInterface::AddOSDMessage(std::string message, float duration /*= 2.0f*/)
-{
-  OSDMessage msg;
-  msg.text = std::move(message);
-  msg.duration = duration;
-
-  std::unique_lock<std::mutex> lock(m_osd_messages_lock);
-  m_osd_posted_messages.push_back(std::move(msg));
-}
-
-void CommonHostInterface::AddKeyedOSDMessage(std::string key, std::string message, float duration /*= 2.0f*/)
-{
-  OSDMessage msg;
-  msg.key = std::move(key);
-  msg.text = std::move(message);
-  msg.duration = duration;
-
-  std::unique_lock<std::mutex> lock(m_osd_messages_lock);
-  m_osd_posted_messages.push_back(std::move(msg));
-}
-
-void CommonHostInterface::RemoveKeyedOSDMessage(std::string key)
-{
-  OSDMessage msg;
-  msg.key = std::move(key);
-  msg.duration = 0.0f;
-
-  std::unique_lock<std::mutex> lock(m_osd_messages_lock);
-  m_osd_posted_messages.push_back(std::move(msg));
-}
-
-void CommonHostInterface::ClearOSDMessages()
-{
-  {
-    std::unique_lock<std::mutex> lock(m_osd_messages_lock);
-    m_osd_posted_messages.clear();
-  }
-
-  m_osd_active_messages.clear();
-
-  if (IsFullscreenUIEnabled())
-    ImGuiFullscreen::ClearNotifications();
-}
-
-void CommonHostInterface::AcquirePendingOSDMessages()
-{
-  // memory_order_consume is roughly equivalent to adding a volatile keyword to the read from the deque.
-  // we just want to force the compiler to always reload the deque size value from memory.
-  //
-  // ARM doesn't have good atomic read guarantees so it _could_ read some non-zero value here spuriously,
-  // but that's OK because we lock the mutex later and recheck things anyway. This early out will still
-  // avoid 99.99% of the unnecessary lock attempts when size == 0.
-
-  std::atomic_thread_fence(std::memory_order_consume);
-  if (!m_osd_posted_messages.empty())
-  {
-    std::unique_lock<std::mutex> lock(m_osd_messages_lock);
-    for (;;)
-    {
-      // lock-and-copy mechanism.
-      // this allows us to unlock the deque and minimize time that the mutex is held.
-      // it is almost always the best model to follow for multithread deque.
-
-      if (m_osd_posted_messages.empty())
-        break;
-
-      if (g_settings.display_show_osd_messages)
-      {
-        OSDMessage& new_msg = m_osd_posted_messages.front();
-        std::deque<OSDMessage>::iterator iter;
-        if (!new_msg.key.empty() && (iter = std::find_if(m_osd_active_messages.begin(), m_osd_active_messages.end(),
-                                                         [&new_msg](const OSDMessage& other) {
-                                                           return new_msg.key == other.key;
-                                                         })) != m_osd_active_messages.end())
-        {
-          iter->text = std::move(new_msg.text);
-          iter->duration = new_msg.duration;
-          iter->time = new_msg.time;
-        }
-        else
-        {
-          m_osd_active_messages.push_back(std::move(new_msg));
-        }
-      }
-
-      m_osd_posted_messages.pop_front();
-
-      // somewhat arbitrary hard cap on # of messages. This might be unnecessarily paranoid. If something is
-      // spamming the osd message log this badly, then probably this isn't going to really help things much.
-      static constexpr size_t MAX_ACTIVE_OSD_MESSAGES = 512;
-      if (m_osd_active_messages.size() > MAX_ACTIVE_OSD_MESSAGES)
-        m_osd_active_messages.pop_front();
-    }
-  }
-}
-
-void CommonHostInterface::DrawOSDMessages()
-{
-  AcquirePendingOSDMessages();
-
-  float max_width, margin, spacing, padding, rounding, position_x, position_y;
-  ImFont* font;
-
-  if (m_fullscreen_ui_enabled)
-  {
-    max_width = ImGuiFullscreen::LayoutScale(1080.0f);
-    spacing = ImGuiFullscreen::LayoutScale(4.0f);
-    margin = ImGuiFullscreen::LayoutScale(10.0f);
-    padding = ImGuiFullscreen::LayoutScale(10.0f);
-    rounding = ImGuiFullscreen::LayoutScale(10.0f);
-    position_x = margin;
-    position_y = margin + ImGuiFullscreen::g_menu_bar_size;
-    font = ImGuiFullscreen::g_large_font;
-  }
-  else
-  {
-    const float scale = ImGui::GetIO().DisplayFramebufferScale.x;
-    spacing = 5.0f * scale;
-    margin = 10.0f * scale;
-    padding = 8.0f * scale;
-    rounding = 5.0f * scale;
-    max_width = ImGui::GetIO().DisplaySize.x - margin;
-    position_x = margin;
-    position_y = margin;
-    font = ImGui::GetFont();
-  }
-
-  auto iter = m_osd_active_messages.begin();
-  while (iter != m_osd_active_messages.end())
-  {
-    const OSDMessage& msg = *iter;
-    const double time = msg.time.GetTimeSeconds();
-    const float time_remaining = static_cast<float>(msg.duration - time);
-    if (time_remaining <= 0.0f)
-    {
-      iter = m_osd_active_messages.erase(iter);
-      continue;
-    }
-
-    ++iter;
-
-    const float opacity = std::min(time_remaining, 1.0f);
-    const u32 alpha = static_cast<u32>(opacity * 255.0f);
-
-    if (position_y >= ImGui::GetIO().DisplaySize.y)
-      break;
-
-    const ImVec2 pos(position_x, position_y);
-    const ImVec2 text_size(font->CalcTextSizeA(font->FontSize, std::numeric_limits<float>::max(), max_width,
-                                               msg.text.c_str(), msg.text.c_str() + msg.text.length()));
-    const ImVec2 size(text_size.x + padding * 2.0f, text_size.y + padding * 2.0f);
-    const ImVec4 text_rect(pos.x + padding, pos.y + padding, pos.x + size.x - padding, pos.y + size.y - padding);
-
-    ImDrawList* dl = ImGui::GetBackgroundDrawList();
-    dl->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), IM_COL32(0x21, 0x21, 0x21, alpha), rounding);
-    dl->AddRect(pos, ImVec2(pos.x + size.x, pos.y + size.y), IM_COL32(0x48, 0x48, 0x48, alpha), rounding);
-    dl->AddText(font, font->FontSize, ImVec2(text_rect.x, text_rect.y), IM_COL32(0xff, 0xff, 0xff, alpha),
-                msg.text.c_str(), msg.text.c_str() + msg.text.length(), max_width, &text_rect);
-    position_y += size.y + spacing;
-  }
-}
-
-void CommonHostInterface::DrawDebugWindows()
-{
-  if (g_settings.debugging.show_gpu_state)
-    g_gpu->DrawDebugStateWindow();
-  if (g_settings.debugging.show_cdrom_state)
-    g_cdrom.DrawDebugWindow();
-  if (g_settings.debugging.show_timers_state)
-    g_timers.DrawDebugStateWindow();
-  if (g_settings.debugging.show_spu_state)
-    g_spu.DrawDebugStateWindow();
-  if (g_settings.debugging.show_mdec_state)
-    g_mdec.DrawDebugStateWindow();
-  if (g_settings.debugging.show_dma_state)
-    g_dma.DrawDebugStateWindow();
 }
 
 bool CommonHostInterface::IsCheevosChallengeModeActive() const
@@ -1589,611 +1023,6 @@ void CommonHostInterface::DoToggleCheats()
                        TranslateStdString("OSDMessage", "%n cheats are now active.", "", cl->GetEnabledCodeCount()) :
                        TranslateStdString("OSDMessage", "%n cheats are now inactive.", "", cl->GetEnabledCodeCount()),
                      10.0f);
-}
-
-std::optional<CommonHostInterface::HostKeyCode>
-CommonHostInterface::GetHostKeyCode(const std::string_view key_code) const
-{
-  return std::nullopt;
-}
-
-void CommonHostInterface::RegisterHotkey(String category, String name, String display_name, InputButtonHandler handler)
-{
-  m_hotkeys.push_back(HotkeyInfo{std::move(category), std::move(name), std::move(display_name), std::move(handler)});
-}
-
-bool CommonHostInterface::HandleHostKeyEvent(HostKeyCode code, HostKeyCode modifiers, bool pressed)
-{
-  auto iter = m_keyboard_input_handlers.find(code | modifiers);
-  if (iter == m_keyboard_input_handlers.end())
-  {
-    // try without the modifier
-    if (modifiers == 0 || (iter = m_keyboard_input_handlers.find(code)) == m_keyboard_input_handlers.end())
-      return false;
-  }
-
-  iter->second(pressed);
-  return true;
-}
-
-bool CommonHostInterface::HandleHostMouseEvent(HostMouseButton button, bool pressed)
-{
-  const auto iter = m_mouse_input_handlers.find(button);
-  if (iter == m_mouse_input_handlers.end())
-    return false;
-
-  iter->second(pressed);
-  return true;
-}
-
-void CommonHostInterface::UpdateInputMap(SettingsInterface& si)
-{
-  ClearInputMap();
-
-  if (!UpdateControllerInputMapFromGameSettings())
-    UpdateControllerInputMap(si);
-
-  UpdateHotkeyInputMap(si);
-}
-
-void CommonHostInterface::ClearInputMap()
-{
-  m_keyboard_input_handlers.clear();
-  m_mouse_input_handlers.clear();
-  m_controller_vibration_motors.clear();
-  if (m_controller_interface)
-    m_controller_interface->ClearBindings();
-}
-
-void CommonHostInterface::AddControllerRumble(u32 controller_index, u32 num_motors, ControllerRumbleCallback callback)
-{
-  ControllerRumbleState rumble;
-  rumble.controller_index = controller_index;
-  rumble.num_motors = std::min<u32>(num_motors, ControllerRumbleState::MAX_MOTORS);
-  rumble.last_strength.fill(0.0f);
-  rumble.update_callback = std::move(callback);
-  rumble.last_update_time = Common::Timer::GetCurrentValue();
-  m_controller_vibration_motors.push_back(std::move(rumble));
-}
-
-void CommonHostInterface::UpdateControllerRumble()
-{
-  if (m_controller_vibration_motors.empty())
-    return;
-
-  // Rumble update frequency in milliseconds.
-  // We won't send an update to the controller unless this amount of time has passed, if the value has not changed.
-  // This is because the rumble update is synchronous, and with bluetooth latency can severely impact fast forward
-  // performance.
-  static constexpr float UPDATE_FREQUENCY = 1000.0f;
-  const u64 time = Common::Timer::GetCurrentValue();
-
-  for (ControllerRumbleState& rumble : m_controller_vibration_motors)
-  {
-    Controller* controller = System::GetController(rumble.controller_index);
-    if (!controller)
-      continue;
-
-    bool changed = false;
-    for (u32 i = 0; i < rumble.num_motors; i++)
-    {
-      const float strength = controller->GetVibrationMotorStrength(i);
-      if (rumble.last_strength[i] != strength)
-      {
-        rumble.last_strength[i] = strength;
-        changed = true;
-      }
-    }
-
-    if (changed || Common::Timer::ConvertValueToMilliseconds(time - rumble.last_update_time) >= UPDATE_FREQUENCY)
-    {
-      rumble.last_update_time = time;
-      rumble.update_callback(rumble.last_strength.data(), rumble.num_motors);
-    }
-  }
-}
-
-void CommonHostInterface::StopControllerRumble()
-{
-  for (ControllerRumbleState& rumble : m_controller_vibration_motors)
-  {
-    for (u32 i = 0; i < rumble.num_motors; i++)
-      rumble.last_strength[i] = 0.0f;
-
-    rumble.update_callback(rumble.last_strength.data(), rumble.num_motors);
-  }
-}
-
-void CommonHostInterface::SetControllerAutoFireState(u32 controller_index, s32 button_code, bool active)
-{
-  for (ControllerAutoFireState& ts : m_controller_autofires)
-  {
-    if (ts.controller_index != controller_index || ts.button_code != button_code)
-      continue;
-
-    if (!active)
-    {
-      if (ts.state)
-      {
-        Controller* controller = System::GetController(ts.controller_index);
-        if (controller)
-          controller->SetButtonState(ts.button_code, false);
-      }
-
-      ts.state = false;
-      ts.countdown = ts.frequency;
-    }
-
-    ts.active = active;
-    return;
-  }
-}
-
-void CommonHostInterface::SetControllerAutoFireSlotState(u32 controller_index, u32 slot_index, bool active)
-{
-  for (ControllerAutoFireState& ts : m_controller_autofires)
-  {
-    if (ts.controller_index != controller_index || ts.slot_index != slot_index)
-      continue;
-
-    if (!active)
-    {
-      if (ts.state)
-      {
-        Controller* controller = System::GetController(ts.controller_index);
-        if (controller)
-          controller->SetButtonState(ts.button_code, false);
-      }
-
-      ts.state = false;
-      ts.countdown = ts.frequency;
-    }
-
-    ts.active = active;
-    return;
-  }
-}
-
-void CommonHostInterface::UpdateControllerAutoFire()
-{
-  for (ControllerAutoFireState& ts : m_controller_autofires)
-  {
-    if (!ts.active || (--ts.countdown) > 0)
-      continue;
-
-    ts.countdown = ts.frequency;
-    ts.state = !ts.state;
-
-    Controller* controller = System::GetController(ts.controller_index);
-    if (controller)
-      controller->SetButtonState(ts.button_code, ts.state);
-  }
-}
-
-void CommonHostInterface::StopControllerAutoFire()
-{
-  for (ControllerAutoFireState& ts : m_controller_autofires)
-  {
-    if (!ts.active)
-      continue;
-
-    ts.countdown = ts.frequency;
-
-    if (ts.state)
-    {
-      Controller* controller = System::GetController(ts.controller_index);
-      if (controller)
-        controller->SetButtonState(ts.button_code, false);
-
-      ts.state = false;
-    }
-  }
-}
-
-void CommonHostInterface::UpdateControllerMetaState()
-{
-  UpdateControllerRumble();
-  UpdateControllerAutoFire();
-}
-
-static bool SplitBinding(const std::string& binding, std::string_view* device, std::string_view* sub_binding)
-{
-  const std::string::size_type slash_pos = binding.find('/');
-  if (slash_pos == std::string::npos)
-  {
-    Log_WarningPrintf("Malformed binding: '%s'", binding.c_str());
-    return false;
-  }
-
-  *device = std::string_view(binding).substr(0, slash_pos);
-  *sub_binding = std::string_view(binding).substr(slash_pos + 1);
-  return true;
-}
-
-void CommonHostInterface::UpdateControllerInputMap(SettingsInterface& si)
-{
-  StopControllerAutoFire();
-  StopControllerRumble();
-  m_controller_vibration_motors.clear();
-  m_controller_autofires.clear();
-
-  for (u32 controller_index = 0; controller_index < NUM_CONTROLLER_AND_CARD_PORTS; controller_index++)
-  {
-    const ControllerType ctype = g_settings.controller_types[controller_index];
-    if (ctype == ControllerType::None)
-      continue;
-
-    const auto category = TinyString::FromFormat("Controller%u", controller_index + 1);
-    const auto button_names = Controller::GetButtonNames(ctype);
-    for (const auto& it : button_names)
-    {
-      const std::string& button_name = it.first;
-      const s32 button_code = it.second;
-
-      const std::vector<std::string> bindings =
-        si.GetStringList(category, TinyString::FromFormat("Button%s", button_name.c_str()));
-      for (const std::string& binding : bindings)
-      {
-        std::string_view device, button;
-        if (!SplitBinding(binding, &device, &button))
-          continue;
-
-        AddButtonToInputMap(binding, device, button, [controller_index, button_code](bool pressed) {
-          if (System::IsShutdown())
-            return;
-
-          Controller* controller = System::GetController(controller_index);
-          if (controller)
-            controller->SetButtonState(button_code, pressed);
-        });
-      }
-    }
-
-    const auto axis_names = Controller::GetAxisNames(ctype);
-    for (const auto& it : axis_names)
-    {
-      const std::string& axis_name = std::get<std::string>(it);
-      const s32 axis_code = std::get<s32>(it);
-      const auto axis_type = std::get<Controller::AxisType>(it);
-
-      const std::vector<std::string> bindings =
-        si.GetStringList(category, TinyString::FromFormat("Axis%s", axis_name.c_str()));
-      for (const std::string& binding : bindings)
-      {
-        std::string_view device, axis;
-        if (!SplitBinding(binding, &device, &axis))
-          continue;
-
-        AddAxisToInputMap(binding, device, axis, axis_type, [controller_index, axis_code](float value) {
-          if (System::IsShutdown())
-            return;
-
-          Controller* controller = System::GetController(controller_index);
-          if (controller)
-            controller->SetAxisState(axis_code, value);
-        });
-      }
-    }
-
-    const u32 num_motors = Controller::GetVibrationMotorCount(ctype);
-    if (num_motors > 0)
-    {
-      const std::vector<std::string> bindings = si.GetStringList(category, TinyString::FromFormat("Rumble"));
-      for (const std::string& binding : bindings)
-        AddRumbleToInputMap(binding, controller_index, num_motors);
-    }
-
-    if (m_controller_interface)
-    {
-      const float deadzone_size = si.GetFloatValue(category, "Deadzone", 0.25f);
-      m_controller_interface->SetControllerDeadzone(controller_index, deadzone_size);
-    }
-
-    for (u32 turbo_button_index = 0; turbo_button_index < NUM_CONTROLLER_AUTOFIRE_BUTTONS; turbo_button_index++)
-    {
-      const std::string button_name(
-        si.GetStringValue(category, TinyString::FromFormat("AutoFire%uButton", turbo_button_index + 1), ""));
-      if (button_name.empty())
-        continue;
-
-      const std::vector<std::string> bindings =
-        si.GetStringList(category, TinyString::FromFormat("AutoFire%u", turbo_button_index + 1));
-
-#ifndef __ANDROID__
-      // Android doesn't require a binding, since we can trigger it from the touchscreen controller.
-      if (bindings.empty())
-        continue;
-#endif
-
-      const std::optional<s32> button_code = Controller::GetButtonCodeByName(ctype, button_name);
-      if (!button_code.has_value())
-      {
-        Log_ErrorPrintf("Invalid autofire button binding '%s'", button_name.c_str());
-        continue;
-      }
-
-      ControllerAutoFireState ts;
-      ts.controller_index = controller_index;
-      ts.slot_index = turbo_button_index;
-      ts.button_code = button_code.value();
-      ts.frequency = static_cast<u8>(
-        std::clamp<s32>(si.GetIntValue(category, TinyString::FromFormat("AutoFire%uFrequency", turbo_button_index + 1),
-                                       DEFAULT_AUTOFIRE_FREQUENCY),
-                        1, std::numeric_limits<decltype(ts.frequency)>::max()));
-      ts.countdown = ts.frequency;
-      ts.active = false;
-      ts.state = false;
-
-      for (const std::string& binding : bindings)
-      {
-        std::string_view device, button;
-        if (!SplitBinding(binding, &device, &button) ||
-            !AddButtonToInputMap(binding, device, button,
-                                 std::bind(&CommonHostInterface::SetControllerAutoFireState, this, controller_index,
-                                           button_code.value(), std::placeholders::_1)))
-        {
-          Log_ErrorPrintf("Failed to register binding '%s' for autofire button", binding.c_str());
-#ifndef __ANDROID__
-          continue;
-#endif
-        }
-      }
-
-      m_controller_autofires.push_back(ts);
-    }
-  }
-}
-
-void CommonHostInterface::UpdateHotkeyInputMap(SettingsInterface& si)
-{
-  for (const HotkeyInfo& hi : m_hotkeys)
-  {
-    const std::vector<std::string> bindings = si.GetStringList("Hotkeys", hi.name);
-    for (const std::string& binding : bindings)
-    {
-      std::string_view device, button;
-      if (!SplitBinding(binding, &device, &button))
-        continue;
-
-      AddButtonToInputMap(binding, device, button, hi.handler);
-    }
-  }
-
-  m_save_state_selector_ui->RefreshHotkeyLegend();
-}
-
-bool CommonHostInterface::AddButtonToInputMap(const std::string& binding, const std::string_view& device,
-                                              const std::string_view& button, InputButtonHandler handler)
-{
-  if (device == "Keyboard")
-  {
-    std::optional<int> key_id = GetHostKeyCode(button);
-    if (!key_id.has_value())
-    {
-      Log_WarningPrintf("Unknown keyboard key in binding '%s'", binding.c_str());
-      return false;
-    }
-
-    m_keyboard_input_handlers.emplace(key_id.value(), std::move(handler));
-    return true;
-  }
-
-  if (device == "Mouse")
-  {
-    if (StringUtil::StartsWith(button, "Button"))
-    {
-      const std::optional<s32> button_index = StringUtil::FromChars<s32>(button.substr(6));
-      if (!button_index.has_value())
-      {
-        Log_WarningPrintf("Invalid button in mouse binding '%s'", binding.c_str());
-        return false;
-      }
-
-      m_mouse_input_handlers.emplace(static_cast<HostMouseButton>(button_index.value()), std::move(handler));
-      return true;
-    }
-
-    Log_WarningPrintf("Malformed mouse binding '%s'", binding.c_str());
-    return false;
-  }
-
-  std::optional<int> controller_index;
-  if (m_controller_interface && (controller_index = m_controller_interface->GetControllerIndex(device)))
-  {
-    if (StringUtil::StartsWith(button, "Button"))
-    {
-      const std::optional<int> button_index = StringUtil::FromChars<int>(button.substr(6));
-      if (!button_index ||
-          !m_controller_interface->BindControllerButton(*controller_index, *button_index, std::move(handler)))
-      {
-        Log_WarningPrintf("Failed to bind controller button '%s' to button", binding.c_str());
-        return false;
-      }
-
-      return true;
-    }
-    else if (StringUtil::StartsWith(button, "+Axis") || StringUtil::StartsWith(button, "-Axis"))
-    {
-      const std::optional<int> axis_index = StringUtil::FromChars<int>(button.substr(5));
-      const bool positive = (button[0] == '+');
-      if (!axis_index || !m_controller_interface->BindControllerAxisToButton(*controller_index, *axis_index, positive,
-                                                                             std::move(handler)))
-      {
-        Log_WarningPrintf("Failed to bind controller axis '%s' to button", binding.c_str());
-        return false;
-      }
-
-      return true;
-    }
-    else if (StringUtil::StartsWith(button, "Hat"))
-    {
-      const std::optional<int> hat_index = StringUtil::FromChars<int>(button.substr(3));
-      const std::optional<std::string_view> hat_direction = [](const auto& button) {
-        std::optional<std::string_view> result;
-
-        const size_t pos = button.find(' ');
-        if (pos != button.npos)
-        {
-          result = button.substr(pos + 1);
-        }
-        return result;
-      }(button);
-
-      if (!hat_index || !hat_direction ||
-          !m_controller_interface->BindControllerHatToButton(*controller_index, *hat_index, *hat_direction,
-                                                             std::move(handler)))
-      {
-        Log_WarningPrintf("Failed to bind controller hat '%s' to button", binding.c_str());
-        return false;
-      }
-
-      return true;
-    }
-
-    Log_WarningPrintf("Malformed controller binding '%s' in button", binding.c_str());
-    return false;
-  }
-
-  Log_WarningPrintf("Unknown input device in button binding '%s'", binding.c_str());
-  return false;
-}
-
-bool CommonHostInterface::AddAxisToInputMap(const std::string& binding, const std::string_view& device,
-                                            const std::string_view& axis, Controller::AxisType axis_type,
-                                            InputAxisHandler handler)
-{
-  if (axis_type == Controller::AxisType::Half)
-  {
-    if (device == "Keyboard")
-    {
-      std::optional<int> key_id = GetHostKeyCode(axis);
-      if (!key_id.has_value())
-      {
-        Log_WarningPrintf("Unknown keyboard key in binding '%s'", binding.c_str());
-        return false;
-      }
-
-      m_keyboard_input_handlers.emplace(key_id.value(),
-                                        [cb = std::move(handler)](bool pressed) { cb(pressed ? 1.0f : -1.0f); });
-      return true;
-    }
-
-    if (device == "Mouse")
-    {
-      if (StringUtil::StartsWith(axis, "Button"))
-      {
-        const std::optional<s32> button_index = StringUtil::FromChars<s32>(axis.substr(6));
-        if (!button_index.has_value())
-        {
-          Log_WarningPrintf("Invalid button in mouse binding '%s'", binding.c_str());
-          return false;
-        }
-
-        m_mouse_input_handlers.emplace(static_cast<HostMouseButton>(button_index.value()),
-                                       [cb = std::move(handler)](bool pressed) { cb(pressed ? 1.0f : -1.0f); });
-        return true;
-      }
-
-      Log_WarningPrintf("Malformed mouse binding '%s'", binding.c_str());
-      return false;
-    }
-  }
-
-  std::optional<int> controller_index;
-  if (m_controller_interface && (controller_index = m_controller_interface->GetControllerIndex(device)))
-  {
-    if (StringUtil::StartsWith(axis, "Axis") || StringUtil::StartsWith(axis, "+Axis") ||
-        StringUtil::StartsWith(axis, "-Axis"))
-    {
-      const std::optional<int> axis_index =
-        StringUtil::FromChars<int>(axis.substr(axis[0] == '+' || axis[0] == '-' ? 5 : 4));
-      if (axis_index)
-      {
-        const bool inverted = StringUtil::EndsWith(axis, "-");
-        ControllerInterface::AxisSide axis_side = ControllerInterface::AxisSide::Full;
-        if (axis[0] == '+')
-        {
-          axis_side = ControllerInterface::AxisSide::Positive;
-        }
-        else if (axis[0] == '-')
-        {
-          axis_side = ControllerInterface::AxisSide::Negative;
-        }
-
-        if (axis_type == Controller::AxisType::Half && axis_side == ControllerInterface::Full)
-        {
-          // full axis [-1..1] -> half axis [0..1]
-          if (inverted)
-          {
-            m_controller_interface->BindControllerAxis(
-              *controller_index, *axis_index, axis_side,
-              [cb = std::move(handler)](float value) { cb(((-value) + 1.0f) * 0.5f); });
-          }
-          else
-          {
-            m_controller_interface->BindControllerAxis(
-              *controller_index, *axis_index, axis_side,
-              [cb = std::move(handler)](float value) { cb((value + 1.0f) * 0.5f); });
-          }
-        }
-        else
-        {
-          if (!inverted)
-          {
-            if (m_controller_interface->BindControllerAxis(*controller_index, *axis_index, axis_side,
-                                                           std::move(handler)))
-            {
-              return true;
-            }
-          }
-          else
-          {
-            if (m_controller_interface->BindControllerAxis(*controller_index, *axis_index, axis_side,
-                                                           [cb = std::move(handler)](float value) { cb(-value); }))
-            {
-              return true;
-            }
-          }
-        }
-      }
-      Log_WarningPrintf("Failed to bind controller axis '%s' to axis", binding.c_str());
-      return false;
-    }
-    else if (StringUtil::StartsWith(axis, "Button") && axis_type == Controller::AxisType::Half)
-    {
-      const std::optional<int> button_index = StringUtil::FromChars<int>(axis.substr(6));
-      if (!button_index ||
-          !m_controller_interface->BindControllerButtonToAxis(*controller_index, *button_index, std::move(handler)))
-      {
-        Log_WarningPrintf("Failed to bind controller button '%s' to axis", binding.c_str());
-        return false;
-      }
-
-      return true;
-    }
-
-    Log_WarningPrintf("Malformed controller binding '%s' in button", binding.c_str());
-    return false;
-  }
-
-  Log_WarningPrintf("Unknown input device in axis binding '%s'", binding.c_str());
-  return false;
-}
-
-bool CommonHostInterface::AddRumbleToInputMap(const std::string& binding, u32 controller_index, u32 num_motors)
-{
-  std::optional<int> host_controller_index;
-  if (m_controller_interface && (host_controller_index = m_controller_interface->GetControllerIndex(binding)))
-  {
-    AddControllerRumble(controller_index, num_motors,
-                        std::bind(&ControllerInterface::SetControllerRumbleStrength, m_controller_interface.get(),
-                                  host_controller_index.value(), std::placeholders::_1, std::placeholders::_2));
-
-    return true;
-  }
-
-  Log_WarningPrintf("Unknown input device in rumble binding '%s'", binding.c_str());
-  return false;
 }
 
 static void DisplayHotkeyBlockedByChallengeModeMessage()
@@ -2235,7 +1064,7 @@ void CommonHostInterface::SetRewindState(bool enabled)
       return;
     }
 
-    if (!m_fullscreen_ui_enabled)
+    if (!FullscreenUI::IsInitialized())
     {
       AddKeyedOSDMessage("SetRewindState",
                          enabled ? TranslateStdString("OSDMessage", "Rewinding...") :
@@ -2250,792 +1079,6 @@ void CommonHostInterface::SetRewindState(bool enabled)
   {
     DisplayHotkeyBlockedByChallengeModeMessage();
   }
-}
-
-void CommonHostInterface::RegisterHotkeys()
-{
-  RegisterGeneralHotkeys();
-  RegisterSystemHotkeys();
-  RegisterGraphicsHotkeys();
-  RegisterSaveStateHotkeys();
-  RegisterAudioHotkeys();
-}
-
-void CommonHostInterface::RegisterGeneralHotkeys()
-{
-#ifndef __ANDROID__
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "General")), StaticString("OpenQuickMenu"),
-                 TRANSLATABLE("Hotkeys", "Open Quick Menu"), [this](bool pressed) {
-                   if (pressed && m_fullscreen_ui_enabled)
-                     FullscreenUI::OpenQuickMenu();
-                 });
-#endif
-
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "General")), StaticString("FastForward"),
-                 TRANSLATABLE("Hotkeys", "Fast Forward"), [this](bool pressed) { SetFastForwardEnabled(pressed); });
-
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "General")), StaticString("ToggleFastForward"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Toggle Fast Forward")), [this](bool pressed) {
-                   if (pressed)
-                     SetFastForwardEnabled(!m_fast_forward_enabled);
-                 });
-
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "General")), StaticString("Turbo"),
-                 TRANSLATABLE("Hotkeys", "Turbo"), [this](bool pressed) { SetTurboEnabled(pressed); });
-
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "General")), StaticString("ToggleTurbo"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Toggle Turbo")), [this](bool pressed) {
-                   if (pressed)
-                     SetTurboEnabled(!m_turbo_enabled);
-                 });
-#ifndef __ANDROID__
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "General")), StaticString("ToggleFullscreen"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Toggle Fullscreen")), [this](bool pressed) {
-                   if (pressed)
-                     SetFullscreen(!IsFullscreen());
-                 });
-
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "General")), StaticString("TogglePause"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Toggle Pause")), [this](bool pressed) {
-                   if (pressed && System::IsValid())
-                     PauseSystem(!System::IsPaused());
-                 });
-
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "General")), StaticString("PowerOff"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Power Off System")), [this](bool pressed) {
-                   if (pressed && System::IsValid())
-                   {
-                     if (g_settings.confim_power_off && !InBatchMode())
-                     {
-                       SmallString confirmation_message(
-                         TranslateString("CommonHostInterface", "Are you sure you want to stop emulation?"));
-                       if (ShouldSaveResumeState())
-                       {
-                         confirmation_message.AppendString("\n\n");
-                         confirmation_message.AppendString(
-                           TranslateString("CommonHostInterface", "The current state will be saved."));
-                       }
-
-                       if (!ConfirmMessage(confirmation_message))
-                       {
-                         System::ResetPerformanceCounters();
-                         System::ResetThrottler();
-                         return;
-                       }
-                     }
-
-                     PowerOffSystem(ShouldSaveResumeState());
-                   }
-                 });
-
-#endif
-
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "General")), StaticString("Screenshot"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Save Screenshot")), [this](bool pressed) {
-                   if (pressed && System::IsValid())
-                     SaveScreenshot();
-                 });
-
-#if !defined(__ANDROID__) && defined(WITH_CHEEVOS)
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "General")), StaticString("OpenAchievements"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Open Achievement List")), [this](bool pressed) {
-                   if (pressed && System::IsValid())
-                   {
-                     if (!m_fullscreen_ui_enabled || !FullscreenUI::OpenAchievementsWindow())
-                     {
-                       AddOSDMessage(
-                         TranslateStdString("OSDMessage", "Achievements are disabled or unavailable for this game."),
-                         10.0f);
-                     }
-                   }
-                 });
-
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "General")), StaticString("OpenLeaderboards"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Open Leaderboard List")), [this](bool pressed) {
-                   if (pressed && System::IsValid())
-                   {
-                     if (!m_fullscreen_ui_enabled || !FullscreenUI::OpenLeaderboardsWindow())
-                     {
-                       AddOSDMessage(
-                         TranslateStdString("OSDMessage", "Leaderboards are disabled or unavailable for this game."),
-                         10.0f);
-                     }
-                   }
-                 });
-#endif // !defined(__ANDROID__) && defined(WITH_CHEEVOS)
-}
-
-void CommonHostInterface::RegisterSystemHotkeys()
-{
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "System")), StaticString("Reset"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Reset System")), [this](bool pressed) {
-                   if (pressed && System::IsValid())
-                     ResetSystem();
-                 });
-
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "System")), StaticString("ChangeDisc"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Change Disc")), [](bool pressed) {
-                   if (pressed && System::IsValid() && System::HasMediaSubImages())
-                   {
-                     const u32 current = System::GetMediaSubImageIndex();
-                     const u32 next = (current + 1) % System::GetMediaSubImageCount();
-                     if (current != next)
-                       System::SwitchMediaSubImage(next);
-                   }
-                 });
-
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "System")), StaticString("SwapMemoryCards"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Swap Memory Card Slots")), [this](bool pressed) {
-                   if (pressed && System::IsValid())
-                     SwapMemoryCards();
-                 });
-
-#ifndef __ANDROID__
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "System")), StaticString("FrameStep"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Frame Step")), [this](bool pressed) {
-                   if (pressed && System::IsValid())
-                   {
-                     if (!IsCheevosChallengeModeActive())
-                       DoFrameStep();
-                     else
-                       DisplayHotkeyBlockedByChallengeModeMessage();
-                   }
-                 });
-#endif
-
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "System")), StaticString("Rewind"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Rewind")), [this](bool pressed) { SetRewindState(pressed); });
-
-#ifndef __ANDROID__
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "System")), StaticString("ToggleCheats"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Toggle Cheats")), [this](bool pressed) {
-                   if (pressed && System::IsValid())
-                   {
-                     if (!IsCheevosChallengeModeActive())
-                       DoToggleCheats();
-                     else
-                       DisplayHotkeyBlockedByChallengeModeMessage();
-                   }
-                 });
-#else
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "System")), StaticString("TogglePatchCodes"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Toggle Patch Codes")), [this](bool pressed) {
-                   if (pressed && System::IsValid())
-                   {
-                     if (!IsCheevosChallengeModeActive())
-                       DoToggleCheats();
-                     else
-                       DisplayHotkeyBlockedByChallengeModeMessage();
-                   }
-                 });
-#endif
-
-  RegisterHotkey(
-    StaticString(TRANSLATABLE("Hotkeys", "System")), StaticString("ToggleOverclocking"),
-    StaticString(TRANSLATABLE("Hotkeys", "Toggle Clock Speed Control (Overclocking)")), [this](bool pressed) {
-      if (pressed && System::IsValid())
-      {
-        g_settings.cpu_overclock_enable = !g_settings.cpu_overclock_enable;
-        g_settings.UpdateOverclockActive();
-        System::UpdateOverclock();
-
-        if (g_settings.cpu_overclock_enable)
-        {
-          const u32 percent = g_settings.GetCPUOverclockPercent();
-          const double clock_speed =
-            ((static_cast<double>(System::MASTER_CLOCK) * static_cast<double>(percent)) / 100.0) / 1000000.0;
-          AddKeyedFormattedOSDMessage(
-            "ToggleOverclocking", 5.0f,
-            TranslateString("OSDMessage", "CPU clock speed control enabled (%u%% / %.3f MHz)."), percent, clock_speed);
-        }
-        else
-        {
-          AddKeyedFormattedOSDMessage("ToggleOverclocking", 5.0f,
-                                      TranslateString("OSDMessage", "CPU clock speed control disabled (%.3f MHz)."),
-                                      static_cast<double>(System::MASTER_CLOCK) / 1000000.0);
-        }
-      }
-    });
-
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "System")), StaticString("IncreaseEmulationSpeed"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Increase Emulation Speed")), [this](bool pressed) {
-                   if (pressed && System::IsValid())
-                   {
-                     g_settings.emulation_speed += 0.1f;
-                     UpdateSpeedLimiterState();
-                     AddKeyedFormattedOSDMessage("EmulationSpeedChange", 5.0f,
-                                                 TranslateString("OSDMessage", "Emulation speed set to %u%%."),
-                                                 static_cast<u32>(std::lround(g_settings.emulation_speed * 100.0f)));
-                   }
-                 });
-
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "System")), StaticString("DecreaseEmulationSpeed"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Decrease Emulation Speed")), [this](bool pressed) {
-                   if (pressed && System::IsValid())
-                   {
-                     g_settings.emulation_speed = std::max(g_settings.emulation_speed - 0.1f, 0.1f);
-                     UpdateSpeedLimiterState();
-                     AddKeyedFormattedOSDMessage("EmulationSpeedChange", 5.0f,
-                                                 TranslateString("OSDMessage", "Emulation speed set to %u%%."),
-                                                 static_cast<u32>(std::lround(g_settings.emulation_speed * 100.0f)));
-                   }
-                 });
-
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "System")), StaticString("ResetEmulationSpeed"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Reset Emulation Speed")), [this](bool pressed) {
-                   if (pressed && System::IsValid())
-                   {
-                     g_settings.emulation_speed = GetFloatSettingValue("Main", "EmulationSpeed", 1.0f);
-                     UpdateSpeedLimiterState();
-                     AddKeyedFormattedOSDMessage("EmulationSpeedChange", 5.0f,
-                                                 TranslateString("OSDMessage", "Emulation speed set to %u%%."),
-                                                 static_cast<u32>(std::lround(g_settings.emulation_speed * 100.0f)));
-                   }
-                 });
-}
-
-void CommonHostInterface::RegisterGraphicsHotkeys()
-{
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Graphics")), StaticString("ToggleSoftwareRendering"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Toggle Software Rendering")), [this](bool pressed) {
-                   if (pressed && System::IsValid())
-                     ToggleSoftwareRendering();
-                 });
-
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Graphics")), StaticString("TogglePGXP"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Toggle PGXP")), [this](bool pressed) {
-                   if (pressed && System::IsValid())
-                   {
-                     g_settings.gpu_pgxp_enable = !g_settings.gpu_pgxp_enable;
-                     g_gpu->RestoreGraphicsAPIState();
-                     g_gpu->UpdateSettings();
-                     g_gpu->ResetGraphicsAPIState();
-                     System::ClearMemorySaveStates();
-                     AddKeyedOSDMessage("TogglePGXP",
-                                        g_settings.gpu_pgxp_enable ?
-                                          TranslateStdString("OSDMessage", "PGXP is now enabled.") :
-                                          TranslateStdString("OSDMessage", "PGXP is now disabled."),
-                                        5.0f);
-
-                     if (g_settings.gpu_pgxp_enable)
-                       PGXP::Initialize();
-                     else
-                       PGXP::Shutdown();
-
-                     // we need to recompile all blocks if pgxp is toggled on/off
-                     if (g_settings.IsUsingCodeCache())
-                       CPU::CodeCache::Flush();
-                   }
-                 });
-
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Graphics")), StaticString("IncreaseResolutionScale"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Increase Resolution Scale")), [this](bool pressed) {
-                   if (pressed && System::IsValid())
-                     ModifyResolutionScale(1);
-                 });
-
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Graphics")), StaticString("DecreaseResolutionScale"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Decrease Resolution Scale")), [this](bool pressed) {
-                   if (pressed && System::IsValid())
-                     ModifyResolutionScale(-1);
-                 });
-
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Graphics")), StaticString("TogglePostProcessing"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Toggle Post-Processing")), [this](bool pressed) {
-                   if (pressed && System::IsValid())
-                     TogglePostProcessing();
-                 });
-
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Graphics")), StaticString("ReloadPostProcessingShaders"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Reload Post Processing Shaders")), [this](bool pressed) {
-                   if (pressed && System::IsValid())
-                     ReloadPostProcessingShaders();
-                 });
-
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Graphics")), StaticString("ReloadTextureReplacements"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Reload Texture Replacements")), [this](bool pressed) {
-                   if (pressed && System::IsValid())
-                   {
-                     AddKeyedOSDMessage("ReloadTextureReplacements",
-                                        TranslateStdString("OSDMessage", "Texture replacements reloaded."), 10.0f);
-                     g_texture_replacements.Reload();
-                   }
-                 });
-
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Graphics")), StaticString("ToggleWidescreen"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Toggle Widescreen")), [this](bool pressed) {
-                   if (pressed && System::IsValid())
-                   {
-                     ToggleWidescreen();
-                   }
-                 });
-
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Graphics")), StaticString("TogglePGXPDepth"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Toggle PGXP Depth Buffer")), [this](bool pressed) {
-                   if (pressed && System::IsValid())
-                   {
-                     g_settings.gpu_pgxp_depth_buffer = !g_settings.gpu_pgxp_depth_buffer;
-                     if (!g_settings.gpu_pgxp_enable)
-                       return;
-
-                     g_gpu->RestoreGraphicsAPIState();
-                     g_gpu->UpdateSettings();
-                     g_gpu->ResetGraphicsAPIState();
-                     System::ClearMemorySaveStates();
-                     AddKeyedOSDMessage("TogglePGXPDepth",
-                                        g_settings.gpu_pgxp_depth_buffer ?
-                                          TranslateStdString("OSDMessage", "PGXP Depth Buffer is now enabled.") :
-                                          TranslateStdString("OSDMessage", "PGXP Depth Buffer is now disabled."),
-                                        5.0f);
-                   }
-                 });
-
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Graphics")), StaticString("TogglePGXPCPU"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Toggle PGXP CPU Mode")), [this](bool pressed) {
-                   if (pressed && System::IsValid())
-                   {
-                     g_settings.gpu_pgxp_cpu = !g_settings.gpu_pgxp_cpu;
-                     if (!g_settings.gpu_pgxp_enable)
-                       return;
-
-                     g_gpu->RestoreGraphicsAPIState();
-                     g_gpu->UpdateSettings();
-                     g_gpu->ResetGraphicsAPIState();
-                     System::ClearMemorySaveStates();
-                     AddKeyedOSDMessage("TogglePGXPCPU",
-                                        g_settings.gpu_pgxp_cpu ?
-                                          TranslateStdString("OSDMessage", "PGXP CPU mode is now enabled.") :
-                                          TranslateStdString("OSDMessage", "PGXP CPU mode is now disabled."),
-                                        5.0f);
-
-                     PGXP::Shutdown();
-                     PGXP::Initialize();
-
-                     // we need to recompile all blocks if pgxp is toggled on/off
-                     if (g_settings.IsUsingCodeCache())
-                       CPU::CodeCache::Flush();
-                   }
-                 });
-}
-
-void CommonHostInterface::RegisterSaveStateHotkeys()
-{
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Save States")), StaticString("LoadSelectedSaveState"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Load From Selected Slot")), [this](bool pressed) {
-                   if (pressed)
-                   {
-                     if (!IsCheevosChallengeModeActive())
-                       m_save_state_selector_ui->LoadCurrentSlot();
-                     else
-                       DisplayHotkeyBlockedByChallengeModeMessage();
-                   }
-                 });
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Save States")), StaticString("SaveSelectedSaveState"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Save To Selected Slot")), [this](bool pressed) {
-                   if (pressed)
-                     m_save_state_selector_ui->SaveCurrentSlot();
-                 });
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Save States")), StaticString("SelectPreviousSaveStateSlot"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Select Previous Save Slot")), [this](bool pressed) {
-                   if (pressed)
-                     m_save_state_selector_ui->SelectPreviousSlot();
-                 });
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Save States")), StaticString("SelectNextSaveStateSlot"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Select Next Save Slot")), [this](bool pressed) {
-                   if (pressed)
-                     m_save_state_selector_ui->SelectNextSlot();
-                 });
-
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Save States")), StaticString("UndoLoadState"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Undo Load State")), [this](bool pressed) {
-                   if (pressed)
-                     UndoLoadState();
-                 });
-
-  for (u32 slot = 1; slot <= PER_GAME_SAVE_STATE_SLOTS; slot++)
-  {
-    RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Save States")),
-                   TinyString::FromFormat("LoadGameState%u", slot), TinyString::FromFormat("Load Game State %u", slot),
-                   [this, slot](bool pressed) {
-                     if (pressed)
-                     {
-                       if (!IsCheevosChallengeModeActive())
-                         LoadState(false, slot);
-                       else
-                         DisplayHotkeyBlockedByChallengeModeMessage();
-                     }
-                   });
-    RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Save States")),
-                   TinyString::FromFormat("SaveGameState%u", slot), TinyString::FromFormat("Save Game State %u", slot),
-                   [this, slot](bool pressed) {
-                     if (pressed)
-                       SaveState(false, slot);
-                   });
-  }
-
-  for (u32 slot = 1; slot <= GLOBAL_SAVE_STATE_SLOTS; slot++)
-  {
-    RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Save States")),
-                   TinyString::FromFormat("LoadGlobalState%u", slot),
-                   TinyString::FromFormat("Load Global State %u", slot), [this, slot](bool pressed) {
-                     if (pressed)
-                     {
-                       if (!IsCheevosChallengeModeActive())
-                         LoadState(true, slot);
-                       else
-                         DisplayHotkeyBlockedByChallengeModeMessage();
-                     }
-                   });
-    RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Save States")),
-                   TinyString::FromFormat("SaveGlobalState%u", slot),
-                   TinyString::FromFormat("Save Global State %u", slot), [this, slot](bool pressed) {
-                     if (pressed)
-                       SaveState(true, slot);
-                   });
-  }
-
-  // Dummy strings for translation because we construct them in a loop.
-  (void)TRANSLATABLE("Hotkeys", "Load Game State 1");
-  (void)TRANSLATABLE("Hotkeys", "Load Game State 2");
-  (void)TRANSLATABLE("Hotkeys", "Load Game State 3");
-  (void)TRANSLATABLE("Hotkeys", "Load Game State 4");
-  (void)TRANSLATABLE("Hotkeys", "Load Game State 5");
-  (void)TRANSLATABLE("Hotkeys", "Load Game State 6");
-  (void)TRANSLATABLE("Hotkeys", "Load Game State 7");
-  (void)TRANSLATABLE("Hotkeys", "Load Game State 8");
-  (void)TRANSLATABLE("Hotkeys", "Load Game State 9");
-  (void)TRANSLATABLE("Hotkeys", "Load Game State 10");
-  (void)TRANSLATABLE("Hotkeys", "Save Game State 1");
-  (void)TRANSLATABLE("Hotkeys", "Save Game State 2");
-  (void)TRANSLATABLE("Hotkeys", "Save Game State 3");
-  (void)TRANSLATABLE("Hotkeys", "Save Game State 4");
-  (void)TRANSLATABLE("Hotkeys", "Save Game State 5");
-  (void)TRANSLATABLE("Hotkeys", "Save Game State 6");
-  (void)TRANSLATABLE("Hotkeys", "Save Game State 7");
-  (void)TRANSLATABLE("Hotkeys", "Save Game State 8");
-  (void)TRANSLATABLE("Hotkeys", "Save Game State 9");
-  (void)TRANSLATABLE("Hotkeys", "Save Game State 10");
-  (void)TRANSLATABLE("Hotkeys", "Load Global State 1");
-  (void)TRANSLATABLE("Hotkeys", "Load Global State 2");
-  (void)TRANSLATABLE("Hotkeys", "Load Global State 3");
-  (void)TRANSLATABLE("Hotkeys", "Load Global State 4");
-  (void)TRANSLATABLE("Hotkeys", "Load Global State 5");
-  (void)TRANSLATABLE("Hotkeys", "Load Global State 6");
-  (void)TRANSLATABLE("Hotkeys", "Load Global State 7");
-  (void)TRANSLATABLE("Hotkeys", "Load Global State 8");
-  (void)TRANSLATABLE("Hotkeys", "Load Global State 9");
-  (void)TRANSLATABLE("Hotkeys", "Load Global State 10");
-  (void)TRANSLATABLE("Hotkeys", "Save Global State 1");
-  (void)TRANSLATABLE("Hotkeys", "Save Global State 2");
-  (void)TRANSLATABLE("Hotkeys", "Save Global State 3");
-  (void)TRANSLATABLE("Hotkeys", "Save Global State 4");
-  (void)TRANSLATABLE("Hotkeys", "Save Global State 5");
-  (void)TRANSLATABLE("Hotkeys", "Save Global State 6");
-  (void)TRANSLATABLE("Hotkeys", "Save Global State 7");
-  (void)TRANSLATABLE("Hotkeys", "Save Global State 8");
-  (void)TRANSLATABLE("Hotkeys", "Save Global State 9");
-  (void)TRANSLATABLE("Hotkeys", "Save Global State 10");
-}
-
-void CommonHostInterface::RegisterAudioHotkeys()
-{
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Audio")), StaticString("AudioMute"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Toggle Mute")), [this](bool pressed) {
-                   if (pressed && System::IsValid())
-                   {
-                     g_settings.audio_output_muted = !g_settings.audio_output_muted;
-                     const s32 volume = GetAudioOutputVolume();
-                     m_audio_stream->SetOutputVolume(volume);
-                     if (g_settings.audio_output_muted)
-                     {
-                       AddKeyedOSDMessage("AudioControlHotkey", TranslateStdString("OSDMessage", "Volume: Muted"),
-                                          2.0f);
-                     }
-                     else
-                     {
-                       AddKeyedFormattedOSDMessage("AudioControlHotkey", 2.0f,
-                                                   TranslateString("OSDMessage", "Volume: %d%%"), volume);
-                     }
-                   }
-                 });
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Audio")), StaticString("AudioCDAudioMute"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Toggle CD Audio Mute")), [this](bool pressed) {
-                   if (pressed && System::IsValid())
-                   {
-                     g_settings.cdrom_mute_cd_audio = !g_settings.cdrom_mute_cd_audio;
-                     AddKeyedOSDMessage("AudioControlHotkey",
-                                        g_settings.cdrom_mute_cd_audio ?
-                                          TranslateStdString("OSDMessage", "CD Audio Muted.") :
-                                          TranslateStdString("OSDMessage", "CD Audio Unmuted."),
-                                        2.0f);
-                   }
-                 });
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Audio")), StaticString("AudioVolumeUp"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Volume Up")), [this](bool pressed) {
-                   if (pressed && System::IsValid())
-                   {
-                     g_settings.audio_output_muted = false;
-
-                     const s32 volume = std::min<s32>(GetAudioOutputVolume() + 10, 100);
-                     g_settings.audio_output_volume = volume;
-                     g_settings.audio_fast_forward_volume = volume;
-                     m_audio_stream->SetOutputVolume(volume);
-                     AddKeyedFormattedOSDMessage("AudioControlHotkey", 2.0f,
-                                                 TranslateString("OSDMessage", "Volume: %d%%"), volume);
-                   }
-                 });
-  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Audio")), StaticString("AudioVolumeDown"),
-                 StaticString(TRANSLATABLE("Hotkeys", "Volume Down")), [this](bool pressed) {
-                   if (pressed && System::IsValid())
-                   {
-                     g_settings.audio_output_muted = false;
-
-                     const s32 volume = std::max<s32>(GetAudioOutputVolume() - 10, 0);
-                     g_settings.audio_output_volume = volume;
-                     g_settings.audio_fast_forward_volume = volume;
-                     m_audio_stream->SetOutputVolume(volume);
-                     AddKeyedFormattedOSDMessage("AudioControlHotkey", 2.0f,
-                                                 TranslateString("OSDMessage", "Volume: %d%%"), volume);
-                   }
-                 });
-}
-
-std::string CommonHostInterface::GetSavePathForInputProfile(const char* name) const
-{
-  return GetUserDirectoryRelativePath("inputprofiles/%s.ini", name);
-}
-
-CommonHostInterface::InputProfileList CommonHostInterface::GetInputProfileList() const
-{
-  InputProfileList profiles;
-
-  const std::string user_dir(GetUserDirectoryRelativePath("inputprofiles"));
-  const std::string program_dir(GetProgramDirectoryRelativePath("inputprofiles"));
-
-  FindInputProfiles(user_dir, &profiles);
-  if (user_dir != program_dir)
-    FindInputProfiles(program_dir, &profiles);
-
-  return profiles;
-}
-
-void CommonHostInterface::FindInputProfiles(const std::string& base_path, InputProfileList* out_list) const
-{
-  FileSystem::FindResultsArray results;
-  FileSystem::FindFiles(base_path.c_str(), "*.ini", FILESYSTEM_FIND_FILES | FILESYSTEM_FIND_RELATIVE_PATHS, &results);
-
-  out_list->reserve(out_list->size() + results.size());
-  for (auto& it : results)
-  {
-    if (it.FileName.size() < 4)
-      continue;
-
-    std::string name(it.FileName.substr(0, it.FileName.length() - 4));
-
-    // skip duplicates, we prefer the user directory
-    if (std::any_of(out_list->begin(), out_list->end(),
-                    [&name](const InputProfileEntry& e) { return (e.name == name); }))
-    {
-      continue;
-    }
-
-    std::string filename(
-      StringUtil::StdStringFromFormat("%s" FS_OSPATH_SEPARATOR_STR "%s", base_path.c_str(), it.FileName.c_str()));
-    out_list->push_back(InputProfileEntry{std::move(name), std::move(filename)});
-  }
-}
-
-std::string CommonHostInterface::GetInputProfilePath(const char* name) const
-{
-  std::string path = GetUserDirectoryRelativePath("inputprofiles" FS_OSPATH_SEPARATOR_STR "%s.ini", name);
-  if (FileSystem::FileExists(path.c_str()))
-    return path;
-
-  path = GetProgramDirectoryRelativePath("inputprofiles" FS_OSPATH_SEPARATOR_STR "%s.ini", name);
-  if (FileSystem::FileExists(path.c_str()))
-    return path;
-
-  return {};
-}
-
-void CommonHostInterface::ClearAllControllerBindings()
-{
-  for (u32 controller_index = 1; controller_index <= NUM_CONTROLLER_AND_CARD_PORTS; controller_index++)
-    m_settings_interface->ClearSection(TinyString::FromFormat("Controller%u", controller_index));
-}
-
-bool CommonHostInterface::ApplyInputProfile(const char* profile_path)
-{
-  INISettingsInterface profile(profile_path);
-  if (!profile.Load())
-    return false;
-
-  std::lock_guard<std::recursive_mutex> guard(m_settings_mutex);
-
-  // clear bindings for all controllers
-  ClearAllControllerBindings();
-
-  for (u32 controller_index = 1; controller_index <= NUM_CONTROLLER_AND_CARD_PORTS; controller_index++)
-  {
-    const auto section_name = TinyString::FromFormat("Controller%u", controller_index);
-    const std::string ctype_str = profile.GetStringValue(section_name, "Type");
-    if (ctype_str.empty())
-    {
-      m_settings_interface->SetStringValue(section_name, "Type", Settings::GetControllerTypeName(ControllerType::None));
-      g_settings.controller_types[controller_index - 1] = ControllerType::None;
-      continue;
-    }
-
-    std::optional<ControllerType> ctype = Settings::ParseControllerTypeName(ctype_str.c_str());
-    if (!ctype)
-    {
-      Log_ErrorPrintf("Invalid controller type in profile: '%s'", ctype_str.c_str());
-      continue;
-    }
-
-    // We don't need to call ControllerTypeChanged here because we're already updating the input map.
-    g_settings.controller_types[controller_index - 1] = *ctype;
-
-    m_settings_interface->SetStringValue(section_name, "Type", Settings::GetControllerTypeName(*ctype));
-
-    for (const auto& button : Controller::GetButtonNames(*ctype))
-    {
-      const auto key_name = TinyString::FromFormat("Button%s", button.first.c_str());
-      m_settings_interface->DeleteValue(section_name, key_name);
-      const std::vector<std::string> bindings = profile.GetStringList(section_name, key_name);
-      for (const std::string& binding : bindings)
-        m_settings_interface->AddToStringList(section_name, key_name, binding.c_str());
-    }
-
-    for (const auto& axis : Controller::GetAxisNames(*ctype))
-    {
-      const auto key_name = TinyString::FromFormat("Axis%s", std::get<std::string>(axis).c_str());
-      m_settings_interface->DeleteValue(section_name, std::get<std::string>(axis).c_str());
-      const std::vector<std::string> bindings = profile.GetStringList(section_name, key_name);
-      for (const std::string& binding : bindings)
-        m_settings_interface->AddToStringList(section_name, key_name, binding.c_str());
-    }
-
-    m_settings_interface->DeleteValue(section_name, "Rumble");
-    if (Controller::GetVibrationMotorCount(*ctype) > 0)
-    {
-      const std::string rumble_value = profile.GetStringValue(section_name, "Rumble");
-      if (!rumble_value.empty())
-        m_settings_interface->SetStringValue(section_name, "Rumble", rumble_value.c_str());
-    }
-
-    Controller::SettingList settings = Controller::GetSettings(*ctype);
-    for (const SettingInfo& ssi : settings)
-    {
-      const std::string value = profile.GetStringValue(section_name, ssi.key, "");
-      if (!value.empty())
-        m_settings_interface->SetStringValue(section_name, ssi.key, value.c_str());
-    }
-
-    for (u32 autofire_index = 0; autofire_index < NUM_CONTROLLER_AUTOFIRE_BUTTONS; autofire_index++)
-    {
-      const auto button_key_name = TinyString::FromFormat("AutoFire%uButton", autofire_index + 1);
-      const std::string button_name(profile.GetStringValue(section_name, button_key_name, ""));
-      if (button_name.empty())
-        continue;
-
-      m_settings_interface->SetStringValue(section_name, button_key_name, button_name.c_str());
-
-      const auto binding_key_name = TinyString::FromFormat("AutoFire%u", autofire_index + 1);
-      const std::vector<std::string> bindings = profile.GetStringList(section_name, binding_key_name);
-      for (const std::string& binding : bindings)
-        m_settings_interface->AddToStringList(section_name, binding_key_name, binding.c_str());
-
-      const auto frequency_key_name = TinyString::FromFormat("AutoFire%uFrequency", autofire_index + 1);
-      const int frequency = profile.GetIntValue(section_name, frequency_key_name, DEFAULT_AUTOFIRE_FREQUENCY);
-      m_settings_interface->SetIntValue(section_name, frequency_key_name, frequency);
-    }
-  }
-
-  ReportFormattedMessage(TranslateString("OSDMessage", "Loaded input profile from '%s'"), profile_path);
-  ApplySettings(false);
-  return true;
-}
-
-bool CommonHostInterface::SaveInputProfile(const char* profile_path)
-{
-  if (FileSystem::FileExists(profile_path))
-    Log_WarningPrintf("Existing input profile at '%s' will be overwritten", profile_path);
-  else
-    Log_WarningPrintf("Input profile at '%s' does not exist, new input profile will be created", profile_path);
-
-  INISettingsInterface profile(profile_path);
-
-  for (u32 controller_index = 1; controller_index <= NUM_CONTROLLER_AND_CARD_PORTS; controller_index++)
-  {
-    const ControllerType ctype = g_settings.controller_types[controller_index - 1];
-    if (ctype == ControllerType::None)
-      continue;
-
-    const auto section_name = TinyString::FromFormat("Controller%u", controller_index);
-
-    profile.SetStringValue(section_name, "Type", Settings::GetControllerTypeName(ctype));
-
-    for (const auto& button : Controller::GetButtonNames(ctype))
-    {
-      const auto key_name = TinyString::FromFormat("Button%s", button.first.c_str());
-      const std::vector<std::string> bindings = m_settings_interface->GetStringList(section_name, key_name);
-      for (const std::string& binding : bindings)
-        profile.AddToStringList(section_name, key_name, binding.c_str());
-    }
-
-    for (const auto& axis : Controller::GetAxisNames(ctype))
-    {
-      const auto key_name = TinyString::FromFormat("Axis%s", std::get<std::string>(axis).c_str());
-      const std::vector<std::string> bindings = m_settings_interface->GetStringList(section_name, key_name);
-      for (const std::string& binding : bindings)
-        profile.AddToStringList(section_name, key_name, binding.c_str());
-    }
-
-    if (Controller::GetVibrationMotorCount(ctype) > 0)
-    {
-      const std::string rumble_value = m_settings_interface->GetStringValue(section_name, "Rumble");
-      if (!rumble_value.empty())
-        profile.SetStringValue(section_name, "Rumble", rumble_value.c_str());
-    }
-
-    Controller::SettingList settings = Controller::GetSettings(ctype);
-    for (const SettingInfo& ssi : settings)
-    {
-      const std::string value = m_settings_interface->GetStringValue(section_name, ssi.key, "");
-      if (!value.empty())
-        profile.SetStringValue(section_name, ssi.key, value.c_str());
-    }
-
-    for (u32 autofire_index = 0; autofire_index < NUM_CONTROLLER_AUTOFIRE_BUTTONS; autofire_index++)
-    {
-      const auto button_key_name = TinyString::FromFormat("AutoFire%uButton", autofire_index + 1);
-      const std::string button_name(m_settings_interface->GetStringValue(section_name, button_key_name, ""));
-      if (button_name.empty())
-        continue;
-
-      profile.SetStringValue(section_name, button_key_name, button_name.c_str());
-
-      const auto binding_key_name = TinyString::FromFormat("AutoFire%u", autofire_index + 1);
-      const std::vector<std::string> bindings = m_settings_interface->GetStringList(section_name, binding_key_name);
-      for (const std::string& binding : bindings)
-        profile.AddToStringList(section_name, binding_key_name, binding.c_str());
-
-      const auto frequency_key_name = TinyString::FromFormat("AutoFire%uFrequency", autofire_index + 1);
-      const int frequency =
-        m_settings_interface->GetIntValue(section_name, frequency_key_name, DEFAULT_AUTOFIRE_FREQUENCY);
-      profile.SetIntValue(section_name, frequency_key_name, frequency);
-    }
-  }
-
-  if (!profile.Save())
-  {
-    Log_ErrorPrintf("Failed to save input profile to '%s'", profile_path);
-    return false;
-  }
-
-  Log_InfoPrintf("Input profile saved to '%s'", profile_path);
-  return true;
 }
 
 std::string CommonHostInterface::GetSettingsFileName() const
@@ -3256,28 +1299,7 @@ void CommonHostInterface::SetDefaultSettings(SettingsInterface& si)
 {
   HostInterface::SetDefaultSettings(si);
 
-  si.SetStringValue("Controller1", "ButtonUp", "Keyboard/W");
-  si.SetStringValue("Controller1", "ButtonDown", "Keyboard/S");
-  si.SetStringValue("Controller1", "ButtonLeft", "Keyboard/A");
-  si.SetStringValue("Controller1", "ButtonRight", "Keyboard/D");
-  si.SetStringValue("Controller1", "ButtonSelect", "Keyboard/Backspace");
-  si.SetStringValue("Controller1", "ButtonStart", "Keyboard/Return");
-  si.SetStringValue("Controller1", "ButtonTriangle", "Keyboard/Keypad+8");
-  si.SetStringValue("Controller1", "ButtonCross", "Keyboard/Keypad+2");
-  si.SetStringValue("Controller1", "ButtonSquare", "Keyboard/Keypad+4");
-  si.SetStringValue("Controller1", "ButtonCircle", "Keyboard/Keypad+6");
-  si.SetStringValue("Controller1", "ButtonL1", "Keyboard/Q");
-  si.SetStringValue("Controller1", "ButtonL2", "Keyboard/1");
-  si.SetStringValue("Controller1", "ButtonR1", "Keyboard/E");
-  si.SetStringValue("Controller1", "ButtonR2", "Keyboard/3");
-  si.SetStringValue("Hotkeys", "FastForward", "Keyboard/Tab");
-  si.SetStringValue("Hotkeys", "TogglePause", "Keyboard/Space");
-  si.SetStringValue("Hotkeys", "ToggleFullscreen", "Keyboard/Alt+Return");
-  si.SetStringValue("Hotkeys", "Screenshot", "Keyboard/F10");
-
-  si.SetStringValue("Main", "ControllerBackend",
-                    ControllerInterface::GetBackendName(ControllerInterface::GetDefaultBackend()));
-  si.SetBoolValue("Main", "ControllerEnhancedMode", false);
+  InputManager::SetDefaultConfig(si);
 
   si.SetBoolValue("Display", "InternalResolutionScreenshots", false);
 
@@ -3299,35 +1321,6 @@ void CommonHostInterface::SetDefaultSettings(SettingsInterface& si)
 #endif
 }
 
-void CommonHostInterface::LoadSettings()
-{
-  // no lock needed here since it's done on startup
-  Assert(m_settings_interface);
-
-#ifndef __ANDROID__
-  // we don't check the settings version on android, because it's not using the ini yet..
-  // we can re-enable this once we move it over.. eventually.
-  const bool loaded = static_cast<INISettingsInterface*>(m_settings_interface.get())->Load();
-  if (!loaded)
-    SetDefaultSettings(*m_settings_interface);
-
-  const int settings_version = m_settings_interface->GetIntValue("Main", "SettingsVersion", -1);
-  if (settings_version != SETTINGS_VERSION)
-  {
-    ReportFormattedError("Settings version %d does not match expected version %d, resetting", settings_version,
-                         SETTINGS_VERSION);
-
-    m_settings_interface->Clear();
-    m_settings_interface->SetIntValue("Main", "SettingsVersion", SETTINGS_VERSION);
-    SetDefaultSettings(*m_settings_interface);
-    m_settings_interface->Save();
-  }
-#endif
-
-  LoadSettings(*m_settings_interface);
-  FixIncompatibleSettings(false);
-}
-
 void CommonHostInterface::LoadSettings(SettingsInterface& si)
 {
   HostInterface::LoadSettings(si);
@@ -3337,46 +1330,11 @@ void CommonHostInterface::LoadSettings(SettingsInterface& si)
 #endif
 
 #ifdef WITH_CHEEVOS
-  UpdateCheevosActive();
-  const bool cheevos_active = Cheevos::IsActive();
-#else
-  const bool cheevos_active = false;
+  UpdateCheevosActive(si);
 #endif
 
-  const bool fullscreen_ui_enabled =
-    si.GetBoolValue("Main", "EnableFullscreenUI", false) || cheevos_active || m_flags.force_fullscreen_ui;
-  if (fullscreen_ui_enabled != m_fullscreen_ui_enabled)
-  {
-    m_fullscreen_ui_enabled = fullscreen_ui_enabled;
-    if (m_display)
-    {
-      if (!fullscreen_ui_enabled)
-      {
-        FullscreenUI::Shutdown();
-        ImGuiFullscreen::ResetFonts();
-        if (!m_display->UpdateImGuiFontTexture())
-          Panic("Failed to recreate font texture after fullscreen UI disable");
-      }
-      else
-      {
-        if (FullscreenUI::Initialize(this))
-        {
-          if (!m_display->UpdateImGuiFontTexture())
-            Panic("Failed to recreate font textre after fullscreen UI enable");
-        }
-        else
-        {
-          Log_ErrorPrintf("Failed to initialize fullscreen UI. Disabling.");
-          m_fullscreen_ui_enabled = false;
-        }
-      }
-    }
-  }
-  else if (m_fullscreen_ui_enabled)
-  {
-    if (FullscreenUI::IsInitialized())
-      FullscreenUI::UpdateSettings();
-  }
+  if (FullscreenUI::IsInitialized())
+    FullscreenUI::UpdateSettings();
 
   const bool input_display_enabled = si.GetBoolValue("Display", "ShowInputs", false);
   if (input_display_enabled && !s_input_overlay_ui)
@@ -3426,10 +1384,12 @@ void CommonHostInterface::ApplySettings(bool display_osd_messages)
 {
   Settings old_settings(std::move(g_settings));
   {
-    std::lock_guard<std::recursive_mutex> guard(m_settings_mutex);
-    LoadSettings(*m_settings_interface.get());
+    auto lock = Host::GetSettingsLock();
+    LoadSettings(*Host::GetSettingsInterface());
     ApplyGameSettings(display_osd_messages);
     FixIncompatibleSettings(display_osd_messages);
+    InputManager::ReloadSources(*Host::GetSettingsInterface(), lock);
+    InputManager::ReloadBindings(*Host::GetSettingsInterface(), *Host::GetSettingsInterface());
   }
 
   CheckForSettingsChanges(old_settings);
@@ -3439,10 +1399,11 @@ void CommonHostInterface::SetDefaultSettings()
 {
   Settings old_settings(std::move(g_settings));
   {
-    std::lock_guard<std::recursive_mutex> guard(m_settings_mutex);
-    SetDefaultSettings(*m_settings_interface.get());
-
-    LoadSettings(*m_settings_interface.get());
+    auto lock = Host::GetSettingsLock();
+    SetDefaultSettings(*Host::GetSettingsInterface());
+    LoadSettings(*Host::GetSettingsInterface());
+    InputManager::ReloadSources(*Host::GetSettingsInterface(), lock);
+    InputManager::ReloadBindings(*Host::GetSettingsInterface(), *Host::GetSettingsInterface());
     ApplyGameSettings(true);
     FixIncompatibleSettings(true);
   }
@@ -3450,17 +1411,9 @@ void CommonHostInterface::SetDefaultSettings()
   CheckForSettingsChanges(old_settings);
 }
 
-void CommonHostInterface::UpdateInputMap()
-{
-  std::lock_guard<std::recursive_mutex> lock(m_settings_mutex);
-  UpdateInputMap(*m_settings_interface.get());
-}
-
 void CommonHostInterface::CheckForSettingsChanges(const Settings& old_settings)
 {
   HostInterface::CheckForSettingsChanges(old_settings);
-
-  UpdateControllerInterface();
 
   if (System::IsValid())
   {
@@ -3511,49 +1464,32 @@ void CommonHostInterface::CheckForSettingsChanges(const Settings& old_settings)
                       g_settings.log_to_console, g_settings.log_to_debug, g_settings.log_to_window,
                       g_settings.log_to_file);
   }
-
-  UpdateInputMap();
 }
 
 std::string CommonHostInterface::GetStringSettingValue(const char* section, const char* key,
                                                        const char* default_value /*= ""*/)
 {
-  std::lock_guard<std::recursive_mutex> guard(m_settings_mutex);
-  return m_settings_interface->GetStringValue(section, key, default_value);
+  return Host::GetStringSettingValue(section, key, default_value);
 }
 
 bool CommonHostInterface::GetBoolSettingValue(const char* section, const char* key, bool default_value /* = false */)
 {
-  std::lock_guard<std::recursive_mutex> guard(m_settings_mutex);
-  return m_settings_interface->GetBoolValue(section, key, default_value);
+  return Host::GetBoolSettingValue(section, key, default_value);
 }
 
 int CommonHostInterface::GetIntSettingValue(const char* section, const char* key, int default_value /* = 0 */)
 {
-  std::lock_guard<std::recursive_mutex> guard(m_settings_mutex);
-  return m_settings_interface->GetIntValue(section, key, default_value);
+  return Host::GetIntSettingValue(section, key, default_value);
 }
 
 float CommonHostInterface::GetFloatSettingValue(const char* section, const char* key, float default_value /* = 0.0f */)
 {
-  std::lock_guard<std::recursive_mutex> guard(m_settings_mutex);
-  return m_settings_interface->GetFloatValue(section, key, default_value);
+  return Host::GetFloatSettingValue(section, key, default_value);
 }
 
 std::vector<std::string> CommonHostInterface::GetSettingStringList(const char* section, const char* key)
 {
-  std::lock_guard<std::recursive_mutex> guard(m_settings_mutex);
-  return m_settings_interface->GetStringList(section, key);
-}
-
-SettingsInterface* CommonHostInterface::GetSettingsInterface()
-{
-  return m_settings_interface.get();
-}
-
-std::lock_guard<std::recursive_mutex> CommonHostInterface::GetSettingsLock()
-{
-  return std::lock_guard<std::recursive_mutex>(m_settings_mutex);
+  return Host::GetStringListSetting(section, key);
 }
 
 void CommonHostInterface::SetTimerResolutionIncreased(bool enabled)
@@ -3853,6 +1789,7 @@ void CommonHostInterface::ApplyControllerCompatibilitySettings(u64 controller_ma
 #undef BIT_FOR
 }
 
+#if 0
 bool CommonHostInterface::UpdateControllerInputMapFromGameSettings()
 {
   // this gets called while booting, so can't use valid
@@ -3888,6 +1825,7 @@ bool CommonHostInterface::UpdateControllerInputMapFromGameSettings()
   UpdateControllerInputMap(si);
   return true;
 }
+#endif
 
 std::string CommonHostInterface::GetCheatFileName() const
 {
@@ -4093,6 +2031,8 @@ void CommonHostInterface::ReloadPostProcessingShaders()
 
 void CommonHostInterface::ToggleWidescreen()
 {
+  Panic("Fixme");
+#if 0
   g_settings.gpu_widescreen_hack = !g_settings.gpu_widescreen_hack;
 
   const GameSettings::Entry* gs = m_game_list->GetGameSettings(System::GetRunningPath(), System::GetRunningCode());
@@ -4140,6 +2080,7 @@ void CommonHostInterface::ToggleWidescreen()
   }
 
   GTE::UpdateAspectRatio();
+#endif
 }
 
 void CommonHostInterface::SwapMemoryCards()
@@ -4263,23 +2204,6 @@ std::unique_ptr<ByteStream> CommonHostInterface::OpenPackageFile(const char* pat
   return ByteStream::OpenFile(full_path.c_str(), real_flags);
 }
 
-bool CommonHostInterface::IsControllerNavigationActive() const
-{
-  if (!m_fullscreen_ui_enabled)
-    return false;
-
-  return FullscreenUI::HasActiveWindow();
-}
-
-void CommonHostInterface::SetControllerNavigationButtonState(FrontendCommon::ControllerNavigationButton button,
-                                                             bool pressed)
-{
-  if (!m_fullscreen_ui_enabled)
-    return;
-
-  FullscreenUI::SetControllerNavInput(button, pressed);
-}
-
 #ifdef WITH_DISCORD_PRESENCE
 
 void CommonHostInterface::SetDiscordPresenceEnabled(bool enabled)
@@ -4391,14 +2315,14 @@ void CommonHostInterface::PollDiscordPresence()
 
 #ifdef WITH_CHEEVOS
 
-void CommonHostInterface::UpdateCheevosActive()
+void CommonHostInterface::UpdateCheevosActive(SettingsInterface& si)
 {
-  const bool cheevos_enabled = GetBoolSettingValue("Cheevos", "Enabled", false);
-  const bool cheevos_test_mode = GetBoolSettingValue("Cheevos", "TestMode", false);
-  const bool cheevos_unofficial_test_mode = GetBoolSettingValue("Cheevos", "UnofficialTestMode", false);
-  const bool cheevos_use_first_disc_from_playlist = GetBoolSettingValue("Cheevos", "UseFirstDiscFromPlaylist", true);
-  const bool cheevos_rich_presence = GetBoolSettingValue("Cheevos", "RichPresence", true);
-  const bool cheevos_hardcore = GetBoolSettingValue("Cheevos", "ChallengeMode", false);
+  const bool cheevos_enabled = si.GetBoolValue("Cheevos", "Enabled", false);
+  const bool cheevos_test_mode = si.GetBoolValue("Cheevos", "TestMode", false);
+  const bool cheevos_unofficial_test_mode = si.GetBoolValue("Cheevos", "UnofficialTestMode", false);
+  const bool cheevos_use_first_disc_from_playlist = si.GetBoolValue("Cheevos", "UseFirstDiscFromPlaylist", true);
+  const bool cheevos_rich_presence = si.GetBoolValue("Cheevos", "RichPresence", true);
+  const bool cheevos_hardcore = si.GetBoolValue("Cheevos", "ChallengeMode", false);
 
 #ifdef WITH_RAINTEGRATION
   if (Cheevos::IsUsingRAIntegration())
@@ -4419,6 +2343,553 @@ void CommonHostInterface::UpdateCheevosActive()
         ReportError("Failed to initialize cheevos after settings change.");
     }
   }
+}
+
+#endif
+
+BEGIN_HOTKEY_LIST(g_common_hotkeys)
+END_HOTKEY_LIST()
+
+
+#if 0
+
+void CommonHostInterface::RegisterGeneralHotkeys()
+{
+#ifndef __ANDROID__
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "General")), StaticString("OpenQuickMenu"),
+    TRANSLATABLE("Hotkeys", "Open Quick Menu"), [this](bool pressed) {
+    if (pressed && m_fullscreen_ui_enabled)
+      FullscreenUI::OpenQuickMenu();
+  });
+#endif
+
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "General")), StaticString("FastForward"),
+    TRANSLATABLE("Hotkeys", "Fast Forward"), [this](bool pressed) { SetFastForwardEnabled(pressed); });
+
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "General")), StaticString("ToggleFastForward"),
+    StaticString(TRANSLATABLE("Hotkeys", "Toggle Fast Forward")), [this](bool pressed) {
+    if (pressed)
+      SetFastForwardEnabled(!m_fast_forward_enabled);
+  });
+
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "General")), StaticString("Turbo"),
+    TRANSLATABLE("Hotkeys", "Turbo"), [this](bool pressed) { SetTurboEnabled(pressed); });
+
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "General")), StaticString("ToggleTurbo"),
+    StaticString(TRANSLATABLE("Hotkeys", "Toggle Turbo")), [this](bool pressed) {
+    if (pressed)
+      SetTurboEnabled(!m_turbo_enabled);
+  });
+#ifndef __ANDROID__
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "General")), StaticString("ToggleFullscreen"),
+    StaticString(TRANSLATABLE("Hotkeys", "Toggle Fullscreen")), [this](bool pressed) {
+    if (pressed)
+      SetFullscreen(!IsFullscreen());
+  });
+
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "General")), StaticString("TogglePause"),
+    StaticString(TRANSLATABLE("Hotkeys", "Toggle Pause")), [this](bool pressed) {
+    if (pressed && System::IsValid())
+      PauseSystem(!System::IsPaused());
+  });
+
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "General")), StaticString("PowerOff"),
+    StaticString(TRANSLATABLE("Hotkeys", "Power Off System")), [this](bool pressed) {
+    if (pressed && System::IsValid())
+    {
+      if (g_settings.confim_power_off && !InBatchMode())
+      {
+        SmallString confirmation_message(
+          TranslateString("CommonHostInterface", "Are you sure you want to stop emulation?"));
+        if (ShouldSaveResumeState())
+        {
+          confirmation_message.AppendString("\n\n");
+          confirmation_message.AppendString(
+            TranslateString("CommonHostInterface", "The current state will be saved."));
+        }
+
+        if (!ConfirmMessage(confirmation_message))
+        {
+          System::ResetPerformanceCounters();
+          System::ResetThrottler();
+          return;
+        }
+      }
+
+      PowerOffSystem(ShouldSaveResumeState());
+    }
+  });
+
+#endif
+
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "General")), StaticString("Screenshot"),
+    StaticString(TRANSLATABLE("Hotkeys", "Save Screenshot")), [this](bool pressed) {
+    if (pressed && System::IsValid())
+      SaveScreenshot();
+  });
+
+#if !defined(__ANDROID__) && defined(WITH_CHEEVOS)
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "General")), StaticString("OpenAchievements"),
+    StaticString(TRANSLATABLE("Hotkeys", "Open Achievement List")), [this](bool pressed) {
+    if (pressed && System::IsValid())
+    {
+      if (!m_fullscreen_ui_enabled || !FullscreenUI::OpenAchievementsWindow())
+      {
+        AddOSDMessage(
+          TranslateStdString("OSDMessage", "Achievements are disabled or unavailable for this game."),
+          10.0f);
+      }
+    }
+  });
+
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "General")), StaticString("OpenLeaderboards"),
+    StaticString(TRANSLATABLE("Hotkeys", "Open Leaderboard List")), [this](bool pressed) {
+    if (pressed && System::IsValid())
+    {
+      if (!m_fullscreen_ui_enabled || !FullscreenUI::OpenLeaderboardsWindow())
+      {
+        AddOSDMessage(
+          TranslateStdString("OSDMessage", "Leaderboards are disabled or unavailable for this game."),
+          10.0f);
+      }
+    }
+  });
+#endif // !defined(__ANDROID__) && defined(WITH_CHEEVOS)
+}
+
+void CommonHostInterface::RegisterSystemHotkeys()
+{
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "System")), StaticString("Reset"),
+    StaticString(TRANSLATABLE("Hotkeys", "Reset System")), [this](bool pressed) {
+    if (pressed && System::IsValid())
+      ResetSystem();
+  });
+
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "System")), StaticString("ChangeDisc"),
+    StaticString(TRANSLATABLE("Hotkeys", "Change Disc")), [](bool pressed) {
+    if (pressed && System::IsValid() && System::HasMediaSubImages())
+    {
+      const u32 current = System::GetMediaSubImageIndex();
+      const u32 next = (current + 1) % System::GetMediaSubImageCount();
+      if (current != next)
+        System::SwitchMediaSubImage(next);
+    }
+  });
+
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "System")), StaticString("SwapMemoryCards"),
+    StaticString(TRANSLATABLE("Hotkeys", "Swap Memory Card Slots")), [this](bool pressed) {
+    if (pressed && System::IsValid())
+      SwapMemoryCards();
+  });
+
+#ifndef __ANDROID__
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "System")), StaticString("FrameStep"),
+    StaticString(TRANSLATABLE("Hotkeys", "Frame Step")), [this](bool pressed) {
+    if (pressed && System::IsValid())
+    {
+      if (!IsCheevosChallengeModeActive())
+        DoFrameStep();
+      else
+        DisplayHotkeyBlockedByChallengeModeMessage();
+    }
+  });
+#endif
+
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "System")), StaticString("Rewind"),
+    StaticString(TRANSLATABLE("Hotkeys", "Rewind")), [this](bool pressed) { SetRewindState(pressed); });
+
+#ifndef __ANDROID__
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "System")), StaticString("ToggleCheats"),
+    StaticString(TRANSLATABLE("Hotkeys", "Toggle Cheats")), [this](bool pressed) {
+    if (pressed && System::IsValid())
+    {
+      if (!IsCheevosChallengeModeActive())
+        DoToggleCheats();
+      else
+        DisplayHotkeyBlockedByChallengeModeMessage();
+    }
+  });
+#else
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "System")), StaticString("TogglePatchCodes"),
+    StaticString(TRANSLATABLE("Hotkeys", "Toggle Patch Codes")), [this](bool pressed) {
+    if (pressed && System::IsValid())
+    {
+      if (!IsCheevosChallengeModeActive())
+        DoToggleCheats();
+      else
+        DisplayHotkeyBlockedByChallengeModeMessage();
+    }
+  });
+#endif
+
+  RegisterHotkey(
+    StaticString(TRANSLATABLE("Hotkeys", "System")), StaticString("ToggleOverclocking"),
+    StaticString(TRANSLATABLE("Hotkeys", "Toggle Clock Speed Control (Overclocking)")), [this](bool pressed) {
+    if (pressed && System::IsValid())
+    {
+      g_settings.cpu_overclock_enable = !g_settings.cpu_overclock_enable;
+      g_settings.UpdateOverclockActive();
+      System::UpdateOverclock();
+
+      if (g_settings.cpu_overclock_enable)
+      {
+        const u32 percent = g_settings.GetCPUOverclockPercent();
+        const double clock_speed =
+          ((static_cast<double>(System::MASTER_CLOCK) * static_cast<double>(percent)) / 100.0) / 1000000.0;
+        AddKeyedFormattedOSDMessage(
+          "ToggleOverclocking", 5.0f,
+          TranslateString("OSDMessage", "CPU clock speed control enabled (%u%% / %.3f MHz)."), percent, clock_speed);
+      }
+      else
+      {
+        AddKeyedFormattedOSDMessage("ToggleOverclocking", 5.0f,
+          TranslateString("OSDMessage", "CPU clock speed control disabled (%.3f MHz)."),
+          static_cast<double>(System::MASTER_CLOCK) / 1000000.0);
+      }
+    }
+  });
+
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "System")), StaticString("IncreaseEmulationSpeed"),
+    StaticString(TRANSLATABLE("Hotkeys", "Increase Emulation Speed")), [this](bool pressed) {
+    if (pressed && System::IsValid())
+    {
+      g_settings.emulation_speed += 0.1f;
+      UpdateSpeedLimiterState();
+      AddKeyedFormattedOSDMessage("EmulationSpeedChange", 5.0f,
+        TranslateString("OSDMessage", "Emulation speed set to %u%%."),
+        static_cast<u32>(std::lround(g_settings.emulation_speed * 100.0f)));
+    }
+  });
+
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "System")), StaticString("DecreaseEmulationSpeed"),
+    StaticString(TRANSLATABLE("Hotkeys", "Decrease Emulation Speed")), [this](bool pressed) {
+    if (pressed && System::IsValid())
+    {
+      g_settings.emulation_speed = std::max(g_settings.emulation_speed - 0.1f, 0.1f);
+      UpdateSpeedLimiterState();
+      AddKeyedFormattedOSDMessage("EmulationSpeedChange", 5.0f,
+        TranslateString("OSDMessage", "Emulation speed set to %u%%."),
+        static_cast<u32>(std::lround(g_settings.emulation_speed * 100.0f)));
+    }
+  });
+
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "System")), StaticString("ResetEmulationSpeed"),
+    StaticString(TRANSLATABLE("Hotkeys", "Reset Emulation Speed")), [this](bool pressed) {
+    if (pressed && System::IsValid())
+    {
+      g_settings.emulation_speed = GetFloatSettingValue("Main", "EmulationSpeed", 1.0f);
+      UpdateSpeedLimiterState();
+      AddKeyedFormattedOSDMessage("EmulationSpeedChange", 5.0f,
+        TranslateString("OSDMessage", "Emulation speed set to %u%%."),
+        static_cast<u32>(std::lround(g_settings.emulation_speed * 100.0f)));
+    }
+  });
+}
+
+void CommonHostInterface::RegisterGraphicsHotkeys()
+{
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Graphics")), StaticString("ToggleSoftwareRendering"),
+    StaticString(TRANSLATABLE("Hotkeys", "Toggle Software Rendering")), [this](bool pressed) {
+    if (pressed && System::IsValid())
+      ToggleSoftwareRendering();
+  });
+
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Graphics")), StaticString("TogglePGXP"),
+    StaticString(TRANSLATABLE("Hotkeys", "Toggle PGXP")), [this](bool pressed) {
+    if (pressed && System::IsValid())
+    {
+      g_settings.gpu_pgxp_enable = !g_settings.gpu_pgxp_enable;
+      g_gpu->RestoreGraphicsAPIState();
+      g_gpu->UpdateSettings();
+      g_gpu->ResetGraphicsAPIState();
+      System::ClearMemorySaveStates();
+      AddKeyedOSDMessage("TogglePGXP",
+        g_settings.gpu_pgxp_enable ?
+        TranslateStdString("OSDMessage", "PGXP is now enabled.") :
+        TranslateStdString("OSDMessage", "PGXP is now disabled."),
+        5.0f);
+
+      if (g_settings.gpu_pgxp_enable)
+        PGXP::Initialize();
+      else
+        PGXP::Shutdown();
+
+      // we need to recompile all blocks if pgxp is toggled on/off
+      if (g_settings.IsUsingCodeCache())
+        CPU::CodeCache::Flush();
+    }
+  });
+
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Graphics")), StaticString("IncreaseResolutionScale"),
+    StaticString(TRANSLATABLE("Hotkeys", "Increase Resolution Scale")), [this](bool pressed) {
+    if (pressed && System::IsValid())
+      ModifyResolutionScale(1);
+  });
+
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Graphics")), StaticString("DecreaseResolutionScale"),
+    StaticString(TRANSLATABLE("Hotkeys", "Decrease Resolution Scale")), [this](bool pressed) {
+    if (pressed && System::IsValid())
+      ModifyResolutionScale(-1);
+  });
+
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Graphics")), StaticString("TogglePostProcessing"),
+    StaticString(TRANSLATABLE("Hotkeys", "Toggle Post-Processing")), [this](bool pressed) {
+    if (pressed && System::IsValid())
+      TogglePostProcessing();
+  });
+
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Graphics")), StaticString("ReloadPostProcessingShaders"),
+    StaticString(TRANSLATABLE("Hotkeys", "Reload Post Processing Shaders")), [this](bool pressed) {
+    if (pressed && System::IsValid())
+      ReloadPostProcessingShaders();
+  });
+
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Graphics")), StaticString("ReloadTextureReplacements"),
+    StaticString(TRANSLATABLE("Hotkeys", "Reload Texture Replacements")), [this](bool pressed) {
+    if (pressed && System::IsValid())
+    {
+      AddKeyedOSDMessage("ReloadTextureReplacements",
+        TranslateStdString("OSDMessage", "Texture replacements reloaded."), 10.0f);
+      g_texture_replacements.Reload();
+    }
+  });
+
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Graphics")), StaticString("ToggleWidescreen"),
+    StaticString(TRANSLATABLE("Hotkeys", "Toggle Widescreen")), [this](bool pressed) {
+    if (pressed && System::IsValid())
+    {
+      ToggleWidescreen();
+    }
+  });
+
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Graphics")), StaticString("TogglePGXPDepth"),
+    StaticString(TRANSLATABLE("Hotkeys", "Toggle PGXP Depth Buffer")), [this](bool pressed) {
+    if (pressed && System::IsValid())
+    {
+      g_settings.gpu_pgxp_depth_buffer = !g_settings.gpu_pgxp_depth_buffer;
+      if (!g_settings.gpu_pgxp_enable)
+        return;
+
+      g_gpu->RestoreGraphicsAPIState();
+      g_gpu->UpdateSettings();
+      g_gpu->ResetGraphicsAPIState();
+      System::ClearMemorySaveStates();
+      AddKeyedOSDMessage("TogglePGXPDepth",
+        g_settings.gpu_pgxp_depth_buffer ?
+        TranslateStdString("OSDMessage", "PGXP Depth Buffer is now enabled.") :
+        TranslateStdString("OSDMessage", "PGXP Depth Buffer is now disabled."),
+        5.0f);
+    }
+  });
+
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Graphics")), StaticString("TogglePGXPCPU"),
+    StaticString(TRANSLATABLE("Hotkeys", "Toggle PGXP CPU Mode")), [this](bool pressed) {
+    if (pressed && System::IsValid())
+    {
+      g_settings.gpu_pgxp_cpu = !g_settings.gpu_pgxp_cpu;
+      if (!g_settings.gpu_pgxp_enable)
+        return;
+
+      g_gpu->RestoreGraphicsAPIState();
+      g_gpu->UpdateSettings();
+      g_gpu->ResetGraphicsAPIState();
+      System::ClearMemorySaveStates();
+      AddKeyedOSDMessage("TogglePGXPCPU",
+        g_settings.gpu_pgxp_cpu ?
+        TranslateStdString("OSDMessage", "PGXP CPU mode is now enabled.") :
+        TranslateStdString("OSDMessage", "PGXP CPU mode is now disabled."),
+        5.0f);
+
+      PGXP::Shutdown();
+      PGXP::Initialize();
+
+      // we need to recompile all blocks if pgxp is toggled on/off
+      if (g_settings.IsUsingCodeCache())
+        CPU::CodeCache::Flush();
+    }
+  });
+}
+
+void CommonHostInterface::RegisterSaveStateHotkeys()
+{
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Save States")), StaticString("LoadSelectedSaveState"),
+    StaticString(TRANSLATABLE("Hotkeys", "Load From Selected Slot")), [this](bool pressed) {
+    if (pressed)
+    {
+      if (!IsCheevosChallengeModeActive())
+        m_save_state_selector_ui->LoadCurrentSlot();
+      else
+        DisplayHotkeyBlockedByChallengeModeMessage();
+    }
+  });
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Save States")), StaticString("SaveSelectedSaveState"),
+    StaticString(TRANSLATABLE("Hotkeys", "Save To Selected Slot")), [this](bool pressed) {
+    if (pressed)
+      m_save_state_selector_ui->SaveCurrentSlot();
+  });
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Save States")), StaticString("SelectPreviousSaveStateSlot"),
+    StaticString(TRANSLATABLE("Hotkeys", "Select Previous Save Slot")), [this](bool pressed) {
+    if (pressed)
+      m_save_state_selector_ui->SelectPreviousSlot();
+  });
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Save States")), StaticString("SelectNextSaveStateSlot"),
+    StaticString(TRANSLATABLE("Hotkeys", "Select Next Save Slot")), [this](bool pressed) {
+    if (pressed)
+      m_save_state_selector_ui->SelectNextSlot();
+  });
+
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Save States")), StaticString("UndoLoadState"),
+    StaticString(TRANSLATABLE("Hotkeys", "Undo Load State")), [this](bool pressed) {
+    if (pressed)
+      UndoLoadState();
+  });
+
+  for (u32 slot = 1; slot <= PER_GAME_SAVE_STATE_SLOTS; slot++)
+  {
+    RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Save States")),
+      TinyString::FromFormat("LoadGameState%u", slot), TinyString::FromFormat("Load Game State %u", slot),
+      [this, slot](bool pressed) {
+      if (pressed)
+      {
+        if (!IsCheevosChallengeModeActive())
+          LoadState(false, slot);
+        else
+          DisplayHotkeyBlockedByChallengeModeMessage();
+      }
+    });
+    RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Save States")),
+      TinyString::FromFormat("SaveGameState%u", slot), TinyString::FromFormat("Save Game State %u", slot),
+      [this, slot](bool pressed) {
+      if (pressed)
+        SaveState(false, slot);
+    });
+  }
+
+  for (u32 slot = 1; slot <= GLOBAL_SAVE_STATE_SLOTS; slot++)
+  {
+    RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Save States")),
+      TinyString::FromFormat("LoadGlobalState%u", slot),
+      TinyString::FromFormat("Load Global State %u", slot), [this, slot](bool pressed) {
+      if (pressed)
+      {
+        if (!IsCheevosChallengeModeActive())
+          LoadState(true, slot);
+        else
+          DisplayHotkeyBlockedByChallengeModeMessage();
+      }
+    });
+    RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Save States")),
+      TinyString::FromFormat("SaveGlobalState%u", slot),
+      TinyString::FromFormat("Save Global State %u", slot), [this, slot](bool pressed) {
+      if (pressed)
+        SaveState(true, slot);
+    });
+  }
+
+  // Dummy strings for translation because we construct them in a loop.
+  (void)TRANSLATABLE("Hotkeys", "Load Game State 1");
+  (void)TRANSLATABLE("Hotkeys", "Load Game State 2");
+  (void)TRANSLATABLE("Hotkeys", "Load Game State 3");
+  (void)TRANSLATABLE("Hotkeys", "Load Game State 4");
+  (void)TRANSLATABLE("Hotkeys", "Load Game State 5");
+  (void)TRANSLATABLE("Hotkeys", "Load Game State 6");
+  (void)TRANSLATABLE("Hotkeys", "Load Game State 7");
+  (void)TRANSLATABLE("Hotkeys", "Load Game State 8");
+  (void)TRANSLATABLE("Hotkeys", "Load Game State 9");
+  (void)TRANSLATABLE("Hotkeys", "Load Game State 10");
+  (void)TRANSLATABLE("Hotkeys", "Save Game State 1");
+  (void)TRANSLATABLE("Hotkeys", "Save Game State 2");
+  (void)TRANSLATABLE("Hotkeys", "Save Game State 3");
+  (void)TRANSLATABLE("Hotkeys", "Save Game State 4");
+  (void)TRANSLATABLE("Hotkeys", "Save Game State 5");
+  (void)TRANSLATABLE("Hotkeys", "Save Game State 6");
+  (void)TRANSLATABLE("Hotkeys", "Save Game State 7");
+  (void)TRANSLATABLE("Hotkeys", "Save Game State 8");
+  (void)TRANSLATABLE("Hotkeys", "Save Game State 9");
+  (void)TRANSLATABLE("Hotkeys", "Save Game State 10");
+  (void)TRANSLATABLE("Hotkeys", "Load Global State 1");
+  (void)TRANSLATABLE("Hotkeys", "Load Global State 2");
+  (void)TRANSLATABLE("Hotkeys", "Load Global State 3");
+  (void)TRANSLATABLE("Hotkeys", "Load Global State 4");
+  (void)TRANSLATABLE("Hotkeys", "Load Global State 5");
+  (void)TRANSLATABLE("Hotkeys", "Load Global State 6");
+  (void)TRANSLATABLE("Hotkeys", "Load Global State 7");
+  (void)TRANSLATABLE("Hotkeys", "Load Global State 8");
+  (void)TRANSLATABLE("Hotkeys", "Load Global State 9");
+  (void)TRANSLATABLE("Hotkeys", "Load Global State 10");
+  (void)TRANSLATABLE("Hotkeys", "Save Global State 1");
+  (void)TRANSLATABLE("Hotkeys", "Save Global State 2");
+  (void)TRANSLATABLE("Hotkeys", "Save Global State 3");
+  (void)TRANSLATABLE("Hotkeys", "Save Global State 4");
+  (void)TRANSLATABLE("Hotkeys", "Save Global State 5");
+  (void)TRANSLATABLE("Hotkeys", "Save Global State 6");
+  (void)TRANSLATABLE("Hotkeys", "Save Global State 7");
+  (void)TRANSLATABLE("Hotkeys", "Save Global State 8");
+  (void)TRANSLATABLE("Hotkeys", "Save Global State 9");
+  (void)TRANSLATABLE("Hotkeys", "Save Global State 10");
+}
+
+void CommonHostInterface::RegisterAudioHotkeys()
+{
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Audio")), StaticString("AudioMute"),
+    StaticString(TRANSLATABLE("Hotkeys", "Toggle Mute")), [this](bool pressed) {
+    if (pressed && System::IsValid())
+    {
+      g_settings.audio_output_muted = !g_settings.audio_output_muted;
+      const s32 volume = GetAudioOutputVolume();
+      m_audio_stream->SetOutputVolume(volume);
+      if (g_settings.audio_output_muted)
+      {
+        AddKeyedOSDMessage("AudioControlHotkey", TranslateStdString("OSDMessage", "Volume: Muted"),
+          2.0f);
+      }
+      else
+      {
+        AddKeyedFormattedOSDMessage("AudioControlHotkey", 2.0f,
+          TranslateString("OSDMessage", "Volume: %d%%"), volume);
+      }
+    }
+  });
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Audio")), StaticString("AudioCDAudioMute"),
+    StaticString(TRANSLATABLE("Hotkeys", "Toggle CD Audio Mute")), [this](bool pressed) {
+    if (pressed && System::IsValid())
+    {
+      g_settings.cdrom_mute_cd_audio = !g_settings.cdrom_mute_cd_audio;
+      AddKeyedOSDMessage("AudioControlHotkey",
+        g_settings.cdrom_mute_cd_audio ?
+        TranslateStdString("OSDMessage", "CD Audio Muted.") :
+        TranslateStdString("OSDMessage", "CD Audio Unmuted."),
+        2.0f);
+    }
+  });
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Audio")), StaticString("AudioVolumeUp"),
+    StaticString(TRANSLATABLE("Hotkeys", "Volume Up")), [this](bool pressed) {
+    if (pressed && System::IsValid())
+    {
+      g_settings.audio_output_muted = false;
+
+      const s32 volume = std::min<s32>(GetAudioOutputVolume() + 10, 100);
+      g_settings.audio_output_volume = volume;
+      g_settings.audio_fast_forward_volume = volume;
+      m_audio_stream->SetOutputVolume(volume);
+      AddKeyedFormattedOSDMessage("AudioControlHotkey", 2.0f,
+        TranslateString("OSDMessage", "Volume: %d%%"), volume);
+    }
+  });
+  RegisterHotkey(StaticString(TRANSLATABLE("Hotkeys", "Audio")), StaticString("AudioVolumeDown"),
+    StaticString(TRANSLATABLE("Hotkeys", "Volume Down")), [this](bool pressed) {
+    if (pressed && System::IsValid())
+    {
+      g_settings.audio_output_muted = false;
+
+      const s32 volume = std::max<s32>(GetAudioOutputVolume() - 10, 0);
+      g_settings.audio_output_volume = volume;
+      g_settings.audio_fast_forward_volume = volume;
+      m_audio_stream->SetOutputVolume(volume);
+      AddKeyedFormattedOSDMessage("AudioControlHotkey", 2.0f,
+        TranslateString("OSDMessage", "Volume: %d%%"), volume);
+    }
+  });
 }
 
 #endif

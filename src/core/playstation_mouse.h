@@ -4,6 +4,8 @@
 #include <optional>
 #include <string_view>
 
+#if 0
+
 class PlayStationMouse final : public Controller
 {
 public:
@@ -69,3 +71,5 @@ private:
 
   bool m_use_relative_mode = false;
 };
+
+#endif

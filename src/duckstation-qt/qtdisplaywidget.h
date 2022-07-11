@@ -28,8 +28,8 @@ Q_SIGNALS:
   void windowResizedEvent(int width, int height);
   void windowRestoredEvent();
   void windowClosedEvent();
-  void windowKeyEvent(int key_code, int mods, bool pressed);
-  void windowMouseMoveEvent(int x, int y);
+  void windowKeyEvent(int key_code, bool pressed);
+  void windowMouseMoveEvent(float x, float y);
   void windowMouseButtonEvent(int button, bool pressed);
   void windowMouseWheelEvent(const QPoint& angle_delta);
 

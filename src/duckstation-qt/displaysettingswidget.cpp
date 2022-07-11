@@ -14,51 +14,45 @@
 #include "frontend-common/d3d12_host_display.h"
 #endif
 
-DisplaySettingsWidget::DisplaySettingsWidget(QtHostInterface* host_interface, QWidget* parent, SettingsDialog* dialog)
-  : QWidget(parent), m_host_interface(host_interface)
+DisplaySettingsWidget::DisplaySettingsWidget(SettingsDialog* dialog, QWidget* parent)
+  : QWidget(parent), m_dialog(dialog)
 {
+  SettingsInterface* sif = dialog->getSettingsInterface();
+
   m_ui.setupUi(this);
   setupAdditionalUi();
 
-  SettingWidgetBinder::BindWidgetToEnumSetting(m_host_interface, m_ui.renderer, "GPU", "Renderer",
-                                               &Settings::ParseRendererName, &Settings::GetRendererName,
-                                               Settings::DEFAULT_GPU_RENDERER);
-  SettingWidgetBinder::BindWidgetToEnumSetting(m_host_interface, m_ui.displayAspectRatio, "Display", "AspectRatio",
+  SettingWidgetBinder::BindWidgetToEnumSetting(sif, m_ui.renderer, "GPU", "Renderer", &Settings::ParseRendererName,
+                                               &Settings::GetRendererName, Settings::DEFAULT_GPU_RENDERER);
+  SettingWidgetBinder::BindWidgetToEnumSetting(sif, m_ui.displayAspectRatio, "Display", "AspectRatio",
                                                &Settings::ParseDisplayAspectRatio, &Settings::GetDisplayAspectRatioName,
                                                Settings::DEFAULT_DISPLAY_ASPECT_RATIO);
-  SettingWidgetBinder::BindWidgetToIntSetting(m_host_interface, m_ui.customAspectRatioNumerator, "Display",
+  SettingWidgetBinder::BindWidgetToIntSetting(sif, m_ui.customAspectRatioNumerator, "Display",
                                               "CustomAspectRatioNumerator", 1);
-  SettingWidgetBinder::BindWidgetToIntSetting(m_host_interface, m_ui.customAspectRatioDenominator, "Display",
+  SettingWidgetBinder::BindWidgetToIntSetting(sif, m_ui.customAspectRatioDenominator, "Display",
                                               "CustomAspectRatioDenominator", 1);
-  SettingWidgetBinder::BindWidgetToEnumSetting(m_host_interface, m_ui.displayCropMode, "Display", "CropMode",
+  SettingWidgetBinder::BindWidgetToEnumSetting(sif, m_ui.displayCropMode, "Display", "CropMode",
                                                &Settings::ParseDisplayCropMode, &Settings::GetDisplayCropModeName,
                                                Settings::DEFAULT_DISPLAY_CROP_MODE);
-  SettingWidgetBinder::BindWidgetToEnumSetting(m_host_interface, m_ui.gpuDownsampleMode, "GPU", "DownsampleMode",
+  SettingWidgetBinder::BindWidgetToEnumSetting(sif, m_ui.gpuDownsampleMode, "GPU", "DownsampleMode",
                                                &Settings::ParseDownsampleModeName, &Settings::GetDownsampleModeName,
                                                Settings::DEFAULT_GPU_DOWNSAMPLE_MODE);
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.displayLinearFiltering, "Display",
-                                               "LinearFiltering", true);
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.displayIntegerScaling, "Display",
-                                               "IntegerScaling", false);
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.displayStretch, "Display", "Stretch", false);
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.internalResolutionScreenshots, "Display",
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.displayLinearFiltering, "Display", "LinearFiltering", true);
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.displayIntegerScaling, "Display", "IntegerScaling", false);
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.displayStretch, "Display", "Stretch", false);
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.internalResolutionScreenshots, "Display",
                                                "InternalResolutionScreenshots", false);
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.vsync, "Display", "VSync");
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.displayAllFrames, "Display", "DisplayAllFrames",
-                                               false);
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.gpuThread, "GPU", "UseThread", true);
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.threadedPresentation, "GPU",
-                                               "ThreadedPresentation", true);
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.syncToHostRefreshRate, "Main",
-                                               "SyncToHostRefreshRate", false);
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.showOSDMessages, "Display", "ShowOSDMessages",
-                                               true);
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.showFPS, "Display", "ShowFPS", false);
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.showVPS, "Display", "ShowVPS", false);
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.showSpeed, "Display", "ShowSpeed", false);
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.showResolution, "Display", "ShowResolution",
-                                               false);
-  SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, m_ui.showInput, "Display", "ShowInputs", false);
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.vsync, "Display", "VSync", false);
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.displayAllFrames, "Display", "DisplayAllFrames", false);
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.gpuThread, "GPU", "UseThread", true);
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.threadedPresentation, "GPU", "ThreadedPresentation", true);
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.syncToHostRefreshRate, "Main", "SyncToHostRefreshRate", false);
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.showOSDMessages, "Display", "ShowOSDMessages", true);
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.showFPS, "Display", "ShowFPS", false);
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.showVPS, "Display", "ShowVPS", false);
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.showSpeed, "Display", "ShowSpeed", false);
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.showResolution, "Display", "ShowResolution", false);
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.showInput, "Display", "ShowInputs", false);
 
   connect(m_ui.renderer, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
           &DisplaySettingsWidget::populateGPUAdaptersAndResolutions);
@@ -160,7 +154,7 @@ DisplaySettingsWidget::DisplaySettingsWidget(QtHostInterface* host_interface, QW
 #ifdef _WIN32
   {
     QCheckBox* cb = new QCheckBox(tr("Use Blit Swap Chain"), m_ui.basicGroupBox);
-    SettingWidgetBinder::BindWidgetToBoolSetting(m_host_interface, cb, "Display", "UseBlitSwapChain", false);
+    SettingWidgetBinder::BindWidgetToBoolSetting(sif, cb, "Display", "UseBlitSwapChain", false);
     m_ui.basicCheckboxGridLayout->addWidget(cb, 2, 1, 1, 1);
     dialog->registerWidgetHelp(cb, tr("Use Blit Swap Chain"), tr("Unchecked"),
                                tr("Uses a blit presentation model instead of flipping when using the Direct3D 11 "
@@ -230,7 +224,7 @@ void DisplaySettingsWidget::populateGPUAdaptersAndResolutions()
   }
 
   {
-    const std::string current_adapter(m_host_interface->GetStringSettingValue("GPU", "Adapter"));
+    const std::string current_adapter(m_dialog->getEffectiveStringValue("GPU", "Adapter", ""));
     QSignalBlocker blocker(m_ui.adapter);
 
     // add the default entry - we'll fall back to this if the GPU no longer exists, or there's no options
@@ -251,7 +245,7 @@ void DisplaySettingsWidget::populateGPUAdaptersAndResolutions()
   }
 
   {
-    const std::string current_mode(m_host_interface->GetStringSettingValue("GPU", "FullscreenMode", ""));
+    const std::string current_mode(m_dialog->getEffectiveStringValue("GPU", "FullscreenMode", ""));
     QSignalBlocker blocker(m_ui.fullscreenMode);
 
     m_ui.fullscreenMode->clear();
@@ -279,11 +273,11 @@ void DisplaySettingsWidget::onGPUAdapterIndexChanged()
   if (m_ui.adapter->currentIndex() == 0)
   {
     // default
-    m_host_interface->RemoveSettingValue("GPU", "Adapter");
+    m_dialog->removeSettingValue("GPU", "Adapter");
     return;
   }
 
-  m_host_interface->SetStringSettingValue("GPU", "Adapter", m_ui.adapter->currentText().toUtf8().constData());
+  m_dialog->setStringSettingValue("GPU", "Adapter", m_ui.adapter->currentText().toUtf8().constData());
 }
 
 void DisplaySettingsWidget::onGPUFullscreenModeIndexChanged()
@@ -291,12 +285,11 @@ void DisplaySettingsWidget::onGPUFullscreenModeIndexChanged()
   if (m_ui.fullscreenMode->currentIndex() == 0)
   {
     // default
-    m_host_interface->RemoveSettingValue("GPU", "FullscreenMode");
+    m_dialog->removeSettingValue("GPU", "FullscreenMode");
     return;
   }
 
-  m_host_interface->SetStringSettingValue("GPU", "FullscreenMode",
-                                          m_ui.fullscreenMode->currentText().toUtf8().constData());
+  m_dialog->setStringSettingValue("GPU", "FullscreenMode", m_ui.fullscreenMode->currentText().toUtf8().constData());
 }
 
 void DisplaySettingsWidget::onIntegerFilteringChanged()

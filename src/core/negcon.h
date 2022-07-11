@@ -5,6 +5,8 @@
 #include <optional>
 #include <string_view>
 
+#if 0
+
 class NeGcon final : public Controller
 {
 public:
@@ -88,3 +90,5 @@ private:
 
   float m_steering_deadzone = 0.00f;
 };
+
+#endif

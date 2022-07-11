@@ -9,6 +9,7 @@
 #include "common/make_array.h"
 #include "common/path.h"
 #include "common/string_util.h"
+#include "common/threading.h"
 #include "controller.h"
 #include "cpu_code_cache.h"
 #include "cpu_core.h"
@@ -18,6 +19,7 @@
 #include "host_display.h"
 #include "host_interface.h"
 #include "host_interface_progress_callback.h"
+#include "host_settings.h"
 #include "interrupt_controller.h"
 #include "libcrypt_game_codes.h"
 #include "mdec.h"
@@ -45,10 +47,6 @@
 #include <thread>
 Log_SetChannel(System);
 
-#ifdef WITH_CHEEVOS
-#include "cheevos.h"
-#endif
-
 // #define PROFILE_MEMORY_SAVE_STATES 1
 
 SystemBootParameters::SystemBootParameters() = default;
@@ -58,6 +56,13 @@ SystemBootParameters::SystemBootParameters(SystemBootParameters&& other) = defau
 SystemBootParameters::SystemBootParameters(std::string filename_) : filename(std::move(filename_)) {}
 
 SystemBootParameters::~SystemBootParameters() = default;
+
+#ifdef WITH_CHEEVOS
+namespace Cheevos {
+extern void Reset();
+extern bool DoState(StateWrapper& sw);
+} // namespace Cheevos
+#endif
 
 namespace System {
 
@@ -123,11 +128,15 @@ static float s_fps = 0.0f;
 static float s_speed = 0.0f;
 static float s_worst_frame_time = 0.0f;
 static float s_average_frame_time = 0.0f;
+static float s_cpu_thread_usage = 0.0f;
+static float s_cpu_thread_time = 0.0f;
 static u32 s_last_frame_number = 0;
 static u32 s_last_internal_frame_number = 0;
 static u32 s_last_global_tick_counter = 0;
+static u64 s_last_cpu_time = 0;
 static Common::Timer s_fps_timer;
 static Common::Timer s_frame_timer;
+static Threading::ThreadHandle s_cpu_thread_handle;
 
 static std::unique_ptr<CheatList> s_cheat_list;
 
@@ -279,6 +288,14 @@ float GetWorstFrameTime()
 float GetThrottleFrequency()
 {
   return s_throttle_frequency;
+}
+float GetCPUThreadUsage()
+{
+  return s_cpu_thread_usage;
+}
+float GetCPUThreadAverageTime()
+{
+  return s_cpu_thread_time;
 }
 
 bool IsExeFileName(const char* path)
@@ -906,9 +923,11 @@ bool Initialize(bool force_software_renderer)
   s_speed = 0.0f;
   s_worst_frame_time = 0.0f;
   s_average_frame_time = 0.0f;
+  s_cpu_thread_usage = 0.0f;
   s_last_frame_number = 0;
   s_last_internal_frame_number = 0;
   s_last_global_tick_counter = 0;
+  s_last_cpu_time = s_cpu_thread_handle.GetCPUTime();
   s_fps_timer.Reset();
   s_frame_timer.Reset();
 
@@ -989,6 +1008,8 @@ bool Initialize(bool force_software_renderer)
     }
   }
 
+  s_cpu_thread_handle = Threading::ThreadHandle::GetForCallingThread();
+
   UpdateThrottlePeriod();
   UpdateMemorySaveStateSettings();
   return true;
@@ -998,6 +1019,8 @@ void Shutdown()
 {
   if (s_state == State::Shutdown)
     return;
+
+  s_cpu_thread_usage = {};
 
   ClearMemorySaveStates();
   s_runahead_audio_stream.reset();
@@ -1652,12 +1675,21 @@ void UpdatePerformanceCounters()
   s_worst_frame_time_accumulator = std::max(s_worst_frame_time_accumulator, frame_time);
 
   // update fps counter
-  const float time = static_cast<float>(s_fps_timer.GetTimeSeconds());
+  const Common::Timer::Value now_ticks = Common::Timer::GetCurrentValue();
+  const Common::Timer::Value ticks_diff = now_ticks - s_fps_timer.GetStartValue();
+  const float time = Common::Timer::ConvertValueToSeconds(ticks_diff);
   if (time < 1.0f)
     return;
 
   const float frames_presented = static_cast<float>(s_frame_number - s_last_frame_number);
   const u32 global_tick_counter = TimingEvents::GetGlobalTickCounter();
+
+  // TODO: Make the math here less rubbish
+  const double pct_divider =
+    100.0 * (1.0 / ((static_cast<double>(ticks_diff) * static_cast<double>(Threading::GetThreadTicksPerSecond())) /
+                    Common::Timer::GetFrequency() / 1000000000.0));
+  const double time_divider = 1000.0 * (1.0 / static_cast<double>(Threading::GetThreadTicksPerSecond())) *
+                              (1.0 / static_cast<double>(frames_presented));
 
   s_worst_frame_time = s_worst_frame_time_accumulator;
   s_worst_frame_time_accumulator = 0.0f;
@@ -1671,10 +1703,18 @@ void UpdatePerformanceCounters()
                                (static_cast<double>(g_ticks_per_second) * time)) *
             100.0f;
   s_last_global_tick_counter = global_tick_counter;
-  s_fps_timer.Reset();
 
-  Log_VerbosePrintf("FPS: %.2f VPS: %.2f Average: %.2fms Worst: %.2fms", s_fps, s_vps, s_average_frame_time,
-                    s_worst_frame_time);
+  const u64 cpu_time = s_cpu_thread_handle.GetCPUTime();
+  const u64 cpu_delta = cpu_time - s_last_cpu_time;
+  s_last_cpu_time = cpu_time;
+
+  s_cpu_thread_usage = static_cast<float>(static_cast<double>(cpu_delta) * pct_divider);
+  s_cpu_thread_time = static_cast<float>(static_cast<double>(cpu_delta) * time_divider);
+
+  s_fps_timer.ResetTo(now_ticks);
+
+  Log_VerbosePrintf("FPS: %.2f VPS: %.2f CPU: %.2f Average: %.2fms Worst: %.2fms", s_fps, s_vps, s_cpu_thread_usage,
+                    s_average_frame_time, s_worst_frame_time);
 
   g_host_interface->OnSystemPerformanceCountersUpdated();
 }
@@ -1684,8 +1724,11 @@ void ResetPerformanceCounters()
   s_last_frame_number = s_frame_number;
   s_last_internal_frame_number = s_internal_frame_number;
   s_last_global_tick_counter = TimingEvents::GetGlobalTickCounter();
+  s_last_cpu_time = s_cpu_thread_handle.GetCPUTime();
   s_average_frame_time_accumulator = 0.0f;
   s_worst_frame_time_accumulator = 0.0f;
+  s_cpu_thread_usage = 0.0f;
+  s_cpu_thread_time = 0.0f;
   s_fps_timer.Reset();
   ResetThrottler();
 }
@@ -1866,6 +1909,8 @@ Controller* GetController(u32 slot)
 
 void UpdateControllers()
 {
+  auto lock = Host::GetSettingsLock();
+
   for (u32 i = 0; i < NUM_CONTROLLER_AND_CARD_PORTS; i++)
   {
     g_pad.SetController(i, nullptr);
@@ -1876,7 +1921,8 @@ void UpdateControllers()
       std::unique_ptr<Controller> controller = Controller::Create(type, i);
       if (controller)
       {
-        controller->LoadSettings(TinyString::FromFormat("Controller%u", i + 1u));
+        // TODO: This should use the input profile.
+        controller->LoadSettings(*Host::GetSettingsInterface(), TinyString::FromFormat("Pad%u", i + 1u));
         g_pad.SetController(i, std::move(controller));
       }
     }
@@ -1885,12 +1931,16 @@ void UpdateControllers()
 
 void UpdateControllerSettings()
 {
+#if 0
   for (u32 i = 0; i < NUM_CONTROLLER_AND_CARD_PORTS; i++)
   {
     Controller* controller = g_pad.GetController(i);
     if (controller)
       controller->LoadSettings(TinyString::FromFormat("Controller%u", i + 1u));
   }
+#else
+  Panic("Fixme");
+#endif
 }
 
 void ResetControllers()

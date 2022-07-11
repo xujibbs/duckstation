@@ -58,9 +58,6 @@
     <ClCompile Include="texture_replacements.cpp" />
     <ClCompile Include="multitap.cpp" />
     <ClCompile Include="gpu_hw_d3d12.cpp" />
-    <ClCompile Include="imgui_fullscreen.cpp" />
-    <ClCompile Include="imgui_styles.cpp" />
-    <ClCompile Include="cheevos.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="types.h" />
@@ -123,9 +120,6 @@
     <ClInclude Include="multitap.h" />
     <ClInclude Include="gpu_hw_d3d12.h" />
     <ClInclude Include="gdb_protocol.h" />
-    <ClInclude Include="imgui_fullscreen.h" />
-    <ClInclude Include="imgui_styles.h" />
-    <ClInclude Include="cheevos.h" />
     <ClInclude Include="host.h" />
     <ClInclude Include="host_settings.h" />
   </ItemGroup>

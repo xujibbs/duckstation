@@ -4,7 +4,6 @@
 
 #include "ui_biossettingswidget.h"
 
-class QtHostInterface;
 class SettingsDialog;
 
 class BIOSSettingsWidget : public QWidget
@@ -12,7 +11,7 @@ class BIOSSettingsWidget : public QWidget
   Q_OBJECT
 
 public:
-  explicit BIOSSettingsWidget(QtHostInterface* host_interface, QWidget* parent, SettingsDialog* dialog);
+  explicit BIOSSettingsWidget(SettingsDialog* dialog, QWidget* parent);
   ~BIOSSettingsWidget();
 
 private Q_SLOTS:
@@ -23,5 +22,5 @@ private Q_SLOTS:
 private:
   Ui::BIOSSettingsWidget m_ui;
 
-  QtHostInterface* m_host_interface;
+  SettingsDialog* m_dialog;
 };

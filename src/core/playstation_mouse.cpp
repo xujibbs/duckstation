@@ -9,6 +9,8 @@
 #include <array>
 Log_SetChannel(PlayStationMouse);
 
+#if 0
+
 PlayStationMouse::PlayStationMouse()
 {
   m_last_host_position_x = g_host_interface->GetDisplay()->GetMousePositionX();
@@ -247,3 +249,5 @@ bool PlayStationMouse::GetSoftwareCursor(const Common::RGBA8Image** image, float
   *relative_mode = m_use_relative_mode;
   return m_use_relative_mode;
 }
+
+#endif

@@ -1,27 +1,28 @@
 #pragma once
-#include "core/types.h"
-#include <QtWidgets/QTabWidget>
+
 #include <QtCore/QMap>
+#include <QtWidgets/QWidget>
 #include <array>
 #include <vector>
 
-class QtHostInterface;
+class QTabWidget;
 class QGridLayout;
+
+class ControllerSettingsDialog;
 
 class HotkeySettingsWidget : public QWidget
 {
   Q_OBJECT
 
 public:
-  HotkeySettingsWidget(QtHostInterface* host_interface, QWidget* parent = nullptr);
+  HotkeySettingsWidget(QWidget* parent, ControllerSettingsDialog* dialog);
   ~HotkeySettingsWidget();
 
 private:
   void createUi();
   void createButtons();
 
-  QtHostInterface* m_host_interface;
-
+  ControllerSettingsDialog* m_dialog;
   QTabWidget* m_tab_widget;
 
   struct Category
@@ -31,4 +32,3 @@ private:
   };
   QMap<QString, Category> m_categories;
 };
-

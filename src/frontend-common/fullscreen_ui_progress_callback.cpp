@@ -1,7 +1,7 @@
 #include "fullscreen_ui_progress_callback.h"
 #include "common/log.h"
 #include "core/host_interface.h"
-#include "core/imgui_fullscreen.h"
+#include "imgui_fullscreen.h"
 Log_SetChannel(ProgressCallback);
 
 namespace FullscreenUI {
@@ -72,8 +72,7 @@ void ProgressCallback::Redraw(bool force)
     return;
 
   m_last_progress_percent = percent;
-  ImGuiFullscreen::UpdateBackgroundProgressDialog(
-    m_name, m_status_text.GetCharArray(), 0, 100, percent);
+  ImGuiFullscreen::UpdateBackgroundProgressDialog(m_name, m_status_text.GetCharArray(), 0, 100, percent);
 }
 
 void ProgressCallback::DisplayError(const char* message)
