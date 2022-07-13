@@ -966,7 +966,7 @@ HostDisplay::AdapterAndModeList D3D11HostDisplay::GetAdapterAndModeList(IDXGIFac
           {
             for (const DXGI_MODE_DESC& mode : modes)
             {
-              adapter_info.fullscreen_modes.push_back(CommonHostInterface::GetFullscreenModeString(
+              adapter_info.fullscreen_modes.push_back(GetFullscreenModeString(
                 mode.Width, mode.Height,
                 static_cast<float>(mode.RefreshRate.Numerator) / static_cast<float>(mode.RefreshRate.Denominator)));
             }

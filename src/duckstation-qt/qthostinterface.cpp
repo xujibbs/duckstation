@@ -299,10 +299,10 @@ void QtHostInterface::refreshGameList(bool invalidate_cache /* = false */, bool 
   Assert(!isOnWorkerThread());
 
   auto lock = Host::GetSettingsLock();
-  m_game_list->SetSearchDirectoriesFromSettings(*s_base_settings_interface.get());
+  getGameList()->SetSearchDirectoriesFromSettings(*s_base_settings_interface.get());
 
   QtProgressCallback progress(m_main_window, invalidate_cache ? 0.0f : 1.0f);
-  m_game_list->Refresh(invalidate_cache, invalidate_database, &progress);
+  getGameList()->Refresh(invalidate_cache, invalidate_database, &progress);
   emit gameListRefreshed();
 }
 
@@ -404,7 +404,8 @@ void QtHostInterface::onDisplayWindowResized(int width, int height)
 
   Log_DevPrintf("Display window resized to %dx%d", width, height);
   s_host_display->ResizeRenderWindow(width, height);
-  OnHostDisplayResized();
+  ImGuiManager::WindowResized();
+  System::HostDisplayResized();
 
   // re-render the display, since otherwise it will be out of date and stretched if paused
   if (!System::IsShutdown())
@@ -478,10 +479,10 @@ HostDisplay* QtHostInterface::acquireHostDisplay()
   if (!s_host_display->MakeRenderContextCurrent() ||
       !s_host_display->InitializeRenderDevice(GetShaderCacheBasePath(), g_settings.gpu_use_debug_device,
                                               g_settings.gpu_threaded_presentation) ||
-      !ImGuiManager::Initialize() || !CreateHostDisplayResources())
+      !ImGuiManager::Initialize() || !CommonHost::CreateHostDisplayResources())
   {
     ImGuiManager::Shutdown();
-    ReleaseHostDisplayResources();
+    CommonHost::ReleaseHostDisplayResources();
     s_host_display->DestroyRenderDevice();
     emit destroyDisplayRequested();
     s_host_display.reset();
@@ -551,12 +552,12 @@ void QtHostInterface::updateDisplayState()
     Panic("Failed to make device context current after updating");
 
   m_is_exclusive_fullscreen = s_host_display->IsFullscreen();
-
-  OnHostDisplayResized();
+  ImGuiManager::WindowResized();
+  System::HostDisplayResized();
 
   if (!System::IsShutdown())
   {
-    UpdateSoftwareCursor();
+    System::UpdateSoftwareCursor();
 
     if (!FullscreenUI::IsInitialized())
       redrawDisplayWindow();
@@ -569,7 +570,7 @@ void QtHostInterface::releaseHostDisplay()
 {
   Assert(s_host_display);
 
-  ReleaseHostDisplayResources();
+  CommonHost::ReleaseHostDisplayResources();
   ImGuiManager::Shutdown();
   s_host_display->DestroyRenderDevice();
   emit destroyDisplayRequested();
@@ -590,20 +591,6 @@ bool QtHostInterface::SetFullscreen(bool enabled)
   m_is_fullscreen = enabled;
   updateDisplayState();
   return true;
-}
-
-bool QtHostInterface::RequestRenderWindowSize(s32 new_window_width, s32 new_window_height)
-{
-  if (new_window_width <= 0 || new_window_height <= 0 || m_is_fullscreen || m_is_exclusive_fullscreen)
-    return false;
-
-  emit displaySizeRequested(new_window_width, new_window_height);
-  return true;
-}
-
-void* QtHostInterface::GetTopLevelWindowHandle() const
-{
-  return reinterpret_cast<void*>(m_main_window->winId());
 }
 
 void QtHostInterface::RequestExit()
@@ -652,11 +639,6 @@ void QtHostInterface::SetDefaultSettings(SettingsInterface& si)
   si.SetBoolValue("Main", "RenderToMainWindow", true);
 }
 #endif
-
-void QtHostInterface::SetMouseMode(bool relative, bool hide_cursor)
-{
-  emit mouseModeRequested(relative, hide_cursor);
-}
 
 void QtHostInterface::applyInputProfile(const QString& profile_path)
 {
@@ -1185,7 +1167,7 @@ void QtHostInterface::requestRenderWindowScale(qreal scale)
     return;
   }
 
-  RequestRenderWindowScale(scale);
+  System::RequestDisplaySize(scale);
 }
 
 void QtHostInterface::executeOnEmulationThread(std::function<void()> callback, bool wait)
@@ -1397,38 +1379,39 @@ void QtHostInterface::saveScreenshot()
   System::SaveScreenshot(nullptr, true, true);
 }
 
-void QtHostInterface::OnAchievementsRefreshed()
+void Cheevos::OnAchievementsRefreshed()
 {
 #ifdef WITH_CHEEVOS
   QString game_info;
 
   if (Cheevos::HasActiveGame())
   {
-    game_info = tr("Game ID: %1\n"
-                   "Game Title: %2\n"
-                   "Game Developer: %3\n"
-                   "Game Publisher: %4\n"
-                   "Achievements: %5 (%6)\n\n")
+    game_info = qApp
+                  ->translate("Achievements", "Game ID: %1\n"
+                                              "Game Title: %2\n"
+                                              "Game Developer: %3\n"
+                                              "Game Publisher: %4\n"
+                                              "Achievements: %5 (%6)\n\n")
                   .arg(Cheevos::GetGameID())
                   .arg(QString::fromStdString(Cheevos::GetGameTitle()))
                   .arg(QString::fromStdString(Cheevos::GetGameDeveloper()))
                   .arg(QString::fromStdString(Cheevos::GetGamePublisher()))
                   .arg(Cheevos::GetAchievementCount())
-                  .arg(tr("%n points", "", Cheevos::GetMaximumPointsForGame()));
+                  .arg(qApp->translate("Achievements", "%n points", "", Cheevos::GetMaximumPointsForGame()));
 
     const std::string& rich_presence_string = Cheevos::GetRichPresenceString();
     if (!rich_presence_string.empty())
       game_info.append(QString::fromStdString(rich_presence_string));
     else
-      game_info.append(tr("Rich presence inactive or unsupported."));
+      game_info.append(qApp->translate("Achievements", "Rich presence inactive or unsupported."));
   }
   else
   {
-    game_info = tr("Game not loaded or no RetroAchievements available.");
+    game_info = qApp->translate("Achievements", "Game not loaded or no RetroAchievements available.");
   }
 
-  emit achievementsLoaded(Cheevos::GetGameID(), game_info, Cheevos::GetAchievementCount(),
-                          Cheevos::GetMaximumPointsForGame());
+  emit g_emu_thread->achievementsLoaded(Cheevos::GetGameID(), game_info, Cheevos::GetAchievementCount(),
+                                        Cheevos::GetMaximumPointsForGame());
 #endif
 }
 
@@ -1866,6 +1849,23 @@ void Host::OnGameChanged(const std::string& disc_path, const std::string& game_s
 {
   emit g_emu_thread->runningGameChanged(QString::fromStdString(disc_path), QString::fromStdString(game_serial),
                                         QString::fromStdString(game_name));
+}
+
+void Host::SetMouseMode(bool relative, bool hide_cursor)
+{
+  emit g_emu_thread->mouseModeRequested(relative, hide_cursor);
+}
+
+void Host::RequestResizeHostDisplay(s32 new_window_width, s32 new_window_height)
+{
+  Panic("Fixme for fullscreen");
+#if 0
+  if (new_window_width <= 0 || new_window_height <= 0 || m_is_fullscreen || m_is_exclusive_fullscreen)
+    return false;
+
+  emit displaySizeRequested(new_window_width, new_window_height);
+  return true;
+#endif
 }
 
 void Host::PumpMessagesOnCPUThread()

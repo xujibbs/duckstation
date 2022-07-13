@@ -521,7 +521,7 @@ HostDisplay::AdapterAndModeList OpenGLHostDisplay::GetAdapterAndModeList()
     for (const GL::Context::FullscreenModeInfo& fmi : m_gl_context->EnumerateFullscreenModes())
     {
       aml.fullscreen_modes.push_back(
-        CommonHostInterface::GetFullscreenModeString(fmi.width, fmi.height, fmi.refresh_rate));
+        GetFullscreenModeString(fmi.width, fmi.height, fmi.refresh_rate));
     }
   }
 

@@ -12,6 +12,7 @@
 struct WindowInfo;
 enum class AudioBackend : u8;
 class AudioStream;
+class CDImage;
 
 /// Marks a core string as being translatable.
 #define TRANSLATABLE(context, str) str
@@ -93,7 +94,17 @@ bool ConfirmFormattedMessage(const std::string_view& title, const char* format, 
 void ReportDebuggerMessage(const std::string_view& message);
 void ReportFormattedDebuggerMessage(const char* format, ...) printflike(2, 3);
 
+/// Displays a loading screen with the logo, rendered with ImGui. Use when executing possibly-time-consuming tasks
+/// such as compiling shaders when starting up.
+void DisplayLoadingScreen(const char* message, int progress_min = -1, int progress_max = -1, int progress_value = -1);
+
+/// Retrieves information about specified game from game list.
+void GetGameInfo(const char* path, CDImage* image, std::string* code, std::string* title);
+
 /// Internal method used by pads to dispatch vibration updates to input sources.
 /// Intensity is normalized from 0 to 1.
 void SetPadVibrationIntensity(u32 pad_index, float large_or_single_motor_intensity, float small_motor_intensity);
+
+/// Enables "relative" mouse mode, locking the cursor position and returning relative coordinates.
+void SetMouseMode(bool relative, bool hide_cursor);
 } // namespace Host

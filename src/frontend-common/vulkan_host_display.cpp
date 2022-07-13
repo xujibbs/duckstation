@@ -908,7 +908,7 @@ HostDisplay::AdapterAndModeList VulkanHostDisplay::StaticGetAdapterAndModeList(c
     for (const Vulkan::SwapChain::FullscreenModeInfo& fmi : fsmodes)
     {
       ret.fullscreen_modes.push_back(
-        CommonHostInterface::GetFullscreenModeString(fmi.width, fmi.height, fmi.refresh_rate));
+        GetFullscreenModeString(fmi.width, fmi.height, fmi.refresh_rate));
     }
   }
 

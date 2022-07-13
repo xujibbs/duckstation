@@ -44,43 +44,13 @@ public:
   virtual void Shutdown() override;
 
   /// Returns the game list.
-  ALWAYS_INLINE GameList* GetGameList() const { return m_game_list.get(); }
+  GameList* GetGameList() const;
 
   /// Returns true if running in batch mode, i.e. exit after emulation.
   ALWAYS_INLINE bool InBatchMode() const { return m_flags.batch_mode; }
 
   /// Parses command line parameters for all frontends.
   bool ParseCommandLineParameters(int argc, char* argv[], std::unique_ptr<SystemBootParameters>* out_boot_params);
-
-
-
-  /// Displays a loading screen with the logo, rendered with ImGui. Use when executing possibly-time-consuming tasks
-  /// such as compiling shaders when starting up.
-  void DisplayLoadingScreen(const char* message, int progress_min = -1, int progress_max = -1,
-                            int progress_value = -1) override;
-
-  /// Retrieves information about specified game from game list.
-  void GetGameInfo(const char* path, CDImage* image, std::string* code, std::string* title) override;
-
-  /// Parses a fullscreen mode into its components (width * height @ refresh hz)
-  static bool ParseFullscreenMode(const std::string_view& mode, u32* width, u32* height, float* refresh_rate);
-
-  /// Converts a fullscreen mode to a string.
-  static std::string GetFullscreenModeString(u32 width, u32 height, float refresh_rate);
-
-
-
-  /// Requests the specified size for the render window. Not guaranteed to succeed (e.g. if in fullscreen).
-  virtual bool RequestRenderWindowSize(s32 new_window_width, s32 new_window_height);
-
-  /// Requests a resize to a multiple of the render window size.
-  bool RequestRenderWindowScale(float scale);
-
-  /// Returns a pointer to the top-level window, needed by some controller interfaces.
-  virtual void* GetTopLevelWindowHandle() const;
-
-  /// Called when achievements data is loaded.
-  virtual void OnAchievementsRefreshed() override;
 
   /// Opens a file in the DuckStation "package".
   /// This is the APK for Android builds, or the program directory for standalone builds.
@@ -90,14 +60,6 @@ protected:
   enum : u32
   {
     SETTINGS_VERSION = 3
-  };
-
-  struct OSDMessage
-  {
-    std::string key;
-    std::string text;
-    Common::Timer time;
-    float duration;
   };
 
   CommonHostInterface();
@@ -112,18 +74,8 @@ protected:
   /// Increases timer resolution when supported by the host OS.
   void SetTimerResolutionIncreased(bool enabled);
 
-  void OnHostDisplayResized() override;
-
   void ApplyGameSettings(bool display_osd_messages);
-  void ApplyRendererFromGameSettings(const std::string& boot_filename);
   void ApplyControllerCompatibilitySettings(u64 controller_mask, bool display_osd_messages);
-
-  bool CreateHostDisplayResources();
-  void ReleaseHostDisplayResources();
-
-  std::unique_ptr<GameList> m_game_list;
-
-  std::unique_ptr<HostDisplayTexture> m_logo_texture;
 
   union
   {
@@ -158,4 +110,6 @@ void OnSystemPaused();
 void OnSystemResumed();
 void OnGameChanged(const std::string& disc_path, const std::string& game_serial, const std::string& game_name);
 void PumpMessagesOnCPUThread();
+bool CreateHostDisplayResources();
+void ReleaseHostDisplayResources();
 }

@@ -56,7 +56,7 @@ AchievementSettingsWidget::AchievementSettingsWidget(SettingsDialog* dialog, QWi
   updateLoginState();
 
   // force a refresh of game info
-  QtHostInterface::GetInstance()->OnAchievementsRefreshed();
+  Cheevos::OnAchievementsRefreshed();
 }
 
 AchievementSettingsWidget::~AchievementSettingsWidget() = default;

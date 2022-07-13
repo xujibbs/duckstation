@@ -139,7 +139,7 @@ BIOSSettingsWidget::~BIOSSettingsWidget() = default;
 
 void BIOSSettingsWidget::refreshList()
 {
-  auto images = QtHostInterface::GetInstance()->FindBIOSImagesInDirectory(QtHostInterface::GetInstance()->GetBIOSDirectory().c_str());
+  auto images = BIOS::FindBIOSImagesInDirectory(QtHostInterface::GetInstance()->GetBIOSDirectory().c_str());
   populateDropDownForRegion(ConsoleRegion::NTSC_J, m_ui.imageNTSCJ, images);
   populateDropDownForRegion(ConsoleRegion::NTSC_U, m_ui.imageNTSCU, images);
   populateDropDownForRegion(ConsoleRegion::PAL, m_ui.imagePAL, images);

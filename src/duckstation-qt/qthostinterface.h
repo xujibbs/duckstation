@@ -56,11 +56,8 @@ public:
   void RunLater(std::function<void()> func) override;
 
 public:
-  bool RequestRenderWindowSize(s32 new_window_width, s32 new_window_height) override;
-  void* GetTopLevelWindowHandle() const override;
-
-  ALWAYS_INLINE const GameList* getGameList() const { return m_game_list.get(); }
-  ALWAYS_INLINE GameList* getGameList() { return m_game_list.get(); }
+  ALWAYS_INLINE const GameList* getGameList() const { return GetGameList(); }
+  ALWAYS_INLINE GameList* getGameList() { return GetGameList(); }
   void refreshGameList(bool invalidate_cache = false, bool invalidate_database = false);
 
   ALWAYS_INLINE bool inBatchMode() const { return InBatchMode(); }
@@ -185,7 +182,6 @@ public Q_SLOTS:
   void reloadPostProcessingShaders();
   void requestRenderWindowScale(qreal scale);
   void executeOnEmulationThread(std::function<void()> callback, bool wait = false);
-  void OnAchievementsRefreshed() override;
 
 private Q_SLOTS:
   void doStopThread();
@@ -202,8 +198,6 @@ protected:
   bool SetFullscreen(bool enabled) override;
 
   void RequestExit() override;
-
-  void SetMouseMode(bool relative, bool hide_cursor) override;
 
 private:
   enum : u32

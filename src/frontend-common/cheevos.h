@@ -142,6 +142,9 @@ TinyString GetAchievementProgressText(const Achievement& achievement);
 void UnlockAchievement(u32 achievement_id, bool add_notification = true);
 void SubmitLeaderboard(u32 leaderboard_id, int value);
 
+/// Called when achievements data is loaded.
+void OnAchievementsRefreshed();
+
 #ifdef WITH_RAINTEGRATION
 void SwitchToRAIntegration();
 

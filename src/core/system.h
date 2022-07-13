@@ -422,6 +422,22 @@ bool ShouldSaveResumeState();
 /// Returns true if fast forwarding or slow motion is currently active.
 bool IsRunningAtNonStandardSpeed();
 
+/// Quick switch between software and hardware rendering.
+void ToggleSoftwareRendering();
+
+/// Adjusts the internal (render) resolution of the hardware backends.
+void ModifyResolutionScale(s32 increment);
+
+/// Updates software cursor state, based on controllers.
+void UpdateSoftwareCursor();
+
+/// Resizes the render window to the display size, with an optional scale.
+/// If the scale is set to 0, the internal resolution will be used, otherwise it is treated as a multiplier to 1x.
+void RequestDisplaySize(float scale = 0.0f);
+
+/// Call when host display size changes, use with "match display" aspect ratio setting.
+void HostDisplayResized();
+
 //////////////////////////////////////////////////////////////////////////
 // Memory Save States (Rewind and Runahead)
 //////////////////////////////////////////////////////////////////////////
@@ -478,7 +494,7 @@ void PumpMessagesOnCPUThread();
 // void InvalidateSaveStateCache();
 
 /// Requests a specific display window size.
-// void RequestResizeHostDisplay(s32 width, s32 height);
+void RequestResizeHostDisplay(s32 width, s32 height);
 
 /// Safely executes a function on the VM thread.
 // void RunOnCPUThread(std::function<void()> function, bool block = false);

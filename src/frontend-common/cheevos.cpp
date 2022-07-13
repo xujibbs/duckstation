@@ -266,7 +266,7 @@ void Cheevos::ClearGameInfo(bool clear_achievements, bool clear_leaderboards)
   }
 
   if (had_game)
-    g_host_interface->OnAchievementsRefreshed();
+    OnAchievementsRefreshed();
 }
 
 void Cheevos::ClearGamePath()
@@ -344,7 +344,7 @@ void Cheevos::Shutdown()
   std::string().swap(s_username);
   std::string().swap(s_login_token);
   s_logged_in = false;
-  g_host_interface->OnAchievementsRefreshed();
+  OnAchievementsRefreshed();
 
   g_active = false;
   rc_runtime_destroy(&s_rcheevos_runtime);
@@ -646,7 +646,7 @@ void Cheevos::Logout()
       std::string().swap(s_username);
       std::string().swap(s_login_token);
       s_logged_in = false;
-      g_host_interface->OnAchievementsRefreshed();
+      OnAchievementsRefreshed();
     }
   }
 
@@ -831,7 +831,7 @@ void Cheevos::GetUserUnlocksCallback(s32 status_code, const FrontendCommon::HTTP
   SendPlaying();
   UpdateRichPresence();
   SendPing();
-  g_host_interface->OnAchievementsRefreshed();
+  OnAchievementsRefreshed();
 }
 
 void Cheevos::GetUserUnlocks()
@@ -1007,7 +1007,7 @@ void Cheevos::GetPatchesCallback(s32 status_code, const FrontendCommon::HTTPDown
     {
       ActivateLockedAchievements();
       DisplayAchievementSummary();
-      g_host_interface->OnAchievementsRefreshed();
+      OnAchievementsRefreshed();
     }
   }
   else
@@ -1261,7 +1261,7 @@ void Cheevos::UpdateRichPresence()
     const bool had_rich_presence = !s_rich_presence_string.empty();
     s_rich_presence_string.clear();
     if (had_rich_presence)
-      g_host_interface->OnAchievementsRefreshed();
+      OnAchievementsRefreshed();
 
     return;
   }
@@ -1270,7 +1270,7 @@ void Cheevos::UpdateRichPresence()
     return;
 
   s_rich_presence_string.assign(buffer);
-  g_host_interface->OnAchievementsRefreshed();
+  OnAchievementsRefreshed();
 }
 
 void Cheevos::SendPingCallback(s32 status_code, const FrontendCommon::HTTPDownloader::Request::Data& data)

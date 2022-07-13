@@ -321,7 +321,7 @@ void MainWindow::setDisplayFullscreen(const std::string& fullscreen_mode)
   float refresh_rate;
   bool result = false;
 
-  if (CommonHostInterface::ParseFullscreenMode(fullscreen_mode, &width, &height, &refresh_rate))
+  if (HostDisplay::ParseFullscreenMode(fullscreen_mode, &width, &height, &refresh_rate))
   {
     result = m_host_display->SetFullscreen(true, width, height, refresh_rate);
     if (result)

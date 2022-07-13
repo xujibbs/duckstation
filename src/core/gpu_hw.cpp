@@ -1483,7 +1483,7 @@ void GPU_HW::ShaderCompileProgressTracker::Increment()
   const u64 tv = Common::Timer::GetCurrentValue();
   if ((tv - m_start_time) >= m_min_time && (tv - m_last_update_time) >= m_update_interval)
   {
-    g_host_interface->DisplayLoadingScreen(m_title.c_str(), 0, static_cast<int>(m_total), static_cast<int>(m_progress));
+    Host::DisplayLoadingScreen(m_title.c_str(), 0, static_cast<int>(m_total), static_cast<int>(m_progress));
     m_last_update_time = tv;
   }
 }

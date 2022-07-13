@@ -15,6 +15,8 @@
 #include "cpu_code_cache.h"
 #include "cpu_core.h"
 #include "dma.h"
+#include "fmt/chrono.h"
+#include "fmt/format.h"
 #include "gpu.h"
 #include "gte.h"
 #include "host.h"
@@ -174,6 +176,11 @@ static bool s_rewinding_first_save = false;
 static std::deque<MemorySaveState> s_runahead_states;
 static bool s_runahead_replay_pending = false;
 static u32 s_runahead_frames = 0;
+
+static TinyString GetTimestampStringForFileName()
+{
+  return TinyString::FromFmt("{:%Y-%m-%d_%H-%M-%S}", fmt::localtime(std::time(nullptr)));
+}
 
 System::State System::GetState()
 {
@@ -931,7 +938,7 @@ bool System::BootSystem(std::shared_ptr<SystemBootParameters> parameters)
     return false;
   }
 
-  g_host_interface->UpdateSoftwareCursor();
+  UpdateSoftwareCursor();
   g_spu.GetOutputStream()->PauseOutput(false);
   Host::OnSystemStarted();
   return true;
@@ -979,7 +986,7 @@ void System::DestroySystem()
 #endif
 
   InternalShutdown();
-  g_host_interface->UpdateSoftwareCursor();
+  UpdateSoftwareCursor();
   Host::ReleaseHostDisplay();
 
   Host::OnSystemDestroyed();
@@ -1131,7 +1138,7 @@ bool System::InternalBoot(const SystemBootParameters& params)
   Log_InfoPrintf("Console Region: %s", Settings::GetConsoleRegionDisplayName(s_region));
 
   // Load BIOS image.
-  std::optional<BIOS::Image> bios_image = g_host_interface->GetBIOSImage(s_region);
+  std::optional<BIOS::Image> bios_image(BIOS::GetBIOSImage(s_region));
   if (!bios_image)
   {
     Host::ReportFormattedErrorAsync("Error", Host::TranslateString("System", "Failed to load %s BIOS."),
@@ -2727,7 +2734,7 @@ void System::UpdateRunningGame(const char* path, CDImage* image)
   if (path && std::strlen(path) > 0)
   {
     s_running_game_path = path;
-    g_host_interface->GetGameInfo(path, image, &s_running_game_code, &s_running_game_title);
+    Host::GetGameInfo(path, image, &s_running_game_code, &s_running_game_title);
 
     if (image && image->HasSubImages() && g_settings.memory_card_use_playlist_title)
     {
@@ -3075,7 +3082,7 @@ void System::CheckForSettingsChanges(const Settings& old_settings)
       {
         UpdateControllers();
         ResetControllers();
-        g_host_interface->UpdateSoftwareCursor();
+        UpdateSoftwareCursor();
         controllers_updated = true;
       }
     }
@@ -3083,7 +3090,7 @@ void System::CheckForSettingsChanges(const Settings& old_settings)
     if (!IsShutdown() && !controllers_updated)
     {
       UpdateControllerSettings();
-      g_host_interface->UpdateSoftwareCursor();
+      UpdateSoftwareCursor();
     }
   }
 
@@ -3618,13 +3625,13 @@ bool System::StartDumpingAudio(const char* filename)
     const auto& code = System::GetRunningCode();
     if (code.empty())
     {
-      auto_filename = g_host_interface->GetUserDirectoryRelativePath(
-        "dump/audio/%s.wav", g_host_interface->GetTimestampStringForFileName().GetCharArray());
+      auto_filename = g_host_interface->GetUserDirectoryRelativePath("dump/audio/%s.wav",
+                                                                     GetTimestampStringForFileName().GetCharArray());
     }
     else
     {
-      auto_filename = g_host_interface->GetUserDirectoryRelativePath(
-        "dump/audio/%s_%s.wav", code.c_str(), g_host_interface->GetTimestampStringForFileName().GetCharArray());
+      auto_filename = g_host_interface->GetUserDirectoryRelativePath("dump/audio/%s_%s.wav", code.c_str(),
+                                                                     GetTimestampStringForFileName().GetCharArray());
     }
 
     filename = auto_filename.c_str();
@@ -3665,14 +3672,13 @@ bool System::SaveScreenshot(const char* filename /* = nullptr */, bool full_reso
     if (code.empty())
     {
       auto_filename = g_host_interface->GetUserDirectoryRelativePath(
-        "screenshots" FS_OSPATH_SEPARATOR_STR "%s.%s", g_host_interface->GetTimestampStringForFileName().GetCharArray(),
-        extension);
+        "screenshots" FS_OSPATH_SEPARATOR_STR "%s.%s", GetTimestampStringForFileName().GetCharArray(), extension);
     }
     else
     {
-      auto_filename = g_host_interface->GetUserDirectoryRelativePath(
-        "screenshots" FS_OSPATH_SEPARATOR_STR "%s_%s.%s", code.c_str(),
-        g_host_interface->GetTimestampStringForFileName().GetCharArray(), extension);
+      auto_filename =
+        g_host_interface->GetUserDirectoryRelativePath("screenshots" FS_OSPATH_SEPARATOR_STR "%s_%s.%s", code.c_str(),
+                                                       GetTimestampStringForFileName().GetCharArray(), extension);
     }
 
     filename = auto_filename.c_str();
@@ -4150,4 +4156,106 @@ void System::ToggleWidescreen()
 
   GTE::UpdateAspectRatio();
 #endif
+}
+
+void System::ToggleSoftwareRendering()
+{
+  if (IsShutdown() || g_settings.gpu_renderer == GPURenderer::Software)
+    return;
+
+  const GPURenderer new_renderer = g_gpu->IsHardwareRenderer() ? GPURenderer::Software : g_settings.gpu_renderer;
+
+  Host::AddKeyedFormattedOSDMessage("SoftwareRendering", 5.0f,
+                                    Host::TranslateString("OSDMessage", "Switching to %s renderer..."),
+                                    Settings::GetRendererDisplayName(new_renderer));
+  RecreateGPU(new_renderer);
+  Host::InvalidateDisplay();
+}
+
+void System::ModifyResolutionScale(s32 increment)
+{
+  const u32 new_resolution_scale = std::clamp<u32>(
+    static_cast<u32>(static_cast<s32>(g_settings.gpu_resolution_scale) + increment), 1, GPU::MAX_RESOLUTION_SCALE);
+  if (new_resolution_scale == g_settings.gpu_resolution_scale)
+    return;
+
+  g_settings.gpu_resolution_scale = new_resolution_scale;
+
+  if (IsValid())
+  {
+    g_gpu->RestoreGraphicsAPIState();
+    g_gpu->UpdateSettings();
+    g_gpu->ResetGraphicsAPIState();
+    ClearMemorySaveStates();
+    Host::InvalidateDisplay();
+  }
+}
+
+void System::UpdateSoftwareCursor()
+{
+  if (!IsValid())
+  {
+    Host::SetMouseMode(false, false);
+    Host::GetHostDisplay()->ClearSoftwareCursor();
+    return;
+  }
+
+  const Common::RGBA8Image* image = nullptr;
+  float image_scale = 1.0f;
+  bool relative_mode = false;
+  bool hide_cursor = false;
+
+  for (u32 i = 0; i < NUM_CONTROLLER_AND_CARD_PORTS; i++)
+  {
+    Controller* controller = System::GetController(i);
+    if (controller && controller->GetSoftwareCursor(&image, &image_scale, &relative_mode))
+    {
+      hide_cursor = true;
+      break;
+    }
+  }
+
+  Host::SetMouseMode(relative_mode, hide_cursor);
+
+  if (image && image->IsValid())
+  {
+    Host::GetHostDisplay()->SetSoftwareCursor(image->GetPixels(), image->GetWidth(), image->GetHeight(),
+                                              image->GetByteStride(), image_scale);
+  }
+  else
+  {
+    Host::GetHostDisplay()->ClearSoftwareCursor();
+  }
+}
+
+void System::RequestDisplaySize(float scale /*= 0.0f*/)
+{
+  if (!IsValid())
+    return;
+
+  if (scale == 0.0f)
+    scale = g_gpu->IsHardwareRenderer() ? static_cast<float>(g_settings.gpu_resolution_scale) : 1.0f;
+
+  HostDisplay* display = Host::GetHostDisplay();
+  const float y_scale =
+    (static_cast<float>(display->GetDisplayWidth()) / static_cast<float>(display->GetDisplayHeight())) /
+    display->GetDisplayAspectRatio();
+
+  const u32 requested_width =
+    std::max<u32>(static_cast<u32>(std::ceil(static_cast<float>(display->GetDisplayWidth()) * scale)), 1);
+  const u32 requested_height =
+    std::max<u32>(static_cast<u32>(std::ceil(static_cast<float>(display->GetDisplayHeight()) * y_scale * scale)), 1);
+
+  Host::RequestResizeHostDisplay(static_cast<s32>(requested_width), static_cast<s32>(requested_height));
+}
+
+void System::HostDisplayResized()
+{
+  if (!IsValid())
+    return;
+
+  if (g_settings.gpu_widescreen_hack && g_settings.display_aspect_ratio == DisplayAspectRatio::MatchWindow)
+    GTE::UpdateAspectRatio();
+
+  g_gpu->UpdateResolutionScale();
 }

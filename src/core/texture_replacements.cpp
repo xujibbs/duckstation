@@ -4,6 +4,7 @@
 #include "common/platform.h"
 #include "common/string_util.h"
 #include "common/timer.h"
+#include "host.h"
 #include "host_interface.h"
 #include "settings.h"
 #include "xxhash.h"
@@ -288,8 +289,8 @@ void TextureReplacements::PreloadTextures()
 #define UPDATE_PROGRESS()                                                                                              \
   if (last_update_time.GetTimeSeconds() >= UPDATE_INTERVAL)                                                            \
   {                                                                                                                    \
-    g_host_interface->DisplayLoadingScreen("Preloading replacement textures...", 0, static_cast<int>(total_textures),  \
-                                           static_cast<int>(num_textures_loaded));                                     \
+    Host::DisplayLoadingScreen("Preloading replacement textures...", 0, static_cast<int>(total_textures),              \
+                               static_cast<int>(num_textures_loaded));                                                 \
     last_update_time.Reset();                                                                                          \
   }
 

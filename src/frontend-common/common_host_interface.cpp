@@ -93,6 +93,8 @@ static void UpdateCheevosActive(SettingsInterface& si);
 
 static std::string s_settings_filename;
 static std::unique_ptr<FrontendCommon::InputOverlayUI> s_input_overlay_ui;
+static std::unique_ptr<HostDisplayTexture> m_logo_texture;
+static std::unique_ptr<GameList> m_game_list;
 
 #ifdef WITH_DISCORD_PRESENCE
 // discord rich presence
@@ -163,6 +165,11 @@ void CommonHostInterface::Shutdown()
 #endif
 
   InputManager::CloseSources();
+}
+
+GameList* CommonHostInterface::GetGameList() const
+{
+  return m_game_list.get();
 }
 
 void CommonHostInterface::InitializeUserDirectory()
@@ -452,11 +459,6 @@ bool CommonHostInterface::ParseCommandLineParameters(int argc, char* argv[],
   return true;
 }
 
-void CommonHostInterface::OnAchievementsRefreshed()
-{
-  // noop
-}
-
 void CommonHost::PumpMessagesOnCPUThread()
 {
   InputManager::PollSources();
@@ -481,7 +483,7 @@ bool CommonHostInterface::SetFullscreen(bool enabled)
   return false;
 }
 
-bool CommonHostInterface::CreateHostDisplayResources()
+bool CommonHost::CreateHostDisplayResources()
 {
   m_logo_texture = FullscreenUI::LoadTextureResource("logo.png", false);
   if (!m_logo_texture)
@@ -490,18 +492,9 @@ bool CommonHostInterface::CreateHostDisplayResources()
   return true;
 }
 
-void CommonHostInterface::ReleaseHostDisplayResources()
+void CommonHost::ReleaseHostDisplayResources()
 {
   m_logo_texture.reset();
-}
-
-void CommonHostInterface::OnHostDisplayResized()
-{
-  HostInterface::OnHostDisplayResized();
-  ImGuiManager::WindowResized();
-
-  if (!System::IsShutdown())
-    g_gpu->UpdateResolutionScale();
 }
 
 std::unique_ptr<AudioStream> Host::CreateAudioStream(AudioBackend backend)
@@ -765,7 +758,7 @@ void CommonHostInterface::SetTimerResolutionIncreased(bool enabled)
 #endif
 }
 
-void CommonHostInterface::DisplayLoadingScreen(const char* message, int progress_min /*= -1*/,
+void Host::DisplayLoadingScreen(const char* message, int progress_min /*= -1*/,
                                                int progress_max /*= -1*/, int progress_value /*= -1*/)
 {
   const auto& io = ImGui::GetIO();
@@ -822,7 +815,7 @@ void CommonHostInterface::DisplayLoadingScreen(const char* message, int progress
   Host::GetHostDisplay()->Render();
 }
 
-void CommonHostInterface::GetGameInfo(const char* path, CDImage* image, std::string* code, std::string* title)
+void Host::GetGameInfo(const char* path, CDImage* image, std::string* code, std::string* title)
 {
   const GameListEntry* list_entry = m_game_list->GetEntryForPath(path);
   if (list_entry && list_entry->type != GameListEntryType::Playlist)
@@ -872,22 +865,6 @@ void CommonHostInterface::ApplyGameSettings(bool display_osd_messages)
     const GameSettings::Entry* gs = m_game_list->GetGameSettingsForCode(System::GetRunningCode());
     if (gs)
       gs->ApplySettings(display_osd_messages);
-  }
-}
-
-void CommonHostInterface::ApplyRendererFromGameSettings(const std::string& boot_filename)
-{
-  if (boot_filename.empty())
-    return;
-
-  // we can't use the code here, since it's not loaded yet. but we can cheekily access the game list
-  const GameListEntry* ge = m_game_list->GetEntryForPath(boot_filename.c_str());
-  if (ge && ge->settings.gpu_renderer.has_value() && ge->settings.gpu_renderer.value() != g_settings.gpu_renderer)
-  {
-    Log_InfoPrintf("Changing renderer from '%s' to '%s' due to game settings.",
-                   Settings::GetRendererName(g_settings.gpu_renderer),
-                   Settings::GetRendererName(ge->settings.gpu_renderer.value()));
-    g_settings.gpu_renderer = ge->settings.gpu_renderer.value();
   }
 }
 
@@ -981,86 +958,6 @@ bool CommonHostInterface::UpdateControllerInputMapFromGameSettings()
   return true;
 }
 #endif
-
-bool CommonHostInterface::ParseFullscreenMode(const std::string_view& mode, u32* width, u32* height,
-                                              float* refresh_rate)
-{
-  if (!mode.empty())
-  {
-    std::string_view::size_type sep1 = mode.find('x');
-    if (sep1 != std::string_view::npos)
-    {
-      std::optional<u32> owidth = StringUtil::FromChars<u32>(mode.substr(0, sep1));
-      sep1++;
-
-      while (sep1 < mode.length() && std::isspace(mode[sep1]))
-        sep1++;
-
-      if (owidth.has_value() && sep1 < mode.length())
-      {
-        std::string_view::size_type sep2 = mode.find('@', sep1);
-        if (sep2 != std::string_view::npos)
-        {
-          std::optional<u32> oheight = StringUtil::FromChars<u32>(mode.substr(sep1, sep2 - sep1));
-          sep2++;
-
-          while (sep2 < mode.length() && std::isspace(mode[sep2]))
-            sep2++;
-
-          if (oheight.has_value() && sep2 < mode.length())
-          {
-            std::optional<float> orefresh_rate = StringUtil::FromChars<float>(mode.substr(sep2));
-            if (orefresh_rate.has_value())
-            {
-              *width = owidth.value();
-              *height = oheight.value();
-              *refresh_rate = orefresh_rate.value();
-              return true;
-            }
-          }
-        }
-      }
-    }
-  }
-
-  *width = 0;
-  *height = 0;
-  *refresh_rate = 0;
-  return false;
-}
-
-std::string CommonHostInterface::GetFullscreenModeString(u32 width, u32 height, float refresh_rate)
-{
-  return StringUtil::StdStringFromFormat("%u x %u @ %f hz", width, height, refresh_rate);
-}
-
-bool CommonHostInterface::RequestRenderWindowSize(s32 new_window_width, s32 new_window_height)
-{
-  return false;
-}
-
-bool CommonHostInterface::RequestRenderWindowScale(float scale)
-{
-  if (!System::IsValid() || scale == 0)
-    return false;
-
-  HostDisplay* display = Host::GetHostDisplay();
-  const float y_scale =
-    (static_cast<float>(display->GetDisplayWidth()) / static_cast<float>(display->GetDisplayHeight())) /
-    display->GetDisplayAspectRatio();
-
-  const u32 requested_width =
-    std::max<u32>(static_cast<u32>(std::ceil(static_cast<float>(display->GetDisplayWidth()) * scale)), 1);
-  const u32 requested_height =
-    std::max<u32>(static_cast<u32>(std::ceil(static_cast<float>(display->GetDisplayHeight()) * y_scale * scale)), 1);
-
-  return RequestRenderWindowSize(static_cast<s32>(requested_width), static_cast<s32>(requested_height));
-}
-
-void* CommonHostInterface::GetTopLevelWindowHandle() const
-{
-  return nullptr;
-}
 
 std::unique_ptr<ByteStream> CommonHostInterface::OpenPackageFile(const char* path, u32 flags)
 {
