@@ -4,10 +4,10 @@
 #include "common/file_system.h"
 #include "common/log.h"
 #include "common/make_array.h"
+#include "common/path.h"
 #include "common/string_util.h"
 #include "host.h"
 #include "host_display.h"
-#include "host_interface.h"
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -308,7 +308,6 @@ void Settings::Load(SettingsInterface& si)
       .value_or(DEFAULT_MEMORY_CARD_2_TYPE);
   memory_card_paths[0] = si.GetStringValue("MemoryCards", "Card1Path", "");
   memory_card_paths[1] = si.GetStringValue("MemoryCards", "Card2Path", "");
-  memory_card_directory = si.GetStringValue("MemoryCards", "Directory", "");
   memory_card_use_playlist_title = si.GetBoolValue("MemoryCards", "UsePlaylistTitle", true);
 
   multitap_mode =
@@ -481,10 +480,6 @@ void Settings::Save(SettingsInterface& si) const
   else
     si.DeleteValue("MemoryCards", "Card2Path");
 
-  if (!memory_card_directory.empty())
-    si.SetStringValue("MemoryCards", "Directory", memory_card_directory.c_str());
-  else
-    si.DeleteValue("MemoryCards", "Directory");
   si.SetBoolValue("MemoryCards", "UsePlaylistTitle", memory_card_use_playlist_title);
 
   si.SetStringValue("ControllerPorts", "MultitapMode", GetMultitapModeName(multitap_mode));
@@ -1063,6 +1058,25 @@ const char* Settings::GetMemoryCardTypeDisplayName(MemoryCardType type)
   return s_memory_card_type_display_names[static_cast<int>(type)];
 }
 
+std::string Settings::GetSharedMemoryCardPath(u32 slot) const
+{
+  std::string ret;
+
+  if (memory_card_paths[slot].empty())
+    ret = Path::Combine(EmuFolders::MemoryCards, fmt::format("shared_card_{}.mcd", slot + 1));
+  else if (!Path::IsAbsolute(memory_card_paths[slot]))
+    ret = Path::Combine(EmuFolders::MemoryCards, memory_card_paths[slot]);
+  else
+    ret = memory_card_paths[slot];
+
+  return ret;
+}
+
+std::string Settings::GetGameMemoryCardPath(const char* game_code, u32 slot)
+{
+  return Path::Combine(EmuFolders::MemoryCards, fmt::format("{}_{}.mcd", game_code, slot + 1));
+}
+
 static std::array<const char*, 4> s_multitap_enable_mode_names = {{"Disabled", "Port1Only", "Port2Only", "BothPorts"}};
 static std::array<const char*, 4> s_multitap_enable_mode_display_names = {
   {TRANSLATABLE("MultitapMode", "Disabled"), TRANSLATABLE("MultitapMode", "Enable on Port 1 Only"),
@@ -1090,4 +1104,110 @@ const char* Settings::GetMultitapModeName(MultitapMode mode)
 const char* Settings::GetMultitapModeDisplayName(MultitapMode mode)
 {
   return s_multitap_enable_mode_display_names[static_cast<size_t>(mode)];
+}
+
+std::string EmuFolders::AppRoot;
+std::string EmuFolders::DataRoot;
+std::string EmuFolders::Bios;
+std::string EmuFolders::Cache;
+std::string EmuFolders::Covers;
+std::string EmuFolders::Dumps;
+std::string EmuFolders::GameSettings;
+std::string EmuFolders::InputProfiles;
+std::string EmuFolders::MemoryCards;
+std::string EmuFolders::SaveStates;
+std::string EmuFolders::Screenshots;
+std::string EmuFolders::Shaders;
+std::string EmuFolders::Textures;
+
+void EmuFolders::SetDefaults()
+{
+  Bios = Path::Combine(DataRoot, "bios");
+  Cache = Path::Combine(DataRoot, "cache");
+  Cheats = Path::Combine(DataRoot, "cheats");
+  Covers = Path::Combine(DataRoot, "covers");
+  Dumps = Path::Combine(DataRoot, "dump");
+  GameSettings = Path::Combine(DataRoot, "gamesettings");
+  InputProfiles = Path::Combine(DataRoot, "inputprofiles");
+  MemoryCards = Path::Combine(DataRoot, "memcards");
+  SaveStates = Path::Combine(DataRoot, "savestates");
+  Screenshots = Path::Combine(DataRoot, "screenshots");
+  Shaders = Path::Combine(DataRoot, "shaders");
+  Textures = Path::Combine(DataRoot, "textures");
+}
+
+static std::string LoadPathFromSettings(SettingsInterface& si, const std::string& root, const char* section,
+                                        const char* name, const char* def)
+{
+  std::string value = si.GetStringValue(section, name, def);
+  if (!Path::IsAbsolute(value))
+    value = Path::Combine(root, value);
+  return value;
+}
+
+void EmuFolders::LoadConfig(SettingsInterface& si)
+{
+  Bios = LoadPathFromSettings(si, DataRoot, "Folders", "Bios", "bios");
+  Cache = LoadPathFromSettings(si, DataRoot, "Folders", "Cache", "cache");
+  Cheats = LoadPathFromSettings(si, DataRoot, "Folders", "Cheats", "cheats");
+  Covers = LoadPathFromSettings(si, DataRoot, "Folders", "Covers", "covers");
+  Dumps = LoadPathFromSettings(si, DataRoot, "Folders", "Dumps", "dump");
+  GameSettings = LoadPathFromSettings(si, DataRoot, "Folders", "GameSettings", "gamesettings");
+  InputProfiles = LoadPathFromSettings(si, DataRoot, "Folders", "InputProfiles", "inputprofiles");
+  MemoryCards = LoadPathFromSettings(si, DataRoot, "MemoryCards", "Directory", "memcards");
+  SaveStates = LoadPathFromSettings(si, DataRoot, "Folders", "Savestates", "savestates");
+  Screenshots = LoadPathFromSettings(si, DataRoot, "Folders", "Snapshots", "screenshots");
+  Shaders = LoadPathFromSettings(si, DataRoot, "Folders", "Snapshots", "shaders");
+  Textures = LoadPathFromSettings(si, DataRoot, "Folders", "Textures", "textures");
+
+  Log_DevPrintf("BIOS Directory: %s", Bios.c_str());
+  Log_DevPrintf("Cache Directory: %s", Cache.c_str());
+  Log_DevPrintf("Cheats Directory: %s", Covers.c_str());
+  Log_DevPrintf("Covers Directory: %s", Covers.c_str());
+  Log_DevPrintf("Dumps Directory: %s", Dumps.c_str());
+  Log_DevPrintf("Game Settings Directory: %s", GameSettings.c_str());
+  Log_DevPrintf("Input Profile Directory: %s", InputProfiles.c_str());
+  Log_DevPrintf("MemoryCards Directory: %s", MemoryCards.c_str());
+  Log_DevPrintf("SaveStates Directory: %s", SaveStates.c_str());
+  Log_DevPrintf("Screenshots Directory: %s", Screenshots.c_str());
+  Log_DevPrintf("Shaders Directory: %s", Shaders.c_str());
+  Log_DevPrintf("Textures Directory: %s", Textures.c_str());
+}
+
+void EmuFolders::Save(SettingsInterface& si)
+{
+  // convert back to relative
+  si.SetStringValue("Folders", "Bios", Path::MakeRelative(Bios, DataRoot).c_str());
+  si.SetStringValue("Folders", "Cache", Path::MakeRelative(Cache, DataRoot).c_str());
+  si.SetStringValue("Folders", "Cheats", Path::MakeRelative(Cheats, DataRoot).c_str());
+  si.SetStringValue("Folders", "Covers", Path::MakeRelative(Covers, DataRoot).c_str());
+  si.SetStringValue("Folders", "Dumps", Path::MakeRelative(Dumps, DataRoot).c_str());
+  si.SetStringValue("Folders", "GameSettings", Path::MakeRelative(Dumps, GameSettings).c_str());
+  si.SetStringValue("Folders", "InputProfiles", Path::MakeRelative(InputProfiles, DataRoot).c_str());
+  si.SetStringValue("MemoryCards", "Directory", Path::MakeRelative(MemoryCards, DataRoot).c_str());
+  si.SetStringValue("Folders", "SaveStates", Path::MakeRelative(SaveStates, DataRoot).c_str());
+  si.SetStringValue("Folders", "Screenshots", Path::MakeRelative(Screenshots, DataRoot).c_str());
+  si.SetStringValue("Folders", "Shaders", Path::MakeRelative(Shaders, DataRoot).c_str());
+  si.SetStringValue("Folders", "Textures", Path::MakeRelative(Textures, DataRoot).c_str());
+}
+
+bool EmuFolders::EnsureFoldersExist()
+{
+  bool result = FileSystem::EnsureDirectoryExists(Bios.c_str(), false);
+  result = FileSystem::EnsureDirectoryExists(Cache.c_str(), false) && result;
+  result = FileSystem::EnsureDirectoryExists(Path::Combine(Cache, "achievement_badge").c_str(), false) && result;
+  result = FileSystem::EnsureDirectoryExists(Path::Combine(Cache, "achievement_gameicon").c_str(), false) && result;
+  result = FileSystem::EnsureDirectoryExists(Cheats.c_str(), false) && result;
+  result = FileSystem::EnsureDirectoryExists(Covers.c_str(), false) && result;
+  result = FileSystem::EnsureDirectoryExists(Dumps.c_str(), false) && result;
+  result = FileSystem::EnsureDirectoryExists(Path::Combine(Dumps, "audio").c_str(), false) && result;
+  result = FileSystem::EnsureDirectoryExists(Path::Combine(Dumps, "textures").c_str(), false) && result;
+  result = FileSystem::EnsureDirectoryExists(GameSettings.c_str(), false) && result;
+  result = FileSystem::EnsureDirectoryExists(InputProfiles.c_str(), false) && result;
+  result = FileSystem::EnsureDirectoryExists(MemoryCards.c_str(), false) && result;
+  result = FileSystem::EnsureDirectoryExists(SaveStates.c_str(), false) && result;
+  result = FileSystem::EnsureDirectoryExists(Screenshots.c_str(), false) && result;
+  result = FileSystem::EnsureDirectoryExists(Shaders.c_str(), false) && result;
+  result = FileSystem::EnsureDirectoryExists(Textures.c_str(), false) && result;
+  return result;
 }

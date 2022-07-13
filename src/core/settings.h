@@ -200,7 +200,6 @@ struct Settings
 
   std::array<MemoryCardType, NUM_CONTROLLER_AND_CARD_PORTS> memory_card_types{};
   std::array<std::string, NUM_CONTROLLER_AND_CARD_PORTS> memory_card_paths{};
-  std::string memory_card_directory;
   bool memory_card_use_playlist_title = true;
 
   MultitapMode multitap_mode = DEFAULT_MULTITAP_MODE;
@@ -248,6 +247,12 @@ struct Settings
             type == MemoryCardType::PerGameFileTitle);
   }
   bool HasAnyPerGameMemoryCards() const;
+
+  /// Returns the default path to a memory card.
+  std::string GetSharedMemoryCardPath(u32 slot) const;
+
+  /// Returns the default path to a memory card for a specific game.
+  static std::string GetGameMemoryCardPath(const char* game_code, u32 slot);
 
   static void CPUOverclockPercentToFraction(u32 percent, u32* numerator, u32* denominator);
   static u32 CPUOverclockFractionToPercent(u32 numerator, u32 denominator);
@@ -399,11 +404,20 @@ extern std::string AppRoot;
 extern std::string DataRoot;
 extern std::string Bios;
 extern std::string Cache;
+extern std::string Cheats;
 extern std::string Covers;
-extern std::string Dump;
+extern std::string Dumps;
+extern std::string GameSettings;
 extern std::string InputProfiles;
 extern std::string MemoryCards;
 extern std::string SaveStates;
 extern std::string Screenshots;
+extern std::string Shaders;
 extern std::string Textures;
+
+// Assumes that AppRoot and DataRoot have been initialized.
+void SetDefaults();
+bool EnsureFoldersExist();
+void LoadConfig(SettingsInterface& si);
+void Save(SettingsInterface& si);
 }

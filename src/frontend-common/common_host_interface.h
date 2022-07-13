@@ -39,22 +39,15 @@ public:
   virtual bool IsFullscreen() const;
   virtual bool SetFullscreen(bool enabled);
 
-  virtual bool Initialize() override;
+  virtual bool Initialize();
 
-  virtual void Shutdown() override;
+  virtual void Shutdown();
 
   /// Returns the game list.
   GameList* GetGameList() const;
 
   /// Returns true if running in batch mode, i.e. exit after emulation.
   ALWAYS_INLINE bool InBatchMode() const { return m_flags.batch_mode; }
-
-  /// Parses command line parameters for all frontends.
-  bool ParseCommandLineParameters(int argc, char* argv[], std::unique_ptr<SystemBootParameters>* out_boot_params);
-
-  /// Opens a file in the DuckStation "package".
-  /// This is the APK for Android builds, or the program directory for standalone builds.
-  virtual std::unique_ptr<ByteStream> OpenPackageFile(const char* path, u32 flags) override;
 
 protected:
   enum : u32
@@ -100,6 +93,9 @@ private:
 
 namespace CommonHost
 {
+/// Parses command line parameters for all frontends.
+bool ParseCommandLineParameters(int argc, char* argv[], std::unique_ptr<SystemBootParameters>* out_boot_params);
+
 void SetDefaultSettings(SettingsInterface& si);
 void LoadSettings(SettingsInterface& si, std::unique_lock<std::mutex>& lock);
 void CheckForSettingsChanges(const Settings& old_settings);

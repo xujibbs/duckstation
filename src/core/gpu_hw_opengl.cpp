@@ -511,7 +511,7 @@ bool GPU_HW_OpenGL::CreateTextureBuffer()
 bool GPU_HW_OpenGL::CompilePrograms()
 {
   GL::ShaderCache shader_cache;
-  shader_cache.Open(IsGLES(), g_host_interface->GetShaderCacheBasePath(), SHADER_CACHE_VERSION);
+  shader_cache.Open(IsGLES(), EmuFolders::Cache, SHADER_CACHE_VERSION);
 
   const bool use_binding_layout = GPU_HW_ShaderGen::UseGLSLBindingLayout();
   GPU_HW_ShaderGen shadergen(m_host_display->GetRenderAPI(), m_resolution_scale, m_multisamples, m_per_sample_shading,

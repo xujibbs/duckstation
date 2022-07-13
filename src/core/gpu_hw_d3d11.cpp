@@ -501,8 +501,7 @@ void GPU_HW_D3D11::DestroyStateObjects()
 bool GPU_HW_D3D11::CompileShaders()
 {
   D3D11::ShaderCache shader_cache;
-  shader_cache.Open(g_host_interface->GetShaderCacheBasePath(), m_device->GetFeatureLevel(), SHADER_CACHE_VERSION,
-                    g_settings.gpu_use_debug_device);
+  shader_cache.Open(EmuFolders::Cache, m_device->GetFeatureLevel(), SHADER_CACHE_VERSION, g_settings.gpu_use_debug_device);
 
   GPU_HW_ShaderGen shadergen(m_host_display->GetRenderAPI(), m_resolution_scale, m_multisamples, m_per_sample_shading,
                              m_true_color, m_scaled_dithering, m_texture_filtering, m_using_uv_limits,

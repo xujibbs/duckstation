@@ -279,7 +279,6 @@ DiscRegion GetPSExeDiscRegion(const PSEXEHeader& header)
 
 std::optional<std::vector<u8>> BIOS::GetBIOSImage(ConsoleRegion region)
 {
-  std::string bios_dir = g_host_interface->GetBIOSDirectory();
   std::string bios_name;
   switch (region)
   {
@@ -300,11 +299,11 @@ std::optional<std::vector<u8>> BIOS::GetBIOSImage(ConsoleRegion region)
   if (bios_name.empty())
   {
     // auto-detect
-    return FindBIOSImageInDirectory(region, bios_dir.c_str());
+    return FindBIOSImageInDirectory(region, EmuFolders::Bios.c_str());
   }
 
   // try the configured path
-  std::optional<Image> image = LoadImageFromFile(Path::Combine(bios_dir, bios_name).c_str());
+  std::optional<Image> image = LoadImageFromFile(Path::Combine(EmuFolders::Bios, bios_name).c_str());
   if (!image.has_value())
   {
     Host::ReportFormattedErrorAsync(
@@ -415,6 +414,5 @@ std::vector<std::pair<std::string, const BIOS::ImageInfo*>> BIOS::FindBIOSImages
 
 bool BIOS::HasAnyBIOSImages()
 {
-  const std::string dir = g_host_interface->GetBIOSDirectory();
-  return (FindBIOSImageInDirectory(ConsoleRegion::Auto, dir.c_str()).has_value());
+  return FindBIOSImageInDirectory(ConsoleRegion::Auto, EmuFolders::Bios.c_str()).has_value();
 }

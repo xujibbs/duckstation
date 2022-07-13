@@ -2485,11 +2485,11 @@ std::unique_ptr<MemoryCard> System::GetMemoryCardForSlot(u32 slot, MemoryCardTyp
           Host::TranslateString("System", "Per-game memory card cannot be used for slot %u as the running "
                                           "game has no code. Using shared card instead."),
           slot + 1u);
-        return MemoryCard::Open(g_host_interface->GetSharedMemoryCardPath(slot));
+        return MemoryCard::Open(g_settings.GetSharedMemoryCardPath(slot));
       }
       else
       {
-        return MemoryCard::Open(g_host_interface->GetGameMemoryCardPath(s_running_game_code.c_str(), slot));
+        return MemoryCard::Open(g_settings.GetGameMemoryCardPath(s_running_game_code.c_str(), slot));
       }
     }
 
@@ -2502,11 +2502,11 @@ std::unique_ptr<MemoryCard> System::GetMemoryCardForSlot(u32 slot, MemoryCardTyp
           Host::TranslateString("System", "Per-game memory card cannot be used for slot %u as the running "
                                           "game has no title. Using shared card instead."),
           slot + 1u);
-        return MemoryCard::Open(g_host_interface->GetSharedMemoryCardPath(slot));
+        return MemoryCard::Open(g_settings.GetSharedMemoryCardPath(slot));
       }
       else
       {
-        return MemoryCard::Open(g_host_interface->GetGameMemoryCardPath(
+        return MemoryCard::Open(g_settings.GetGameMemoryCardPath(
           MemoryCard::SanitizeGameTitleForFileName(s_running_game_title).c_str(), slot));
       }
     }
@@ -2522,21 +2522,18 @@ std::unique_ptr<MemoryCard> System::GetMemoryCardForSlot(u32 slot, MemoryCardTyp
           Host::TranslateString("System", "Per-game memory card cannot be used for slot %u as the running "
                                           "game has no path. Using shared card instead."),
           slot + 1u);
-        return MemoryCard::Open(g_host_interface->GetSharedMemoryCardPath(slot));
+        return MemoryCard::Open(g_settings.GetSharedMemoryCardPath(slot));
       }
       else
       {
         return MemoryCard::Open(
-          g_host_interface->GetGameMemoryCardPath(MemoryCard::SanitizeGameTitleForFileName(file_title).c_str(), slot));
+          g_settings.GetGameMemoryCardPath(MemoryCard::SanitizeGameTitleForFileName(file_title).c_str(), slot));
       }
     }
 
     case MemoryCardType::Shared:
     {
-      if (g_settings.memory_card_paths[slot].empty())
-        return MemoryCard::Open(g_host_interface->GetSharedMemoryCardPath(slot));
-      else
-        return MemoryCard::Open(g_settings.memory_card_paths[slot]);
+      return MemoryCard::Open(g_settings.GetSharedMemoryCardPath(slot));
     }
 
     case MemoryCardType::NonPersistent:
@@ -3018,8 +3015,8 @@ void System::CheckForSettingsChanges(const Settings& old_settings)
     if (g_settings.memory_card_types != old_settings.memory_card_types ||
         g_settings.memory_card_paths != old_settings.memory_card_paths ||
         (g_settings.memory_card_use_playlist_title != old_settings.memory_card_use_playlist_title &&
-         HasMediaSubImages()) ||
-        g_settings.memory_card_directory != old_settings.memory_card_directory)
+         HasMediaSubImages())/* FIXME ||
+        g_settings.memory_card_directory != old_settings.memory_card_directory*/)
     {
       UpdateMemoryCardTypes();
     }
@@ -3625,13 +3622,13 @@ bool System::StartDumpingAudio(const char* filename)
     const auto& code = System::GetRunningCode();
     if (code.empty())
     {
-      auto_filename = g_host_interface->GetUserDirectoryRelativePath("dump/audio/%s.wav",
-                                                                     GetTimestampStringForFileName().GetCharArray());
+      auto_filename = Path::Combine(
+        EmuFolders::Dumps, fmt::format("audio" FS_OSPATH_SEPARATOR_STR "{}.wav", GetTimestampStringForFileName()));
     }
     else
     {
-      auto_filename = g_host_interface->GetUserDirectoryRelativePath("dump/audio/%s_%s.wav", code.c_str(),
-                                                                     GetTimestampStringForFileName().GetCharArray());
+      auto_filename = Path::Combine(EmuFolders::Dumps, fmt::format("audio" FS_OSPATH_SEPARATOR_STR "{}_{}.wav", code,
+                                                                   GetTimestampStringForFileName()));
     }
 
     filename = auto_filename.c_str();
@@ -3671,14 +3668,13 @@ bool System::SaveScreenshot(const char* filename /* = nullptr */, bool full_reso
     const char* extension = "png";
     if (code.empty())
     {
-      auto_filename = g_host_interface->GetUserDirectoryRelativePath(
-        "screenshots" FS_OSPATH_SEPARATOR_STR "%s.%s", GetTimestampStringForFileName().GetCharArray(), extension);
+      auto_filename =
+        Path::Combine(EmuFolders::Screenshots, fmt::format("{}.{}", GetTimestampStringForFileName(), extension));
     }
     else
     {
-      auto_filename =
-        g_host_interface->GetUserDirectoryRelativePath("screenshots" FS_OSPATH_SEPARATOR_STR "%s_%s.%s", code.c_str(),
-                                                       GetTimestampStringForFileName().GetCharArray(), extension);
+      auto_filename = Path::Combine(EmuFolders::Screenshots,
+                                    fmt::format("{}_{}.{}", code, GetTimestampStringForFileName(), extension));
     }
 
     filename = auto_filename.c_str();
@@ -3711,20 +3707,17 @@ bool System::SaveScreenshot(const char* filename /* = nullptr */, bool full_reso
 std::string System::GetGameSaveStateFileName(const char* game_code, s32 slot)
 {
   if (slot < 0)
-    return g_host_interface->GetUserDirectoryRelativePath("savestates" FS_OSPATH_SEPARATOR_STR "%s_resume.sav",
-                                                          game_code);
+    return Path::Combine(EmuFolders::SaveStates, fmt::format("{}_resume.sav", game_code));
   else
-    return g_host_interface->GetUserDirectoryRelativePath("savestates" FS_OSPATH_SEPARATOR_STR "%s_%d.sav", game_code,
-                                                          slot);
+    return Path::Combine(EmuFolders::SaveStates, fmt::format("{}_{}.sav", game_code, slot));
 }
 
 std::string System::GetGlobalSaveStateFileName(s32 slot)
 {
   if (slot < 0)
-    return g_host_interface->GetUserDirectoryRelativePath("savestates" FS_OSPATH_SEPARATOR_STR "resume.sav");
+    return Path::Combine(EmuFolders::SaveStates, "resume.sav");
   else
-    return g_host_interface->GetUserDirectoryRelativePath("savestates" FS_OSPATH_SEPARATOR_STR "savestate_%d.sav",
-                                                          slot);
+    return Path::Combine(EmuFolders::SaveStates, fmt::format("savestate_{}.sav", slot));
 }
 
 void System::RenameCurrentSaveStateToBackup(const char* filename)
@@ -3875,8 +3868,7 @@ void System::DeleteSaveStates(const char* game_code, bool resume)
 std::string System::GetMostRecentResumeSaveStatePath()
 {
   std::vector<FILESYSTEM_FIND_DATA> files;
-  if (!FileSystem::FindFiles(g_host_interface->GetUserDirectoryRelativePath("savestates").c_str(), "*resume.sav",
-                             FILESYSTEM_FIND_FILES, &files) ||
+  if (!FileSystem::FindFiles(EmuFolders::SaveStates.c_str(), "*resume.sav", FILESYSTEM_FIND_FILES, &files) ||
       files.empty())
   {
     return {};
@@ -3894,11 +3886,13 @@ std::string System::GetMostRecentResumeSaveStatePath()
 
 std::string System::GetCheatFileName()
 {
-  const std::string& title = System::GetRunningTitle();
-  if (title.empty())
-    return {};
+  std::string ret;
 
-  return g_host_interface->GetUserDirectoryRelativePath("cheats/%s.cht", title.c_str());
+  const std::string& title = System::GetRunningTitle();
+  if (!title.empty())
+    ret = Path::Combine(EmuFolders::Cheats, fmt::format("{}.cht", title.c_str()));
+
+  return ret;
 }
 
 bool System::LoadCheatList(const char* filename)
