@@ -53,9 +53,8 @@ public Q_SLOTS:
   void checkForUpdates(bool display_message);
 
 private Q_SLOTS:
-  void reportError(const QString& message);
-  void reportMessage(const QString& message);
-  bool confirmMessage(const QString& message);
+  void reportError(const QString& title, const QString& message);
+  bool confirmMessage(const QString& title, const QString& message);
   QtDisplayWidget* createDisplay(QThread* worker_thread, bool fullscreen, bool render_to_main);
   QtDisplayWidget* updateDisplay(QThread* worker_thread, bool fullscreen, bool render_to_main);
   void displaySizeRequested(qint32 width, qint32 height);

@@ -5,7 +5,7 @@
 #include "common/log.h"
 #include "common/string.h"
 #include "common/string_util.h"
-#include "core/host_interface.h"
+#include "core/host.h"
 #include "core/settings.h"
 #include <array>
 #include <utility>
@@ -1266,8 +1266,8 @@ void Entry::ApplySettings(bool display_osd_messages) const
   {
     if (display_osd_messages && g_settings.cpu_execution_mode != CPUExecutionMode::Interpreter)
     {
-      g_host_interface->AddOSDMessage(
-        g_host_interface->TranslateStdString("OSDMessage", "CPU interpreter forced by game settings."), osd_duration);
+      Host::AddOSDMessage(Host::TranslateStdString("OSDMessage", "CPU interpreter forced by game settings."),
+                          osd_duration);
     }
 
     g_settings.cpu_execution_mode = CPUExecutionMode::Interpreter;
@@ -1277,8 +1277,8 @@ void Entry::ApplySettings(bool display_osd_messages) const
   {
     if (display_osd_messages && g_settings.gpu_renderer != GPURenderer::Software)
     {
-      g_host_interface->AddOSDMessage(
-        g_host_interface->TranslateStdString("OSDMessage", "Software renderer forced by game settings."), osd_duration);
+      Host::AddOSDMessage(Host::TranslateStdString("OSDMessage", "Software renderer forced by game settings."),
+                          osd_duration);
     }
 
     g_settings.gpu_renderer = GPURenderer::Software;
@@ -1288,8 +1288,7 @@ void Entry::ApplySettings(bool display_osd_messages) const
   {
     if (display_osd_messages && g_settings.gpu_disable_interlacing)
     {
-      g_host_interface->AddOSDMessage(
-        g_host_interface->TranslateStdString("OSDMessage", "Interlacing forced by game settings."), osd_duration);
+      Host::AddOSDMessage(Host::TranslateStdString("OSDMessage", "Interlacing forced by game settings."), osd_duration);
     }
 
     g_settings.gpu_disable_interlacing = false;
@@ -1299,8 +1298,8 @@ void Entry::ApplySettings(bool display_osd_messages) const
   {
     if (display_osd_messages && g_settings.gpu_true_color)
     {
-      g_host_interface->AddOSDMessage(
-        g_host_interface->TranslateStdString("OSDMessage", "True color disabled by game settings."), osd_duration);
+      Host::AddOSDMessage(Host::TranslateStdString("OSDMessage", "True color disabled by game settings."),
+                          osd_duration);
     }
 
     g_settings.gpu_true_color = false;
@@ -1310,8 +1309,7 @@ void Entry::ApplySettings(bool display_osd_messages) const
   {
     if (display_osd_messages && g_settings.gpu_resolution_scale > 1)
     {
-      g_host_interface->AddOSDMessage(
-        g_host_interface->TranslateStdString("OSDMessage", "Upscaling disabled by game settings."), osd_duration);
+      Host::AddOSDMessage(Host::TranslateStdString("OSDMessage", "Upscaling disabled by game settings."), osd_duration);
     }
 
     g_settings.gpu_resolution_scale = 1;
@@ -1321,9 +1319,8 @@ void Entry::ApplySettings(bool display_osd_messages) const
   {
     if (display_osd_messages && g_settings.gpu_scaled_dithering)
     {
-      g_host_interface->AddOSDMessage(
-        g_host_interface->TranslateStdString("OSDMessage", "Scaled dithering disabled by game settings."),
-        osd_duration);
+      Host::AddOSDMessage(Host::TranslateStdString("OSDMessage", "Scaled dithering disabled by game settings."),
+                          osd_duration);
     }
 
     g_settings.gpu_scaled_dithering = false;
@@ -1334,8 +1331,8 @@ void Entry::ApplySettings(bool display_osd_messages) const
     if (display_osd_messages &&
         (g_settings.display_aspect_ratio == DisplayAspectRatio::R16_9 || g_settings.gpu_widescreen_hack))
     {
-      g_host_interface->AddOSDMessage(
-        g_host_interface->TranslateStdString("OSDMessage", "Widescreen disabled by game settings."), osd_duration);
+      Host::AddOSDMessage(Host::TranslateStdString("OSDMessage", "Widescreen disabled by game settings."),
+                          osd_duration);
     }
 
     g_settings.display_aspect_ratio = DisplayAspectRatio::R4_3;
@@ -1346,9 +1343,8 @@ void Entry::ApplySettings(bool display_osd_messages) const
   {
     if (display_osd_messages && g_settings.gpu_force_ntsc_timings)
     {
-      g_host_interface->AddOSDMessage(
-        g_host_interface->TranslateStdString("OSDMessage", "Forcing NTSC Timings disallowed by game settings."),
-        osd_duration);
+      Host::AddOSDMessage(Host::TranslateStdString("OSDMessage", "Forcing NTSC Timings disallowed by game settings."),
+                          osd_duration);
     }
 
     g_settings.gpu_force_ntsc_timings = false;
@@ -1358,9 +1354,8 @@ void Entry::ApplySettings(bool display_osd_messages) const
   {
     if (display_osd_messages && g_settings.gpu_pgxp_enable)
     {
-      g_host_interface->AddOSDMessage(
-        g_host_interface->TranslateStdString("OSDMessage", "PGXP geometry correction disabled by game settings."),
-        osd_duration);
+      Host::AddOSDMessage(Host::TranslateStdString("OSDMessage", "PGXP geometry correction disabled by game settings."),
+                          osd_duration);
     }
 
     g_settings.gpu_pgxp_enable = false;
@@ -1370,8 +1365,8 @@ void Entry::ApplySettings(bool display_osd_messages) const
   {
     if (display_osd_messages && g_settings.gpu_pgxp_enable && g_settings.gpu_pgxp_culling)
     {
-      g_host_interface->AddOSDMessage(
-        g_host_interface->TranslateStdString("OSDMessage", "PGXP culling disabled by game settings."), osd_duration);
+      Host::AddOSDMessage(Host::TranslateStdString("OSDMessage", "PGXP culling disabled by game settings."),
+                          osd_duration);
     }
 
     g_settings.gpu_pgxp_culling = false;
@@ -1381,9 +1376,8 @@ void Entry::ApplySettings(bool display_osd_messages) const
   {
     if (display_osd_messages && g_settings.gpu_pgxp_enable && g_settings.gpu_pgxp_texture_correction)
     {
-      g_host_interface->AddOSDMessage(
-        g_host_interface->TranslateStdString("OSDMessage", "PGXP texture correction disabled by game settings."),
-        osd_duration);
+      Host::AddOSDMessage(Host::TranslateStdString("OSDMessage", "PGXP texture correction disabled by game settings."),
+                          osd_duration);
     }
 
     g_settings.gpu_pgxp_texture_correction = false;
@@ -1393,8 +1387,8 @@ void Entry::ApplySettings(bool display_osd_messages) const
   {
     if (display_osd_messages && g_settings.gpu_pgxp_enable && !g_settings.gpu_pgxp_vertex_cache)
     {
-      g_host_interface->AddOSDMessage(
-        g_host_interface->TranslateStdString("OSDMessage", "PGXP vertex cache forced by game settings."), osd_duration);
+      Host::AddOSDMessage(Host::TranslateStdString("OSDMessage", "PGXP vertex cache forced by game settings."),
+                          osd_duration);
     }
 
     g_settings.gpu_pgxp_vertex_cache = true;
@@ -1404,8 +1398,8 @@ void Entry::ApplySettings(bool display_osd_messages) const
   {
     if (display_osd_messages && g_settings.gpu_pgxp_enable && !g_settings.gpu_pgxp_cpu)
     {
-      g_host_interface->AddOSDMessage(
-        g_host_interface->TranslateStdString("OSDMessage", "PGXP CPU mode forced by game settings."), osd_duration);
+      Host::AddOSDMessage(Host::TranslateStdString("OSDMessage", "PGXP CPU mode forced by game settings."),
+                          osd_duration);
     }
 
     g_settings.gpu_pgxp_cpu = true;
@@ -1415,9 +1409,8 @@ void Entry::ApplySettings(bool display_osd_messages) const
   {
     if (display_osd_messages && g_settings.gpu_pgxp_enable && g_settings.gpu_pgxp_depth_buffer)
     {
-      g_host_interface->AddOSDMessage(
-        g_host_interface->TranslateStdString("OSDMessage", "PGXP Depth Buffer disabled by game settings."),
-        osd_duration);
+      Host::AddOSDMessage(Host::TranslateStdString("OSDMessage", "PGXP Depth Buffer disabled by game settings."),
+                          osd_duration);
     }
 
     g_settings.gpu_pgxp_depth_buffer = false;

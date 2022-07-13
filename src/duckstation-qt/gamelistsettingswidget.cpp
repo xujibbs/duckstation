@@ -52,7 +52,7 @@ GameListSettingsWidget::~GameListSettingsWidget() = default;
 
 bool GameListSettingsWidget::addExcludedPath(const std::string& path)
 {
-  if (!QtHostInterface::GetInstance()->AddValueToStringList("GameList", "ExcludedPaths", path.c_str()))
+  if (!Host::AddValueToBaseStringListSetting("GameList", "ExcludedPaths", path.c_str()))
     return false;
 
   m_ui.excludedPaths->addItem(QString::fromStdString(path));
@@ -64,7 +64,7 @@ void GameListSettingsWidget::refreshExclusionList()
 {
   m_ui.excludedPaths->clear();
 
-  const std::vector<std::string> paths(QtHostInterface::GetInstance()->GetSettingStringList("GameList", "ExcludedPaths"));
+  const std::vector<std::string> paths(Host::GetBaseStringListSetting("GameList", "ExcludedPaths"));
   for (const std::string& path : paths)
     m_ui.excludedPaths->addItem(QString::fromStdString(path));
 }
@@ -158,7 +158,7 @@ void GameListSettingsWidget::onRemoveExcludedPathButtonClicked()
   if (!item)
     return;
 
-  QtHostInterface::GetInstance()->RemoveValueFromStringList("GameList", "ExcludedPaths", item->text().toUtf8().constData());
+  Host::RemoveValueFromBaseStringListSetting("GameList", "ExcludedPaths", item->text().toUtf8().constData());
   delete item;
 
   QtHostInterface::GetInstance()->refreshGameList();

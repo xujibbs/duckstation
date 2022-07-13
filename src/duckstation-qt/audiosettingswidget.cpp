@@ -1,11 +1,11 @@
 #include "audiosettingswidget.h"
+#include "core/spu.h"
 #include "settingsdialog.h"
 #include "settingwidgetbinder.h"
 #include "util/audio_stream.h"
 #include <cmath>
 
-AudioSettingsWidget::AudioSettingsWidget(SettingsDialog* dialog, QWidget* parent)
-  : QWidget(parent), m_dialog(dialog)
+AudioSettingsWidget::AudioSettingsWidget(SettingsDialog* dialog, QWidget* parent) : QWidget(parent), m_dialog(dialog)
 {
   SettingsInterface* sif = dialog->getSettingsInterface();
 
@@ -17,11 +17,11 @@ AudioSettingsWidget::AudioSettingsWidget(SettingsDialog* dialog, QWidget* parent
       qApp->translate("AudioBackend", Settings::GetAudioBackendDisplayName(static_cast<AudioBackend>(i))));
   }
 
-  SettingWidgetBinder::BindWidgetToEnumSetting(sif, m_ui.audioBackend, "Audio", "Backend",
-                                               &Settings::ParseAudioBackend, &Settings::GetAudioBackendName,
-                                               Settings::DEFAULT_AUDIO_BACKEND);
+  SettingWidgetBinder::BindWidgetToEnumSetting(sif, m_ui.audioBackend, "Audio", "Backend", &Settings::ParseAudioBackend,
+                                               &Settings::GetAudioBackendName, Settings::DEFAULT_AUDIO_BACKEND);
   SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.syncToOutput, "Audio", "Sync", true);
-  SettingWidgetBinder::BindWidgetToIntSetting(sif, m_ui.bufferSize, "Audio", "BufferSize", HostInterface::DEFAULT_AUDIO_BUFFER_SIZE);
+  SettingWidgetBinder::BindWidgetToIntSetting(sif, m_ui.bufferSize, "Audio", "BufferSize",
+                                              Settings::DEFAULT_AUDIO_BUFFER_SIZE);
   SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.startDumpingOnBoot, "Audio", "DumpOnBoot", false);
   SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.muteCDAudio, "CDROM", "MuteCDAudio", false);
   SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.resampling, "Audio", "Resampling", true);
@@ -84,7 +84,7 @@ void AudioSettingsWidget::updateBufferingLabel()
     return;
   }
 
-  const float max_latency = AudioStream::GetMaxLatency(HostInterface::AUDIO_SAMPLE_RATE, actual_buffer_size);
+  const float max_latency = AudioStream::GetMaxLatency(SPU::SAMPLE_RATE, actual_buffer_size);
   m_ui.bufferingLabel->setText(tr("Maximum Latency: %n frames (%1ms)", "", actual_buffer_size)
                                  .arg(static_cast<double>(max_latency) * 1000.0, 0, 'f', 2));
 }

@@ -3,6 +3,7 @@
 #include "autoupdaterdialog.h"
 #include "cheatmanagerdialog.h"
 #include "common/assert.h"
+#include "core/host.h"
 #include "core/host_display.h"
 #include "core/settings.h"
 #include "core/system.h"
@@ -113,20 +114,15 @@ void MainWindow::initializeAndShow()
 #endif
 }
 
-void MainWindow::reportError(const QString& message)
+void MainWindow::reportError(const QString& title, const QString& message)
 {
-  QMessageBox::critical(this, tr("DuckStation"), message, QMessageBox::Ok);
+  QMessageBox::critical(this, title, message, QMessageBox::Ok);
   focusDisplayWidget();
 }
 
-void MainWindow::reportMessage(const QString& message)
+bool MainWindow::confirmMessage(const QString& title, const QString& message)
 {
-  m_ui.statusBar->showMessage(message, 2000);
-}
-
-bool MainWindow::confirmMessage(const QString& message)
-{
-  const int result = QMessageBox::question(this, tr("DuckStation"), message);
+  const int result = QMessageBox::question(this, title, message);
   focusDisplayWidget();
 
   return (result == QMessageBox::Yes);
@@ -134,7 +130,7 @@ bool MainWindow::confirmMessage(const QString& message)
 
 bool MainWindow::shouldHideCursorInFullscreen() const
 {
-  return g_host_interface->GetBoolSettingValue("Main", "HideCursorInFullscreen", true);
+  return Host::GetBoolSettingValue("Main", "HideCursorInFullscreen", true);
 }
 
 QtDisplayWidget* MainWindow::createDisplay(QThread* worker_thread, bool fullscreen, bool render_to_main)
@@ -145,11 +141,11 @@ QtDisplayWidget* MainWindow::createDisplay(QThread* worker_thread, bool fullscre
   m_host_display = m_host_interface->createHostDisplay();
   if (!m_host_display)
   {
-    reportError(tr("Failed to create host display."));
+    reportError(tr("Error"), tr("Failed to create host display."));
     return nullptr;
   }
 
-  const std::string fullscreen_mode = m_host_interface->GetStringSettingValue("GPU", "FullscreenMode", "");
+  const std::string fullscreen_mode = Host::GetStringSettingValue("GPU", "FullscreenMode", "");
   const bool is_exclusive_fullscreen = (fullscreen && !fullscreen_mode.empty() && m_host_display->SupportsFullscreen());
 
   QWidget* container;
@@ -197,7 +193,7 @@ QtDisplayWidget* MainWindow::createDisplay(QThread* worker_thread, bool fullscre
   std::optional<WindowInfo> wi = m_display_widget->getWindowInfo();
   if (!wi.has_value())
   {
-    reportError(QStringLiteral("Failed to get window info from widget"));
+    reportError(tr("Error"), QStringLiteral("Failed to get window info from widget"));
     destroyDisplayWidget();
     m_host_display = nullptr;
     return nullptr;
@@ -206,7 +202,7 @@ QtDisplayWidget* MainWindow::createDisplay(QThread* worker_thread, bool fullscre
   if (!m_host_display->CreateRenderDevice(wi.value(), g_settings.gpu_adapter, g_settings.gpu_use_debug_device,
                                           g_settings.gpu_threaded_presentation))
   {
-    reportError(tr("Failed to create host display device context."));
+    reportError(tr("Error"), QStringLiteral("Failed to create host display device context."));
     destroyDisplayWidget();
     m_host_display = nullptr;
     return nullptr;
@@ -223,7 +219,7 @@ QtDisplayWidget* MainWindow::updateDisplay(QThread* worker_thread, bool fullscre
 {
   const bool is_fullscreen = m_display_widget->isFullScreen();
   const bool is_rendering_to_main = (!is_fullscreen && m_display_widget->parent());
-  const std::string fullscreen_mode = m_host_interface->GetStringSettingValue("GPU", "FullscreenMode", "");
+  const std::string fullscreen_mode = Host::GetStringSettingValue("GPU", "FullscreenMode", "");
   const bool is_exclusive_fullscreen = (fullscreen && !fullscreen_mode.empty() && m_host_display->SupportsFullscreen());
   if (fullscreen == is_fullscreen && is_rendering_to_main == render_to_main)
     return m_display_widget;
@@ -301,7 +297,7 @@ QtDisplayWidget* MainWindow::updateDisplay(QThread* worker_thread, bool fullscre
   std::optional<WindowInfo> wi = m_display_widget->getWindowInfo();
   if (!wi.has_value())
   {
-    reportError(QStringLiteral("Failed to get new window info from widget"));
+    reportError(tr("Error"), QStringLiteral("Failed to get new window info from widget"));
     destroyDisplayWidget();
     return nullptr;
   }
@@ -330,13 +326,13 @@ void MainWindow::setDisplayFullscreen(const std::string& fullscreen_mode)
     result = m_host_display->SetFullscreen(true, width, height, refresh_rate);
     if (result)
     {
-      m_host_interface->AddOSDMessage(
-        m_host_interface->TranslateStdString("OSDMessage", "Acquired exclusive fullscreen."), 10.0f);
+      Host::AddOSDMessage(
+        Host::TranslateStdString("OSDMessage", "Acquired exclusive fullscreen."), 10.0f);
     }
     else
     {
-      m_host_interface->AddOSDMessage(
-        m_host_interface->TranslateStdString("OSDMessage", "Failed to acquire exclusive fullscreen."), 10.0f);
+      Host::AddOSDMessage(
+        Host::TranslateStdString("OSDMessage", "Failed to acquire exclusive fullscreen."), 10.0f);
     }
   }
 }
@@ -431,7 +427,7 @@ void MainWindow::updateMouseMode(bool paused)
 void MainWindow::onEmulationStarting()
 {
   m_emulation_running = true;
-  updateEmulationActions(true, false, m_host_interface->IsCheevosChallengeModeActive());
+  updateEmulationActions(true, false, Cheevos::IsChallengeModeActive());
 
   // ensure it gets updated, since the boot can take a while
   QGuiApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
@@ -439,13 +435,13 @@ void MainWindow::onEmulationStarting()
 
 void MainWindow::onEmulationStarted()
 {
-  updateEmulationActions(false, true, m_host_interface->IsCheevosChallengeModeActive());
+  updateEmulationActions(false, true, Cheevos::IsChallengeModeActive());
 }
 
 void MainWindow::onEmulationStopped()
 {
   m_emulation_running = false;
-  updateEmulationActions(false, false, m_host_interface->IsCheevosChallengeModeActive());
+  updateEmulationActions(false, false, Cheevos::IsChallengeModeActive());
   switchToGameListView();
 
   if (m_cheat_manager_dialog)
@@ -672,13 +668,13 @@ void MainWindow::onViewToolbarActionToggled(bool checked)
 
 void MainWindow::onViewLockToolbarActionToggled(bool checked)
 {
-  m_host_interface->SetBoolSettingValue("UI", "LockToolbar", checked);
+  Host::SetBaseBoolSettingValue("UI", "LockToolbar", checked);
   m_ui.toolBar->setMovable(!checked);
 }
 
 void MainWindow::onViewStatusBarActionToggled(bool checked)
 {
-  m_host_interface->SetBoolSettingValue("UI", "ShowStatusBar", checked);
+  Host::SetBaseBoolSettingValue("UI", "ShowStatusBar", checked);
   m_ui.statusBar->setVisible(checked);
 }
 
@@ -808,7 +804,7 @@ void MainWindow::onGameListContextMenuRequested(const QPoint& point, const GameL
         m_host_interface->bootSystem(std::move(boot_params));
       });
 
-      if (m_ui.menuDebug->menuAction()->isVisible() && !m_host_interface->IsCheevosChallengeModeActive())
+      if (m_ui.menuDebug->menuAction()->isVisible() && !Cheevos::IsChallengeModeActive())
       {
         connect(menu.addAction(tr("Boot and Debug")), &QAction::triggered, [this, entry]() {
           m_open_debugger_on_start = true;
@@ -881,11 +877,11 @@ void MainWindow::setupAdditionalUi()
 {
   setWindowTitle(getWindowTitle(QString()));
 
-  const bool status_bar_visible = m_host_interface->GetBoolSettingValue("UI", "ShowStatusBar", true);
+  const bool status_bar_visible = Host::GetBaseBoolSettingValue("UI", "ShowStatusBar", true);
   m_ui.actionViewStatusBar->setChecked(status_bar_visible);
   m_ui.statusBar->setVisible(status_bar_visible);
 
-  const bool toolbars_locked = m_host_interface->GetBoolSettingValue("UI", "LockToolbar", false);
+  const bool toolbars_locked = Host::GetBaseBoolSettingValue("UI", "LockToolbar", false);
   m_ui.actionViewLockToolbar->setChecked(toolbars_locked);
   m_ui.toolBar->setMovable(!toolbars_locked);
   m_ui.toolBar->setContextMenuPolicy(Qt::PreventContextMenu);
@@ -931,7 +927,7 @@ void MainWindow::setupAdditionalUi()
       qApp->translate("CPUExecutionMode", Settings::GetCPUExecutionModeDisplayName(mode)));
     action->setCheckable(true);
     connect(action, &QAction::triggered, [this, mode]() {
-      m_host_interface->SetStringSettingValue("CPU", "ExecutionMode", Settings::GetCPUExecutionModeName(mode));
+      Host::SetBaseBoolSettingValue("CPU", "ExecutionMode", Settings::GetCPUExecutionModeName(mode));
       m_host_interface->applySettings();
       updateDebugMenuCPUExecutionMode();
     });
@@ -945,7 +941,7 @@ void MainWindow::setupAdditionalUi()
       m_ui.menuRenderer->addAction(qApp->translate("GPURenderer", Settings::GetRendererDisplayName(renderer)));
     action->setCheckable(true);
     connect(action, &QAction::triggered, [this, renderer]() {
-      m_host_interface->SetStringSettingValue("GPU", "Renderer", Settings::GetRendererName(renderer));
+      Host::SetBaseStringSettingValue("GPU", "Renderer", Settings::GetRendererName(renderer));
       m_host_interface->applySettings();
       updateDebugMenuGPURenderer();
     });
@@ -959,7 +955,7 @@ void MainWindow::setupAdditionalUi()
       qApp->translate("DisplayCropMode", Settings::GetDisplayCropModeDisplayName(crop_mode)));
     action->setCheckable(true);
     connect(action, &QAction::triggered, [this, crop_mode]() {
-      m_host_interface->SetStringSettingValue("Display", "CropMode", Settings::GetDisplayCropModeName(crop_mode));
+      Host::SetBaseStringSettingValue("Display", "CropMode", Settings::GetDisplayCropModeName(crop_mode));
       m_host_interface->applySettings();
       updateDebugMenuCropMode();
     });
@@ -967,7 +963,7 @@ void MainWindow::setupAdditionalUi()
   updateDebugMenuCropMode();
 
   const QString current_language(
-    QString::fromStdString(m_host_interface->GetStringSettingValue("Main", "Language", "")));
+    QString::fromStdString(Host::GetBaseStringSettingValue("Main", "Language", "")));
   QActionGroup* language_group = new QActionGroup(m_ui.menuSettingsLanguage);
   for (const std::pair<QString, QString>& it : m_host_interface->getAvailableLanguageList())
   {
@@ -989,7 +985,7 @@ void MainWindow::setupAdditionalUi()
     action->setData(it.second);
     connect(action, &QAction::triggered, [this, action]() {
       const QString new_language = action->data().toString();
-      m_host_interface->SetStringSettingValue("Main", "Language", new_language.toUtf8().constData());
+      Host::SetBaseStringSettingValue("Main", "Language", new_language.toUtf8().constData());
       m_host_interface->reinstallTranslator();
       recreate();
     });
@@ -1152,7 +1148,7 @@ void MainWindow::startGameOrChangeDiscs(const std::string& path)
   // if we're not running, boot the system, otherwise swap discs
   if (!m_emulation_running)
   {
-    if (m_host_interface->CanResumeSystemFromFile(path.c_str()))
+    if (System::CanResumeSystemFromFile(path.c_str()))
       m_host_interface->resumeSystemFromState(QString::fromStdString(path), true);
     else
       m_host_interface->bootSystem(std::make_shared<SystemBootParameters>(path));
@@ -1167,7 +1163,7 @@ void MainWindow::startGameOrChangeDiscs(const std::string& path)
 
 void MainWindow::connectSignals()
 {
-  updateEmulationActions(false, false, m_host_interface->IsCheevosChallengeModeActive());
+  updateEmulationActions(false, false, Cheevos::IsChallengeModeActive());
   onEmulationPaused(false);
 
   connect(qApp, &QGuiApplication::applicationStateChanged, this, &MainWindow::onApplicationStateChanged);
@@ -1267,7 +1263,6 @@ void MainWindow::connectSignals()
   connect(m_host_interface, &QtHostInterface::settingsResetToDefault, this, &MainWindow::onSettingsResetToDefault);
   connect(m_host_interface, &QtHostInterface::errorReported, this, &MainWindow::reportError,
           Qt::BlockingQueuedConnection);
-  connect(m_host_interface, &QtHostInterface::messageReported, this, &MainWindow::reportMessage);
   connect(m_host_interface, &QtHostInterface::messageConfirmed, this, &MainWindow::confirmMessage,
           Qt::BlockingQueuedConnection);
   connect(m_host_interface, &QtHostInterface::createDisplayRequested, this, &MainWindow::createDisplay,
@@ -1362,7 +1357,7 @@ void MainWindow::addThemeToMenu(const QString& name, const QString& key)
 
 void MainWindow::setTheme(const QString& theme)
 {
-  m_host_interface->SetStringSettingValue("UI", "Theme", theme.toUtf8().constData());
+  Host::SetBaseStringSettingValue("UI", "Theme", theme.toUtf8().constData());
   setStyleFromSettings();
   setIconThemeFromSettings();
   updateMenuSelectedTheme();
@@ -1371,7 +1366,7 @@ void MainWindow::setTheme(const QString& theme)
 
 void MainWindow::setStyleFromSettings()
 {
-  const std::string theme(m_host_interface->GetStringSettingValue("UI", "Theme", DEFAULT_THEME_NAME));
+  const std::string theme(Host::GetBaseStringSettingValue("UI", "Theme", DEFAULT_THEME_NAME));
 
   if (theme == "qdarkstyle")
   {
@@ -1469,7 +1464,7 @@ void MainWindow::setStyleFromSettings()
 
 void MainWindow::setIconThemeFromSettings()
 {
-  const std::string theme(m_host_interface->GetStringSettingValue("UI", "Theme", DEFAULT_THEME_NAME));
+  const std::string theme(Host::GetBaseStringSettingValue("UI", "Theme", DEFAULT_THEME_NAME));
   QString icon_theme;
 
   if (theme == "qdarkstyle" || theme == "darkfusion" || theme == "darkfusionblue")
@@ -1508,31 +1503,31 @@ void MainWindow::saveStateToConfig()
   {
     const QByteArray geometry = saveGeometry();
     const QByteArray geometry_b64 = geometry.toBase64();
-    const std::string old_geometry_b64 = m_host_interface->GetStringSettingValue("UI", "MainWindowGeometry");
+    const std::string old_geometry_b64 = Host::GetBaseStringSettingValue("UI", "MainWindowGeometry");
     if (old_geometry_b64 != geometry_b64.constData())
-      m_host_interface->SetStringSettingValue("UI", "MainWindowGeometry", geometry_b64.constData());
+      Host::SetBaseStringSettingValue("UI", "MainWindowGeometry", geometry_b64.constData());
   }
 
   {
     const QByteArray state = saveState();
     const QByteArray state_b64 = state.toBase64();
-    const std::string old_state_b64 = m_host_interface->GetStringSettingValue("UI", "MainWindowState");
+    const std::string old_state_b64 = Host::GetBaseStringSettingValue("UI", "MainWindowState");
     if (old_state_b64 != state_b64.constData())
-      m_host_interface->SetStringSettingValue("UI", "MainWindowState", state_b64.constData());
+      Host::SetBaseStringSettingValue("UI", "MainWindowState", state_b64.constData());
   }
 }
 
 void MainWindow::restoreStateFromConfig()
 {
   {
-    const std::string geometry_b64 = m_host_interface->GetStringSettingValue("UI", "MainWindowGeometry");
+    const std::string geometry_b64 = Host::GetBaseStringSettingValue("UI", "MainWindowGeometry");
     const QByteArray geometry = QByteArray::fromBase64(QByteArray::fromStdString(geometry_b64));
     if (!geometry.isEmpty())
       restoreGeometry(geometry);
   }
 
   {
-    const std::string state_b64 = m_host_interface->GetStringSettingValue("UI", "MainWindowState");
+    const std::string state_b64 = Host::GetBaseStringSettingValue("UI", "MainWindowState");
     const QByteArray state = QByteArray::fromBase64(QByteArray::fromStdString(state_b64));
     if (!state.isEmpty())
       restoreState(state);
@@ -1552,14 +1547,14 @@ void MainWindow::saveDisplayWindowGeometryToConfig()
 {
   const QByteArray geometry = getDisplayContainer()->saveGeometry();
   const QByteArray geometry_b64 = geometry.toBase64();
-  const std::string old_geometry_b64 = m_host_interface->GetStringSettingValue("UI", "DisplayWindowGeometry");
+  const std::string old_geometry_b64 = Host::GetBaseStringSettingValue("UI", "DisplayWindowGeometry");
   if (old_geometry_b64 != geometry_b64.constData())
-    m_host_interface->SetStringSettingValue("UI", "DisplayWindowGeometry", geometry_b64.constData());
+    Host::SetBaseStringSettingValue("UI", "DisplayWindowGeometry", geometry_b64.constData());
 }
 
 void MainWindow::restoreDisplayWindowGeometryFromConfig()
 {
-  const std::string geometry_b64 = m_host_interface->GetStringSettingValue("UI", "DisplayWindowGeometry");
+  const std::string geometry_b64 = Host::GetBaseStringSettingValue("UI", "DisplayWindowGeometry");
   const QByteArray geometry = QByteArray::fromBase64(QByteArray::fromStdString(geometry_b64));
   QWidget* container = getDisplayContainer();
   if (!geometry.isEmpty())
@@ -1614,7 +1609,7 @@ void MainWindow::doControllerSettings(
 void MainWindow::updateDebugMenuCPUExecutionMode()
 {
   std::optional<CPUExecutionMode> current_mode =
-    Settings::ParseCPUExecutionMode(m_host_interface->GetStringSettingValue("CPU", "ExecutionMode").c_str());
+    Settings::ParseCPUExecutionMode(Host::GetBaseStringSettingValue("CPU", "ExecutionMode").c_str());
   if (!current_mode.has_value())
     return;
 
@@ -1632,7 +1627,7 @@ void MainWindow::updateDebugMenuGPURenderer()
 {
   // update the menu with the new selected renderer
   std::optional<GPURenderer> current_renderer =
-    Settings::ParseRendererName(m_host_interface->GetStringSettingValue("GPU", "Renderer").c_str());
+    Settings::ParseRendererName(Host::GetBaseStringSettingValue("GPU", "Renderer").c_str());
   if (!current_renderer.has_value())
     return;
 
@@ -1649,7 +1644,7 @@ void MainWindow::updateDebugMenuGPURenderer()
 void MainWindow::updateDebugMenuCropMode()
 {
   std::optional<DisplayCropMode> current_crop_mode =
-    Settings::ParseDisplayCropMode(m_host_interface->GetStringSettingValue("Display", "CropMode").c_str());
+    Settings::ParseDisplayCropMode(Host::GetBaseStringSettingValue("Display", "CropMode").c_str());
   if (!current_crop_mode.has_value())
     return;
 
@@ -1665,7 +1660,7 @@ void MainWindow::updateDebugMenuCropMode()
 
 void MainWindow::updateMenuSelectedTheme()
 {
-  QString theme = QString::fromStdString(m_host_interface->GetStringSettingValue("UI", "Theme", DEFAULT_THEME_NAME));
+  QString theme = QString::fromStdString(Host::GetBaseStringSettingValue("UI", "Theme", DEFAULT_THEME_NAME));
 
   for (QObject* obj : m_ui.menuSettingsTheme->children())
   {
@@ -1751,7 +1746,7 @@ void MainWindow::dropEvent(QDropEvent* event)
 
 void MainWindow::startupUpdateCheck()
 {
-  if (!m_host_interface->GetBoolSettingValue("AutoUpdater", "CheckAtStartup", true))
+  if (!Host::GetBaseBoolSettingValue("AutoUpdater", "CheckAtStartup", true))
     return;
 
   checkForUpdates(false);
@@ -1759,14 +1754,14 @@ void MainWindow::startupUpdateCheck()
 
 void MainWindow::updateDebugMenuVisibility()
 {
-  const bool visible = m_host_interface->GetBoolSettingValue("Main", "ShowDebugMenu", false);
+  const bool visible = Host::GetBaseBoolSettingValue("Main", "ShowDebugMenu", false);
   m_ui.menuDebug->menuAction()->setVisible(visible);
 }
 
 void MainWindow::onCheckForUpdatesActionTriggered()
 {
   // Wipe out the last version, that way it displays the update if we've previously skipped it.
-  m_host_interface->RemoveSettingValue("AutoUpdater", "LastVersion");
+  Host::DeleteBaseSettingValue("AutoUpdater", "LastVersion");
   checkForUpdates(true);
 }
 
@@ -1848,7 +1843,7 @@ void MainWindow::onToolsCheatManagerTriggered()
 {
   if (!m_cheat_manager_dialog)
   {
-    if (m_host_interface->GetBoolSettingValue("UI", "DisplayCheatWarning", true))
+    if (Host::GetBaseBoolSettingValue("UI", "DisplayCheatWarning", true))
     {
       QCheckBox* cb = new QCheckBox(tr("Do not show again"));
       QMessageBox mb(this);
@@ -1866,8 +1861,7 @@ void MainWindow::onToolsCheatManagerTriggered()
       mb.setCheckBox(cb);
 
       connect(cb, &QCheckBox::stateChanged, [](int state) {
-        QtHostInterface::GetInstance()->SetBoolSettingValue("UI", "DisplayCheatWarning",
-                                                            (state != Qt::CheckState::Checked));
+        Host::SetBaseBoolSettingValue("UI", "DisplayCheatWarning", (state != Qt::CheckState::Checked));
       });
 
       if (mb.exec() == QMessageBox::No)

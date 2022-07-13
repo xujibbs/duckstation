@@ -41,8 +41,8 @@ void AnalogController::Reset()
   {
     if (g_settings.controller_disable_analog_mode_forcing)
     {
-      g_host_interface->AddOSDMessage(
-        g_host_interface->TranslateStdString(
+      Host::AddOSDMessage(
+        Host::TranslateStdString(
           "OSDMessage", "Analog mode forcing is disabled by game settings. Controller will start in digital mode."),
         10.0f);
     }
@@ -89,11 +89,11 @@ bool AnalogController::DoState(StateWrapper& sw, bool apply_input_state)
 
     if (old_analog_mode != m_analog_mode)
     {
-      g_host_interface->AddFormattedOSDMessage(
+      Host::AddFormattedOSDMessage(
         5.0f,
         m_analog_mode ?
-          g_host_interface->TranslateString("AnalogController", "Controller %u switched to analog mode.") :
-          g_host_interface->TranslateString("AnalogController", "Controller %u switched to digital mode."),
+        Host::TranslateString("AnalogController", "Controller %u switched to analog mode.") :
+        Host::TranslateString("AnalogController", "Controller %u switched to digital mode."),
         m_index + 1u);
     }
   }
@@ -113,7 +113,7 @@ void AnalogController::SetBindState(u32 index, float value)
   if (index == static_cast<s32>(Button::Analog))
   {
     // analog toggle
-    if (value > 0.0f)
+    if (value >= 0.5f)
     {
       if (m_command == Command::Idle)
         ProcessAnalogModeToggle();
@@ -172,7 +172,7 @@ void AnalogController::SetBindState(u32 index, float value)
   const u16 bit = u16(1) << static_cast<u8>(index);
 
   // todo: deadzone
-  if (value > 0.0f)
+  if (value >= 0.5f)
   {
     if (m_button_state & bit)
       System::SetRunaheadReplayFlag();
@@ -240,10 +240,10 @@ void AnalogController::SetAnalogMode(bool enabled)
     return;
 
   Log_InfoPrintf("Controller %u switched to %s mode.", m_index + 1u, enabled ? "analog" : "digital");
-  g_host_interface->AddFormattedOSDMessage(
+  Host::AddFormattedOSDMessage(
     5.0f,
-    enabled ? g_host_interface->TranslateString("AnalogController", "Controller %u switched to analog mode.") :
-              g_host_interface->TranslateString("AnalogController", "Controller %u switched to digital mode."),
+    enabled ? Host::TranslateString("AnalogController", "Controller %u switched to analog mode.") :
+    Host::TranslateString("AnalogController", "Controller %u switched to digital mode."),
     m_index + 1u);
   m_analog_mode = enabled;
 }
@@ -252,11 +252,11 @@ void AnalogController::ProcessAnalogModeToggle()
 {
   if (m_analog_locked)
   {
-    g_host_interface->AddFormattedOSDMessage(
+    Host::AddFormattedOSDMessage(
       5.0f,
       m_analog_mode ?
-        g_host_interface->TranslateString("AnalogController", "Controller %u is locked to analog mode by the game.") :
-        g_host_interface->TranslateString("AnalogController", "Controller %u is locked to digital mode by the game."),
+      Host::TranslateString("AnalogController", "Controller %u is locked to analog mode by the game.") :
+      Host::TranslateString("AnalogController", "Controller %u is locked to digital mode by the game."),
       m_index + 1u);
   }
   else
@@ -707,41 +707,42 @@ std::unique_ptr<AnalogController> AnalogController::Create(u32 index)
 }
 
 static const Controller::ControllerBindingInfo s_binding_info[] = {
-#define BUTTON(name, display_name, genb)                                                                               \
+#define BUTTON(name, display_name, button, genb)                                                                       \
   {                                                                                                                    \
-    name, display_name, Controller::ControllerBindingType::Button, genb                                                \
+    name, display_name, static_cast<u32>(button), Controller::ControllerBindingType::Button, genb                      \
   }
-#define AXIS(name, display_name, genb)                                                                                 \
+#define AXIS(name, display_name, halfaxis, genb)                                                                       \
   {                                                                                                                    \
-    name, display_name, Controller::ControllerBindingType::HalfAxis, genb                                              \
+    name, display_name, static_cast<u32>(AnalogController::Button::Count) + static_cast<u32>(halfaxis),                \
+      Controller::ControllerBindingType::HalfAxis, genb                                                                \
   }
 
-  BUTTON("Select", "Select", GenericInputBinding::Select),
-  BUTTON("L3", "Select", GenericInputBinding::L3),
-  BUTTON("R3", "Select", GenericInputBinding::R3),
-  BUTTON("Start", "Select", GenericInputBinding::Start),
-  BUTTON("Up", "D-Pad Up", GenericInputBinding::DPadUp),
-  BUTTON("Right", "D-Pad Right", GenericInputBinding::DPadRight),
-  BUTTON("Down", "D-Pad Down", GenericInputBinding::DPadDown),
-  BUTTON("Left", "D-Pad Left", GenericInputBinding::DPadLeft),
-  BUTTON("L2", "L2", GenericInputBinding::L2),
-  BUTTON("R2", "R2", GenericInputBinding::R2),
-  BUTTON("L1", "L1", GenericInputBinding::L1),
-  BUTTON("R1", "R1", GenericInputBinding::R1),
-  BUTTON("Triangle", "Triangle", GenericInputBinding::Triangle),
-  BUTTON("Circle", "Circle", GenericInputBinding::Circle),
-  BUTTON("Cross", "Cross", GenericInputBinding::Cross),
-  BUTTON("Square", "Square", GenericInputBinding::Square),
-  BUTTON("Analog", "Analog Toggle", GenericInputBinding::System),
+  BUTTON("Up", "D-Pad Up", AnalogController::Button::Up, GenericInputBinding::DPadUp),
+  BUTTON("Right", "D-Pad Right", AnalogController::Button::Down, GenericInputBinding::DPadRight),
+  BUTTON("Down", "D-Pad Down", AnalogController::Button::Down, GenericInputBinding::DPadDown),
+  BUTTON("Left", "D-Pad Left", AnalogController::Button::Left, GenericInputBinding::DPadLeft),
+  BUTTON("Triangle", "Triangle", AnalogController::Button::Triangle, GenericInputBinding::Triangle),
+  BUTTON("Circle", "Circle", AnalogController::Button::Circle, GenericInputBinding::Circle),
+  BUTTON("Cross", "Cross", AnalogController::Button::Cross, GenericInputBinding::Cross),
+  BUTTON("Square", "Square", AnalogController::Button::Square, GenericInputBinding::Square),
+  BUTTON("Select", "Select", AnalogController::Button::Select, GenericInputBinding::Select),
+  BUTTON("Start", "Start", AnalogController::Button::Start, GenericInputBinding::Start),
+  BUTTON("Analog", "Analog Toggle", AnalogController::Button::Analog, GenericInputBinding::System),
+  BUTTON("L1", "L1", AnalogController::Button::L1, GenericInputBinding::L1),
+  BUTTON("R1", "R1", AnalogController::Button::R1, GenericInputBinding::R1),
+  BUTTON("L2", "L2", AnalogController::Button::L2, GenericInputBinding::L2),
+  BUTTON("R2", "R2", AnalogController::Button::R2, GenericInputBinding::R2),
+  BUTTON("L3", "L3", AnalogController::Button::L3, GenericInputBinding::L3),
+  BUTTON("R3", "R3", AnalogController::Button::R3, GenericInputBinding::R3),
 
-  AXIS("LLeft", "Left Stick Left", GenericInputBinding::LeftStickLeft),
-  AXIS("LRight", "Left Stick Right", GenericInputBinding::LeftStickRight),
-  AXIS("LDown", "Left Stick Down", GenericInputBinding::LeftStickDown),
-  AXIS("LUp", "Left Stick Up", GenericInputBinding::LeftStickUp),
-  AXIS("RLeft", "Right Stick Left", GenericInputBinding::LeftStickLeft),
-  AXIS("RRight", "Right Stick Right", GenericInputBinding::LeftStickRight),
-  AXIS("RDown", "Right Stick Down", GenericInputBinding::LeftStickDown),
-  AXIS("RUp", "Right Stick Up", GenericInputBinding::LeftStickUp),
+  AXIS("LLeft", "Left Stick Left", AnalogController::HalfAxis::LLeft, GenericInputBinding::LeftStickLeft),
+  AXIS("LRight", "Left Stick Right", AnalogController::HalfAxis::LRight, GenericInputBinding::LeftStickRight),
+  AXIS("LDown", "Left Stick Down", AnalogController::HalfAxis::LDown, GenericInputBinding::LeftStickDown),
+  AXIS("LUp", "Left Stick Up", AnalogController::HalfAxis::LUp, GenericInputBinding::LeftStickUp),
+  AXIS("RLeft", "Right Stick Left", AnalogController::HalfAxis::RLeft, GenericInputBinding::LeftStickLeft),
+  AXIS("RRight", "Right Stick Right", AnalogController::HalfAxis::RRight, GenericInputBinding::LeftStickRight),
+  AXIS("RDown", "Right Stick Down", AnalogController::HalfAxis::RDown, GenericInputBinding::LeftStickDown),
+  AXIS("RUp", "Right Stick Up", AnalogController::HalfAxis::RUp, GenericInputBinding::LeftStickUp),
 
 #undef AXIS
 #undef BUTTON

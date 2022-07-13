@@ -1,6 +1,6 @@
 #include "fullscreen_ui_progress_callback.h"
 #include "common/log.h"
-#include "core/host_interface.h"
+#include "core/host.h"
 #include "imgui_fullscreen.h"
 Log_SetChannel(ProgressCallback);
 
@@ -98,19 +98,18 @@ void ProgressCallback::DisplayDebugMessage(const char* message)
 void ProgressCallback::ModalError(const char* message)
 {
   Log_ErrorPrint(message);
-  g_host_interface->ReportError(message);
+  Host::ReportErrorAsync("Error", message);
 }
 
 bool ProgressCallback::ModalConfirmation(const char* message)
 {
   Log_InfoPrint(message);
-  return g_host_interface->ConfirmMessage(message);
+  return Host::ConfirmMessage("Confirm", message);
 }
 
 void ProgressCallback::ModalInformation(const char* message)
 {
   Log_InfoPrint(message);
-  g_host_interface->ReportMessage(message);
 }
 
 } // namespace FullscreenUI

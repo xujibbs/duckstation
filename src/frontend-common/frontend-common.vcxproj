@@ -23,7 +23,6 @@
     <ClCompile Include="imgui_impl_vulkan.cpp" />
     <ClCompile Include="imgui_manager.cpp" />
     <ClCompile Include="inhibit_screensaver.cpp" />
-    <ClCompile Include="ini_settings_interface.cpp" />
     <ClCompile Include="input_manager.cpp" />
     <ClCompile Include="input_overlay_ui.cpp" />
     <ClCompile Include="input_source.cpp" />
@@ -65,7 +64,6 @@
     <ClInclude Include="imgui_impl_vulkan.h" />
     <ClInclude Include="imgui_manager.h" />
     <ClInclude Include="inhibit_screensaver.h" />
-    <ClInclude Include="ini_settings_interface.h" />
     <ClInclude Include="input_manager.h" />
     <ClInclude Include="input_overlay_ui.h" />
     <ClInclude Include="input_source.h" />

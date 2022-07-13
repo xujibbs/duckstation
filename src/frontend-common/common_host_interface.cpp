@@ -14,9 +14,8 @@
 #include "core/gpu.h"
 #include "core/gte.h"
 #include "core/host.h"
-#include "core/host_settings.h"
 #include "core/host_display.h"
-#include "imgui_fullscreen.h"
+#include "core/host_settings.h"
 #include "core/mdec.h"
 #include "core/pgxp.h"
 #include "core/save_state_version.h"
@@ -29,14 +28,15 @@
 #include "game_list.h"
 #include "icon.h"
 #include "imgui.h"
+#include "imgui_fullscreen.h"
 #include "imgui_manager.h"
 #include "inhibit_screensaver.h"
-#include "ini_settings_interface.h"
 #include "input_manager.h"
 #include "input_overlay_ui.h"
 #include "save_state_selector_ui.h"
 #include "scmversion/scmversion.h"
 #include "util/audio_stream.h"
+#include "util/ini_settings_interface.h"
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -76,8 +76,32 @@ std::unique_ptr<AudioStream> CreateXAudio2AudioStream();
 
 Log_SetChannel(CommonHostInterface);
 
+namespace CommonHost {
+static void UpdateLogSettings(LOGLEVEL level, const char* filter, bool log_to_console, bool log_to_debug,
+                              bool log_to_window, bool log_to_file);
+#ifdef WITH_DISCORD_PRESENCE
+static void SetDiscordPresenceEnabled(bool enabled);
+static void InitializeDiscordPresence();
+static void ShutdownDiscordPresence();
+static void UpdateDiscordPresence(bool rich_presence_only);
+static void PollDiscordPresence();
+#endif
+#ifdef WITH_CHEEVOS
+static void UpdateCheevosActive(SettingsInterface& si);
+#endif
+} // namespace CommonHost
+
 static std::string s_settings_filename;
 static std::unique_ptr<FrontendCommon::InputOverlayUI> s_input_overlay_ui;
+
+#ifdef WITH_DISCORD_PRESENCE
+// discord rich presence
+bool m_discord_presence_enabled = false;
+bool m_discord_presence_active = false;
+#ifdef WITH_CHEEVOS
+std::string m_discord_presence_cheevos_string;
+#endif
+#endif
 
 CommonHostInterface::CommonHostInterface() = default;
 
@@ -97,26 +121,23 @@ bool CommonHostInterface::Initialize()
   // Set crash handler to dump to user directory, because of permissions.
   CrashHandler::SetWriteDirectory(m_user_directory);
 
-  LoadSettings(*Host::GetSettingsInterface());
-  FixIncompatibleSettings(false);
-  UpdateLogSettings(g_settings.log_level, g_settings.log_filter.empty() ? nullptr : g_settings.log_filter.c_str(),
-                    g_settings.log_to_console, g_settings.log_to_debug, g_settings.log_to_window,
-                    g_settings.log_to_file);
+  System::LoadSettings(false);
+  CommonHost::UpdateLogSettings(
+    g_settings.log_level, g_settings.log_filter.empty() ? nullptr : g_settings.log_filter.c_str(),
+    g_settings.log_to_console, g_settings.log_to_debug, g_settings.log_to_window, g_settings.log_to_file);
 
   m_game_list = std::make_unique<GameList>();
   m_game_list->SetCacheFilename(GetUserDirectoryRelativePath("cache/gamelist.cache"));
   m_game_list->SetUserCompatibilityListFilename(GetUserDirectoryRelativePath("compatibility.xml"));
   m_game_list->SetUserGameSettingsFilename(GetUserDirectoryRelativePath("gamesettings.ini"));
 
-  m_save_state_selector_ui = std::make_unique<FrontendCommon::SaveStateSelectorUI>(this);
-
 #ifdef WITH_CHEEVOS
 #ifdef WITH_RAINTEGRATION
-  if (GetBoolSettingValue("Cheevos", "UseRAIntegration", false))
+  if (Host::GetBaseBoolSettingValue("Cheevos", "UseRAIntegration", false))
     Cheevos::SwitchToRAIntegration();
 #endif
 
-  UpdateCheevosActive(*Host::GetSettingsInterface());
+  CommonHost::UpdateCheevosActive(*Host::GetSettingsInterface());
 #endif
 
   {
@@ -134,7 +155,7 @@ void CommonHostInterface::Shutdown()
   HostInterface::Shutdown();
 
 #ifdef WITH_DISCORD_PRESENCE
-  ShutdownDiscordPresence();
+  CommonHost::ShutdownDiscordPresence();
 #endif
 
 #ifdef WITH_CHEEVOS
@@ -160,98 +181,33 @@ void CommonHostInterface::InitializeUserDirectory()
 
   bool result = true;
 
-  result &= FileSystem::CreateDirectory(GetUserDirectoryRelativePath("bios").c_str(), false);
-  result &= FileSystem::CreateDirectory(GetUserDirectoryRelativePath("cache").c_str(), false);
-  result &= FileSystem::CreateDirectory(
+  result &= FileSystem::EnsureDirectoryExists(GetUserDirectoryRelativePath("bios").c_str(), false);
+  result &= FileSystem::EnsureDirectoryExists(GetUserDirectoryRelativePath("cache").c_str(), false);
+  result &= FileSystem::EnsureDirectoryExists(
     GetUserDirectoryRelativePath("cache" FS_OSPATH_SEPARATOR_STR "achievement_badge").c_str(), false);
-  result &= FileSystem::CreateDirectory(
+  result &= FileSystem::EnsureDirectoryExists(
     GetUserDirectoryRelativePath("cache" FS_OSPATH_SEPARATOR_STR "achievement_gameicon").c_str(), false);
-  result &= FileSystem::CreateDirectory(GetUserDirectoryRelativePath("cheats").c_str(), false);
-  result &= FileSystem::CreateDirectory(GetUserDirectoryRelativePath("covers").c_str(), false);
-  result &= FileSystem::CreateDirectory(GetUserDirectoryRelativePath("dump").c_str(), false);
-  result &=
-    FileSystem::CreateDirectory(GetUserDirectoryRelativePath("dump" FS_OSPATH_SEPARATOR_STR "audio").c_str(), false);
-  result &=
-    FileSystem::CreateDirectory(GetUserDirectoryRelativePath("dump" FS_OSPATH_SEPARATOR_STR "textures").c_str(), false);
-  result &= FileSystem::CreateDirectory(GetUserDirectoryRelativePath("inputprofiles").c_str(), false);
-  result &= FileSystem::CreateDirectory(GetUserDirectoryRelativePath("memcards").c_str(), false);
-  result &= FileSystem::CreateDirectory(GetUserDirectoryRelativePath("savestates").c_str(), false);
-  result &= FileSystem::CreateDirectory(GetUserDirectoryRelativePath("screenshots").c_str(), false);
-  result &= FileSystem::CreateDirectory(GetUserDirectoryRelativePath("shaders").c_str(), false);
-  result &= FileSystem::CreateDirectory(GetUserDirectoryRelativePath("textures").c_str(), false);
+  result &= FileSystem::EnsureDirectoryExists(GetUserDirectoryRelativePath("cheats").c_str(), false);
+  result &= FileSystem::EnsureDirectoryExists(GetUserDirectoryRelativePath("covers").c_str(), false);
+  result &= FileSystem::EnsureDirectoryExists(GetUserDirectoryRelativePath("dump").c_str(), false);
+  result &= FileSystem::EnsureDirectoryExists(
+    GetUserDirectoryRelativePath("dump" FS_OSPATH_SEPARATOR_STR "audio").c_str(), false);
+  result &= FileSystem::EnsureDirectoryExists(
+    GetUserDirectoryRelativePath("dump" FS_OSPATH_SEPARATOR_STR "textures").c_str(), false);
+  result &= FileSystem::EnsureDirectoryExists(GetUserDirectoryRelativePath("inputprofiles").c_str(), false);
+  result &= FileSystem::EnsureDirectoryExists(GetUserDirectoryRelativePath("memcards").c_str(), false);
+  result &= FileSystem::EnsureDirectoryExists(GetUserDirectoryRelativePath("savestates").c_str(), false);
+  result &= FileSystem::EnsureDirectoryExists(GetUserDirectoryRelativePath("screenshots").c_str(), false);
+  result &= FileSystem::EnsureDirectoryExists(GetUserDirectoryRelativePath("shaders").c_str(), false);
+  result &= FileSystem::EnsureDirectoryExists(GetUserDirectoryRelativePath("textures").c_str(), false);
 
   // Games directory for UWP because it's a pain to create them manually.
 #ifdef _UWP
-  result &= FileSystem::CreateDirectory(GetUserDirectoryRelativePath("games").c_str(), false);
+  result &= FileSystem::EnsureDirectoryExists(GetUserDirectoryRelativePath("games").c_str(), false);
 #endif
 
   if (!result)
-    ReportError("Failed to create one or more user directories. This may cause issues at runtime.");
-}
-
-bool CommonHostInterface::BootSystem(std::shared_ptr<SystemBootParameters> parameters)
-{
-  // If the fullscreen UI is enabled, make sure it's finished loading the game list so we don't race it.
-  if (m_display && FullscreenUI::IsInitialized())
-    FullscreenUI::EnsureGameListLoaded();
-
-  // In Challenge mode, do not allow loading a save state under any circumstances
-  // If it's present, drop it
-  if (IsCheevosChallengeModeActive())
-    parameters->state_stream.reset();
-
-  ApplyRendererFromGameSettings(parameters->filename);
-
-  if (!HostInterface::BootSystem(parameters))
-  {
-    // if in batch mode, exit immediately if booting failed
-    if (InBatchMode())
-      RequestExit();
-
-    return false;
-  }
-
-  // enter fullscreen if requested in the parameters
-  if (!g_settings.start_paused && ((parameters->override_fullscreen.has_value() && *parameters->override_fullscreen) ||
-                                   (!parameters->override_fullscreen.has_value() && g_settings.start_fullscreen)))
-  {
-    SetFullscreen(true);
-  }
-
-  if (g_settings.audio_dump_on_boot)
-    StartDumpingAudio();
-
-  UpdateSpeedLimiterState();
-  return true;
-}
-
-void CommonHostInterface::DestroySystem()
-{
-  m_undo_load_state.reset();
-  SetTimerResolutionIncreased(false);
-  m_save_state_selector_ui->Close();
-  m_display->SetPostProcessingChain({});
-
-  HostInterface::DestroySystem();
-}
-
-void CommonHostInterface::PowerOffSystem(bool save_resume_state)
-{
-  if (System::IsShutdown())
-    return;
-
-  if (save_resume_state)
-    SaveResumeSaveState();
-
-  DestroySystem();
-
-  if (InBatchMode())
-    RequestExit();
-}
-
-void CommonHostInterface::ResetSystem()
-{
-  HostInterface::ResetSystem();
+    Host::ReportErrorAsync("Error", "Failed to create one or more user directories. This may cause issues at runtime.");
 }
 
 static void PrintCommandLineVersion(const char* frontend_name)
@@ -434,9 +390,9 @@ bool CommonHostInterface::ParseCommandLineParameters(int argc, char* argv[],
       {
         // loading a global state. if this is -1, we're loading the most recent resume state
         if (*state_index < 0)
-          state_filename = GetMostRecentResumeSaveStatePath();
+          state_filename = System::GetMostRecentResumeSaveStatePath();
         else
-          state_filename = GetGlobalSaveStateFileName(*state_index);
+          state_filename = System::GetGlobalSaveStateFileName(*state_index);
 
         if (state_filename.empty() || !FileSystem::FileExists(state_filename.c_str()))
         {
@@ -455,7 +411,7 @@ bool CommonHostInterface::ParseCommandLineParameters(int argc, char* argv[],
         }
         else
         {
-          state_filename = GetGameSaveStateFileName(game_code.c_str(), *state_index);
+          state_filename = System::GetGameSaveStateFileName(game_code.c_str(), *state_index);
           if (state_filename.empty() || !FileSystem::FileExists(state_filename.c_str()))
           {
             if (state_index >= 0) // Do not exit if -resume is specified, but resume save state does not exist
@@ -501,7 +457,7 @@ void CommonHostInterface::OnAchievementsRefreshed()
   // noop
 }
 
-void CommonHostInterface::PollAndUpdate()
+void CommonHost::PumpMessagesOnCPUThread()
 {
   InputManager::PollSources();
 
@@ -548,7 +504,7 @@ void CommonHostInterface::OnHostDisplayResized()
     g_gpu->UpdateResolutionScale();
 }
 
-std::unique_ptr<AudioStream> CommonHostInterface::CreateAudioStream(AudioBackend backend)
+std::unique_ptr<AudioStream> Host::CreateAudioStream(AudioBackend backend)
 {
   switch (backend)
   {
@@ -575,264 +531,8 @@ std::unique_ptr<AudioStream> CommonHostInterface::CreateAudioStream(AudioBackend
   }
 }
 
-s32 CommonHostInterface::GetAudioOutputVolume() const
-{
-  return g_settings.GetAudioOutputVolume(IsRunningAtNonStandardSpeed());
-}
-
-bool CommonHostInterface::UndoLoadState()
-{
-  if (!m_undo_load_state)
-    return false;
-
-  Assert(System::IsValid());
-
-  m_undo_load_state->SeekAbsolute(0);
-  if (!System::LoadState(m_undo_load_state.get()))
-  {
-    ReportError("Failed to load undo state, resetting system.");
-    m_undo_load_state.reset();
-    ResetSystem();
-    return false;
-  }
-
-  System::ResetPerformanceCounters();
-  System::ResetThrottler();
-
-  Log_InfoPrintf("Loaded undo save state.");
-  m_undo_load_state.reset();
-  return true;
-}
-
-bool CommonHostInterface::SaveUndoLoadState()
-{
-  if (m_undo_load_state)
-    m_undo_load_state.reset();
-
-  m_undo_load_state = ByteStream::CreateGrowableMemoryStream(nullptr, System::MAX_SAVE_STATE_SIZE);
-  if (!System::SaveState(m_undo_load_state.get()))
-  {
-    AddOSDMessage(TranslateStdString("OSDMessage", "Failed to save undo load state."), 15.0f);
-    m_undo_load_state.reset();
-    return false;
-  }
-
-  Log_InfoPrintf("Saved undo load state: %" PRIu64 " bytes", m_undo_load_state->GetSize());
-  return true;
-}
-
-bool CommonHostInterface::LoadState(const char* filename)
-{
-  const bool system_was_valid = System::IsValid();
-  if (system_was_valid)
-    SaveUndoLoadState();
-
-  const bool result = HostInterface::LoadState(filename);
-  if (system_was_valid || !result)
-  {
-#ifdef WITH_CHEEVOS
-    Cheevos::Reset();
-#endif
-  }
-
-  if (!result && CanUndoLoadState())
-    UndoLoadState();
-
-  return result;
-}
-
-bool CommonHostInterface::LoadState(bool global, s32 slot)
-{
-  if (!global && (System::IsShutdown() || System::GetRunningCode().empty()))
-  {
-    ReportFormattedError("Can't save per-game state without a running game code.");
-    return false;
-  }
-
-  std::string save_path =
-    global ? GetGlobalSaveStateFileName(slot) : GetGameSaveStateFileName(System::GetRunningCode().c_str(), slot);
-  return LoadState(save_path.c_str());
-}
-
-bool CommonHostInterface::SaveState(bool global, s32 slot)
-{
-  const std::string& code = System::GetRunningCode();
-  if (!global && code.empty())
-  {
-    ReportFormattedError("Can't save per-game state without a running game code.");
-    return false;
-  }
-
-  std::string save_path = global ? GetGlobalSaveStateFileName(slot) : GetGameSaveStateFileName(code.c_str(), slot);
-  RenameCurrentSaveStateToBackup(save_path.c_str());
-  return SaveState(save_path.c_str());
-}
-
-bool CommonHostInterface::CanResumeSystemFromFile(const char* filename)
-{
-  if (GetBoolSettingValue("Main", "SaveStateOnExit", true) && !IsCheevosChallengeModeActive())
-  {
-    const GameListEntry* entry = m_game_list->GetEntryForPath(filename);
-    if (entry)
-      return !entry->code.empty();
-    else
-      return !System::GetGameCodeForPath(filename, true).empty();
-  }
-
-  return false;
-}
-
-bool CommonHostInterface::ResumeSystemFromState(const char* filename, bool boot_on_failure)
-{
-  if (!BootSystem(std::make_shared<SystemBootParameters>(filename)))
-    return false;
-
-  const bool global = System::GetRunningCode().empty();
-  if (global)
-  {
-    ReportFormattedError("Cannot resume system with undetectable game code from '%s'.", filename);
-    if (!boot_on_failure)
-    {
-      DestroySystem();
-      return true;
-    }
-  }
-  else
-  {
-    const std::string path = GetGameSaveStateFileName(System::GetRunningCode().c_str(), -1);
-    if (FileSystem::FileExists(path.c_str()))
-    {
-      if (!LoadState(path.c_str()) && !boot_on_failure)
-      {
-        DestroySystem();
-        return false;
-      }
-    }
-    else if (!boot_on_failure)
-    {
-      ReportFormattedError("Resume save state not found for '%s' ('%s').", System::GetRunningCode().c_str(),
-                           System::GetRunningTitle().c_str());
-      DestroySystem();
-      return false;
-    }
-  }
-
-  return true;
-}
-
-bool CommonHostInterface::ResumeSystemFromMostRecentState()
-{
-  const std::string path = GetMostRecentResumeSaveStatePath();
-  if (path.empty())
-  {
-    ReportError("No resume save state found.");
-    return false;
-  }
-
-  return LoadState(path.c_str());
-}
-
-bool CommonHostInterface::ShouldSaveResumeState() const
-{
-  return g_settings.save_state_on_exit;
-}
-
-bool CommonHostInterface::IsRunningAtNonStandardSpeed() const
-{
-  if (!System::IsValid())
-    return false;
-
-  const float target_speed = System::GetTargetSpeed();
-  return (target_speed <= 0.95f || target_speed >= 1.05f);
-}
-
-void CommonHostInterface::UpdateSpeedLimiterState()
-{
-  float target_speed = m_turbo_enabled ?
-                         g_settings.turbo_speed :
-                         (m_fast_forward_enabled ? g_settings.fast_forward_speed : g_settings.emulation_speed);
-  m_throttler_enabled = (target_speed != 0.0f);
-  m_display_all_frames = !m_throttler_enabled || g_settings.display_all_frames;
-
-  bool syncing_to_host = false;
-  if (g_settings.sync_to_host_refresh_rate && g_settings.audio_resampling && target_speed == 1.0f && m_display &&
-      System::IsRunning())
-  {
-    float host_refresh_rate;
-    if (m_display->GetHostRefreshRate(&host_refresh_rate))
-    {
-      const float ratio = host_refresh_rate / System::GetThrottleFrequency();
-      syncing_to_host = (ratio >= 0.95f && ratio <= 1.05f);
-      Log_InfoPrintf("Refresh rate: Host=%fhz Guest=%fhz Ratio=%f - %s", host_refresh_rate,
-                     System::GetThrottleFrequency(), ratio, syncing_to_host ? "can sync" : "can't sync");
-      if (syncing_to_host)
-        target_speed *= ratio;
-    }
-  }
-
-  const bool is_non_standard_speed = (std::abs(target_speed - 1.0f) > 0.05f);
-  const bool audio_sync_enabled =
-    !System::IsRunning() || (m_throttler_enabled && g_settings.audio_sync_enabled && !is_non_standard_speed);
-  const bool video_sync_enabled =
-    !System::IsRunning() || (m_throttler_enabled && g_settings.video_sync_enabled && !is_non_standard_speed);
-  const float max_display_fps = (!System::IsRunning() || m_throttler_enabled) ? 0.0f : g_settings.display_max_fps;
-  Log_InfoPrintf("Target speed: %f%%", target_speed * 100.0f);
-  Log_InfoPrintf("Syncing to %s%s", audio_sync_enabled ? "audio" : "",
-                 (audio_sync_enabled && video_sync_enabled) ? " and video" : (video_sync_enabled ? "video" : ""));
-  Log_InfoPrintf("Max display fps: %f (%s)", max_display_fps,
-                 m_display_all_frames ? "displaying all frames" : "skipping displaying frames when needed");
-
-  if (System::IsValid())
-  {
-    System::SetTargetSpeed(target_speed);
-    System::ResetThrottler();
-  }
-
-  if (m_audio_stream)
-  {
-    const u32 input_sample_rate = (target_speed == 0.0f || !g_settings.audio_resampling) ?
-                                    AUDIO_SAMPLE_RATE :
-                                    static_cast<u32>(static_cast<float>(AUDIO_SAMPLE_RATE) * target_speed);
-    Log_InfoPrintf("Audio input sample rate: %u hz", input_sample_rate);
-
-    m_audio_stream->SetInputSampleRate(input_sample_rate);
-    m_audio_stream->SetWaitForBufferFill(true);
-
-    if (g_settings.audio_fast_forward_volume != g_settings.audio_output_volume)
-      m_audio_stream->SetOutputVolume(GetAudioOutputVolume());
-
-    m_audio_stream->SetSync(audio_sync_enabled);
-    if (audio_sync_enabled)
-      m_audio_stream->EmptyBuffers();
-  }
-
-  if (m_display)
-  {
-    m_display->SetDisplayMaxFPS(max_display_fps);
-    m_display->SetVSync(video_sync_enabled);
-  }
-
-  if (g_settings.increase_timer_resolution)
-    SetTimerResolutionIncreased(m_throttler_enabled);
-
-  // When syncing to host and using vsync, we don't need to sleep.
-  if (syncing_to_host && video_sync_enabled && m_display_all_frames)
-  {
-    Log_InfoPrintf("Using host vsync for throttling.");
-    m_throttler_enabled = false;
-  }
-}
-
-void CommonHostInterface::RecreateSystem()
-{
-  const bool was_paused = System::IsPaused();
-  HostInterface::RecreateSystem();
-  if (was_paused)
-    PauseSystem(true);
-}
-
-void CommonHostInterface::UpdateLogSettings(LOGLEVEL level, const char* filter, bool log_to_console, bool log_to_debug,
-                                            bool log_to_window, bool log_to_file)
+void CommonHost::UpdateLogSettings(LOGLEVEL level, const char* filter, bool log_to_console, bool log_to_debug,
+                                   bool log_to_window, bool log_to_file)
 {
   Log::SetFilterLevel(level);
   Log::SetConsoleOutputParams(g_settings.log_to_console, filter, level);
@@ -840,8 +540,9 @@ void CommonHostInterface::UpdateLogSettings(LOGLEVEL level, const char* filter, 
 
   if (log_to_file)
   {
-    Log::SetFileOutputParams(g_settings.log_to_file, GetUserDirectoryRelativePath("duckstation.log").c_str(), true,
-                             filter, level);
+    Log::SetFileOutputParams(g_settings.log_to_file,
+                             g_host_interface->GetUserDirectoryRelativePath("duckstation.log").c_str(), true, filter,
+                             level);
   }
   else
   {
@@ -909,176 +610,63 @@ void CommonHostInterface::SetUserDirectory()
   }
 }
 
-void CommonHostInterface::OnSystemCreated()
+void CommonHost::OnSystemStarting()
+{
+  //
+}
+
+void CommonHost::OnSystemStarted()
 {
   if (FullscreenUI::IsInitialized())
     FullscreenUI::SystemCreated();
 
-  if (g_settings.display_post_processing && !m_display->SetPostProcessingChain(g_settings.display_post_process_chain))
-    AddOSDMessage(TranslateStdString("OSDMessage", "Failed to load post processing shader chain."), 20.0f);
+  if (g_settings.inhibit_screensaver)
+    FrontendCommon::SuspendScreensaver(Host::GetHostDisplay()->GetWindowInfo());
+}
+
+void CommonHost::OnSystemPaused()
+{
+#if 0
+  if (IsFullscreen() && !FullscreenUI::IsInitialized())
+    SetFullscreen(false);
+#endif
+
+  InputManager::PauseVibration();
 
   if (g_settings.inhibit_screensaver)
-    FrontendCommon::SuspendScreensaver(m_display->GetWindowInfo());
-}
-
-void CommonHostInterface::OnSystemPaused(bool paused)
-{
-  if (paused)
-  {
-    if (IsFullscreen() && !FullscreenUI::IsInitialized())
-      SetFullscreen(false);
-
-    InputManager::PauseVibration();
     FrontendCommon::ResumeScreensaver();
-  }
-  else
-  {
-    if (g_settings.inhibit_screensaver)
-      FrontendCommon::SuspendScreensaver(m_display->GetWindowInfo());
-  }
-
-  UpdateSpeedLimiterState();
 }
 
-void CommonHostInterface::OnSystemDestroyed()
+void CommonHost::OnSystemResumed()
 {
-  // Restore present-all-frames behavior.
-  if (m_display)
-    m_display->SetDisplayMaxFPS(0.0f);
+  if (g_settings.inhibit_screensaver)
+    FrontendCommon::SuspendScreensaver(Host::GetHostDisplay()->GetWindowInfo());
+}
+
+void CommonHost::OnSystemDestroyed()
+{
+  Host::ClearOSDMessages();
 
   if (FullscreenUI::IsInitialized())
     FullscreenUI::SystemDestroyed();
 
   InputManager::PauseVibration();
-  FrontendCommon::ResumeScreensaver();
+
+  if (g_settings.inhibit_screensaver)
+    FrontendCommon::ResumeScreensaver();
 }
 
-void CommonHostInterface::OnRunningGameChanged(const std::string& path, CDImage* image, const std::string& game_code,
-                                               const std::string& game_title)
+void CommonHost::OnGameChanged(const std::string& disc_path, const std::string& game_serial,
+                               const std::string& game_name)
 {
-  if (g_settings.apply_game_settings)
-    ApplySettings(true);
-
-  if (!System::IsShutdown())
-  {
-    System::SetCheatList(nullptr);
-    if (g_settings.auto_load_cheats)
-    {
-      DebugAssert(!IsCheevosChallengeModeActive());
-      LoadCheatListFromGameTitle();
-    }
-  }
-
 #ifdef WITH_DISCORD_PRESENCE
   UpdateDiscordPresence(false);
 #endif
 
 #ifdef WITH_CHEEVOS
-  if (Cheevos::IsLoggedIn())
-    Cheevos::GameChanged(path, image);
+  // if (Cheevos::IsLoggedIn())
+  // Cheevos::GameChanged(path, image);
 #endif
-}
-
-void CommonHostInterface::OnControllerTypeChanged(u32 slot)
-{
-  {
-    auto lock = Host::GetSettingsLock();
-    InputManager::ReloadBindings(*Host::GetSettingsInterface(), *Host::GetSettingsInterface());
-  }
-}
-
-bool CommonHostInterface::IsCheevosChallengeModeActive() const
-{
-#ifdef WITH_CHEEVOS
-  return Cheevos::IsChallengeModeActive();
-#else
-  return false;
-#endif
-}
-
-void CommonHostInterface::DoFrameStep()
-{
-  if (System::IsShutdown())
-    return;
-
-  m_frame_step_request = true;
-  PauseSystem(false);
-}
-
-void CommonHostInterface::DoToggleCheats()
-{
-  if (System::IsShutdown())
-    return;
-
-  CheatList* cl = System::GetCheatList();
-  if (!cl)
-  {
-    AddKeyedOSDMessage("ToggleCheats", TranslateStdString("OSDMessage", "No cheats are loaded."), 10.0f);
-    return;
-  }
-
-  cl->SetMasterEnable(!cl->GetMasterEnable());
-  AddKeyedOSDMessage("ToggleCheats",
-                     cl->GetMasterEnable() ?
-                       TranslateStdString("OSDMessage", "%n cheats are now active.", "", cl->GetEnabledCodeCount()) :
-                       TranslateStdString("OSDMessage", "%n cheats are now inactive.", "", cl->GetEnabledCodeCount()),
-                     10.0f);
-}
-
-static void DisplayHotkeyBlockedByChallengeModeMessage()
-{
-  g_host_interface->AddOSDMessage(g_host_interface->TranslateStdString(
-    "OSDMessage", "Hotkey unavailable because achievements hardcore mode is active."));
-}
-
-void CommonHostInterface::SetFastForwardEnabled(bool enabled)
-{
-  if (!System::IsValid())
-    return;
-
-  m_fast_forward_enabled = enabled;
-  UpdateSpeedLimiterState();
-}
-
-void CommonHostInterface::SetTurboEnabled(bool enabled)
-{
-  if (!System::IsValid())
-    return;
-
-  m_turbo_enabled = enabled;
-  UpdateSpeedLimiterState();
-}
-
-void CommonHostInterface::SetRewindState(bool enabled)
-{
-  if (!System::IsValid())
-    return;
-
-  if (!IsCheevosChallengeModeActive())
-  {
-    if (!g_settings.rewind_enable)
-    {
-      if (enabled)
-        AddKeyedOSDMessage("SetRewindState", TranslateStdString("OSDMessage", "Rewinding is not enabled."), 5.0f);
-
-      return;
-    }
-
-    if (!FullscreenUI::IsInitialized())
-    {
-      AddKeyedOSDMessage("SetRewindState",
-                         enabled ? TranslateStdString("OSDMessage", "Rewinding...") :
-                                   TranslateStdString("OSDMessage", "Stopped rewinding."),
-                         5.0f);
-    }
-
-    System::SetRewinding(enabled);
-    UpdateSpeedLimiterState();
-  }
-  else
-  {
-    DisplayHotkeyBlockedByChallengeModeMessage();
-  }
 }
 
 std::string CommonHostInterface::GetSettingsFileName() const
@@ -1092,216 +680,9 @@ std::string CommonHostInterface::GetSettingsFileName() const
   return filename;
 }
 
-std::string CommonHostInterface::GetGameSaveStateFileName(const char* game_code, s32 slot) const
+void CommonHost::SetDefaultSettings(SettingsInterface& si)
 {
-  if (slot < 0)
-    return GetUserDirectoryRelativePath("savestates" FS_OSPATH_SEPARATOR_STR "%s_resume.sav", game_code);
-  else
-    return GetUserDirectoryRelativePath("savestates" FS_OSPATH_SEPARATOR_STR "%s_%d.sav", game_code, slot);
-}
-
-std::string CommonHostInterface::GetGlobalSaveStateFileName(s32 slot) const
-{
-  if (slot < 0)
-    return GetUserDirectoryRelativePath("savestates" FS_OSPATH_SEPARATOR_STR "resume.sav");
-  else
-    return GetUserDirectoryRelativePath("savestates" FS_OSPATH_SEPARATOR_STR "savestate_%d.sav", slot);
-}
-
-void CommonHostInterface::RenameCurrentSaveStateToBackup(const char* filename)
-{
-  if (!GetBoolSettingValue("General", "CreateSaveStateBackups", false))
-    return;
-
-  if (!FileSystem::FileExists(filename))
-    return;
-
-  const std::string backup_filename(Path::ReplaceExtension(filename, "bak"));
-  if (!FileSystem::RenamePath(filename, backup_filename.c_str()))
-  {
-    Log_ErrorPrintf("Failed to rename save state backup '%s'", backup_filename.c_str());
-    return;
-  }
-
-  Log_InfoPrintf("Renamed save state '%s' to '%s'", filename, backup_filename.c_str());
-}
-
-std::vector<CommonHostInterface::SaveStateInfo> CommonHostInterface::GetAvailableSaveStates(const char* game_code) const
-{
-  std::vector<SaveStateInfo> si;
-  std::string path;
-
-  auto add_path = [&si](std::string path, s32 slot, bool global) {
-    FILESYSTEM_STAT_DATA sd;
-    if (!FileSystem::StatFile(path.c_str(), &sd))
-      return;
-
-    si.push_back(SaveStateInfo{std::move(path), sd.ModificationTime, static_cast<s32>(slot), global});
-  };
-
-  if (game_code && std::strlen(game_code) > 0)
-  {
-    add_path(GetGameSaveStateFileName(game_code, -1), -1, false);
-    for (s32 i = 1; i <= PER_GAME_SAVE_STATE_SLOTS; i++)
-      add_path(GetGameSaveStateFileName(game_code, i), i, false);
-  }
-
-  for (s32 i = 1; i <= GLOBAL_SAVE_STATE_SLOTS; i++)
-    add_path(GetGlobalSaveStateFileName(i), i, true);
-
-  return si;
-}
-
-std::optional<CommonHostInterface::SaveStateInfo> CommonHostInterface::GetSaveStateInfo(const char* game_code, s32 slot)
-{
-  const bool global = (!game_code || game_code[0] == 0);
-  std::string path = global ? GetGlobalSaveStateFileName(slot) : GetGameSaveStateFileName(game_code, slot);
-
-  FILESYSTEM_STAT_DATA sd;
-  if (!FileSystem::StatFile(path.c_str(), &sd))
-    return std::nullopt;
-
-  return SaveStateInfo{std::move(path), sd.ModificationTime, slot, global};
-}
-
-std::optional<CommonHostInterface::ExtendedSaveStateInfo>
-CommonHostInterface::GetExtendedSaveStateInfo(ByteStream* stream)
-{
-  SAVE_STATE_HEADER header;
-  if (!stream->Read(&header, sizeof(header)) || header.magic != SAVE_STATE_MAGIC)
-    return std::nullopt;
-
-  ExtendedSaveStateInfo ssi;
-  if (header.version < SAVE_STATE_MINIMUM_VERSION || header.version > SAVE_STATE_VERSION)
-  {
-    ssi.title = StringUtil::StdStringFromFormat(
-      TranslateString("CommonHostInterface", "Invalid version %u (%s version %u)"), header.version,
-      header.version > SAVE_STATE_VERSION ? "maximum" : "minimum",
-      header.version > SAVE_STATE_VERSION ? SAVE_STATE_VERSION : SAVE_STATE_MINIMUM_VERSION);
-    return ssi;
-  }
-
-  header.title[sizeof(header.title) - 1] = 0;
-  ssi.title = header.title;
-  header.game_code[sizeof(header.game_code) - 1] = 0;
-  ssi.game_code = header.game_code;
-
-  if (header.media_filename_length > 0 &&
-      (header.offset_to_media_filename + header.media_filename_length) <= stream->GetSize())
-  {
-    stream->SeekAbsolute(header.offset_to_media_filename);
-    ssi.media_path.resize(header.media_filename_length);
-    if (!stream->Read2(ssi.media_path.data(), header.media_filename_length))
-      std::string().swap(ssi.media_path);
-  }
-
-  if (header.screenshot_width > 0 && header.screenshot_height > 0 && header.screenshot_size > 0 &&
-      (static_cast<u64>(header.offset_to_screenshot) + static_cast<u64>(header.screenshot_size)) <= stream->GetSize())
-  {
-    stream->SeekAbsolute(header.offset_to_screenshot);
-    ssi.screenshot_data.resize((header.screenshot_size + 3u) / 4u);
-    if (stream->Read2(ssi.screenshot_data.data(), header.screenshot_size))
-    {
-      ssi.screenshot_width = header.screenshot_width;
-      ssi.screenshot_height = header.screenshot_height;
-    }
-    else
-    {
-      decltype(ssi.screenshot_data)().swap(ssi.screenshot_data);
-    }
-  }
-
-  return ssi;
-}
-
-std::optional<CommonHostInterface::ExtendedSaveStateInfo>
-CommonHostInterface::GetExtendedSaveStateInfo(const char* game_code, s32 slot)
-{
-  const bool global = (!game_code || game_code[0] == 0);
-  std::string path = global ? GetGlobalSaveStateFileName(slot) : GetGameSaveStateFileName(game_code, slot);
-
-  FILESYSTEM_STAT_DATA sd;
-  if (!FileSystem::StatFile(path.c_str(), &sd))
-    return std::nullopt;
-
-  std::unique_ptr<ByteStream> stream =
-    ByteStream::OpenFile(path.c_str(), BYTESTREAM_OPEN_READ | BYTESTREAM_OPEN_SEEKABLE);
-  if (!stream)
-    return std::nullopt;
-
-  std::optional<ExtendedSaveStateInfo> ssi = GetExtendedSaveStateInfo(stream.get());
-  if (!ssi)
-    return std::nullopt;
-
-  ssi->path = std::move(path);
-  ssi->timestamp = sd.ModificationTime;
-  ssi->slot = slot;
-  ssi->global = global;
-
-  return ssi;
-}
-
-std::optional<CommonHostInterface::ExtendedSaveStateInfo> CommonHostInterface::GetUndoSaveStateInfo()
-{
-  std::optional<ExtendedSaveStateInfo> ssi;
-  if (m_undo_load_state)
-  {
-    m_undo_load_state->SeekAbsolute(0);
-    ssi = GetExtendedSaveStateInfo(m_undo_load_state.get());
-    m_undo_load_state->SeekAbsolute(0);
-
-    if (ssi)
-    {
-      ssi->timestamp = 0;
-      ssi->slot = 0;
-      ssi->global = false;
-    }
-  }
-
-  return ssi;
-}
-
-void CommonHostInterface::DeleteSaveStates(const char* game_code, bool resume)
-{
-  const std::vector<SaveStateInfo> states(GetAvailableSaveStates(game_code));
-  for (const SaveStateInfo& si : states)
-  {
-    if (si.global || (!resume && si.slot < 0))
-      continue;
-
-    Log_InfoPrintf("Removing save state at '%s'", si.path.c_str());
-    if (!FileSystem::DeleteFile(si.path.c_str()))
-      Log_ErrorPrintf("Failed to delete save state file '%s'", si.path.c_str());
-  }
-}
-
-std::string CommonHostInterface::GetMostRecentResumeSaveStatePath() const
-{
-  std::vector<FILESYSTEM_FIND_DATA> files;
-  if (!FileSystem::FindFiles(GetUserDirectoryRelativePath("savestates").c_str(), "*resume.sav", FILESYSTEM_FIND_FILES,
-                             &files) ||
-      files.empty())
-  {
-    return {};
-  }
-
-  FILESYSTEM_FIND_DATA* most_recent = &files[0];
-  for (FILESYSTEM_FIND_DATA& file : files)
-  {
-    if (file.ModificationTime > most_recent->ModificationTime)
-      most_recent = &file;
-  }
-
-  return std::move(most_recent->FileName);
-}
-
-void CommonHostInterface::SetDefaultSettings(SettingsInterface& si)
-{
-  HostInterface::SetDefaultSettings(si);
-
   InputManager::SetDefaultConfig(si);
-
-  si.SetBoolValue("Display", "InternalResolutionScreenshots", false);
 
 #ifdef WITH_DISCORD_PRESENCE
   si.SetBoolValue("Main", "EnableDiscordPresence", false);
@@ -1321,9 +702,10 @@ void CommonHostInterface::SetDefaultSettings(SettingsInterface& si)
 #endif
 }
 
-void CommonHostInterface::LoadSettings(SettingsInterface& si)
+void CommonHost::LoadSettings(SettingsInterface& si, std::unique_lock<std::mutex>& lock)
 {
-  HostInterface::LoadSettings(si);
+  InputManager::ReloadSources(si, lock);
+  InputManager::ReloadBindings(si, *Host::GetSettingsInterfaceForBindings());
 
 #ifdef WITH_DISCORD_PRESENCE
   SetDiscordPresenceEnabled(si.GetBoolValue("Main", "EnableDiscordPresence", false));
@@ -1343,113 +725,14 @@ void CommonHostInterface::LoadSettings(SettingsInterface& si)
     s_input_overlay_ui.reset();
 }
 
-void CommonHostInterface::SaveSettings(SettingsInterface& si)
+void CommonHost::CheckForSettingsChanges(const Settings& old_settings)
 {
-  HostInterface::SaveSettings(si);
-}
-
-void CommonHostInterface::FixIncompatibleSettings(bool display_osd_messages)
-{
-  // if challenge mode is enabled, disable things like rewind since they use save states
-  if (IsCheevosChallengeModeActive())
-  {
-    g_settings.emulation_speed =
-      (g_settings.emulation_speed != 0.0f) ? std::max(g_settings.emulation_speed, 1.0f) : 0.0f;
-    g_settings.fast_forward_speed =
-      (g_settings.fast_forward_speed != 0.0f) ? std::max(g_settings.fast_forward_speed, 1.0f) : 0.0f;
-    g_settings.turbo_speed = (g_settings.turbo_speed != 0.0f) ? std::max(g_settings.turbo_speed, 1.0f) : 0.0f;
-    g_settings.rewind_enable = false;
-    g_settings.auto_load_cheats = false;
-    if (g_settings.cpu_overclock_enable && g_settings.GetCPUOverclockPercent() < 100)
-    {
-      g_settings.cpu_overclock_enable = false;
-      g_settings.UpdateOverclockActive();
-    }
-    g_settings.debugging.enable_gdb_server = false;
-    g_settings.debugging.show_vram = false;
-    g_settings.debugging.show_gpu_state = false;
-    g_settings.debugging.show_cdrom_state = false;
-    g_settings.debugging.show_spu_state = false;
-    g_settings.debugging.show_timers_state = false;
-    g_settings.debugging.show_mdec_state = false;
-    g_settings.debugging.show_dma_state = false;
-    g_settings.debugging.dump_cpu_to_vram_copies = false;
-    g_settings.debugging.dump_vram_to_cpu_copies = false;
-  }
-
-  HostInterface::FixIncompatibleSettings(display_osd_messages);
-}
-
-void CommonHostInterface::ApplySettings(bool display_osd_messages)
-{
-  Settings old_settings(std::move(g_settings));
-  {
-    auto lock = Host::GetSettingsLock();
-    LoadSettings(*Host::GetSettingsInterface());
-    ApplyGameSettings(display_osd_messages);
-    FixIncompatibleSettings(display_osd_messages);
-    InputManager::ReloadSources(*Host::GetSettingsInterface(), lock);
-    InputManager::ReloadBindings(*Host::GetSettingsInterface(), *Host::GetSettingsInterface());
-  }
-
-  CheckForSettingsChanges(old_settings);
-}
-
-void CommonHostInterface::SetDefaultSettings()
-{
-  Settings old_settings(std::move(g_settings));
-  {
-    auto lock = Host::GetSettingsLock();
-    SetDefaultSettings(*Host::GetSettingsInterface());
-    LoadSettings(*Host::GetSettingsInterface());
-    InputManager::ReloadSources(*Host::GetSettingsInterface(), lock);
-    InputManager::ReloadBindings(*Host::GetSettingsInterface(), *Host::GetSettingsInterface());
-    ApplyGameSettings(true);
-    FixIncompatibleSettings(true);
-  }
-
-  CheckForSettingsChanges(old_settings);
-}
-
-void CommonHostInterface::CheckForSettingsChanges(const Settings& old_settings)
-{
-  HostInterface::CheckForSettingsChanges(old_settings);
-
   if (System::IsValid())
   {
-    if (g_settings.audio_backend != old_settings.audio_backend ||
-        g_settings.audio_buffer_size != old_settings.audio_buffer_size ||
-        g_settings.video_sync_enabled != old_settings.video_sync_enabled ||
-        g_settings.audio_sync_enabled != old_settings.audio_sync_enabled ||
-        g_settings.increase_timer_resolution != old_settings.increase_timer_resolution ||
-        g_settings.emulation_speed != old_settings.emulation_speed ||
-        g_settings.fast_forward_speed != old_settings.fast_forward_speed ||
-        g_settings.display_max_fps != old_settings.display_max_fps ||
-        g_settings.display_all_frames != old_settings.display_all_frames ||
-        g_settings.audio_resampling != old_settings.audio_resampling ||
-        g_settings.sync_to_host_refresh_rate != old_settings.sync_to_host_refresh_rate)
-    {
-      UpdateSpeedLimiterState();
-    }
-
-    if (g_settings.display_post_processing != old_settings.display_post_processing ||
-        g_settings.display_post_process_chain != old_settings.display_post_process_chain)
-    {
-      if (g_settings.display_post_processing)
-      {
-        if (!m_display->SetPostProcessingChain(g_settings.display_post_process_chain))
-          AddOSDMessage(TranslateStdString("OSDMessage", "Failed to load post processing shader chain."), 20.0f);
-      }
-      else
-      {
-        m_display->SetPostProcessingChain({});
-      }
-    }
-
     if (g_settings.inhibit_screensaver != old_settings.inhibit_screensaver)
     {
       if (g_settings.inhibit_screensaver)
-        FrontendCommon::SuspendScreensaver(m_display->GetWindowInfo());
+        FrontendCommon::SuspendScreensaver(Host::GetHostDisplay()->GetWindowInfo());
       else
         FrontendCommon::ResumeScreensaver();
     }
@@ -1464,32 +747,6 @@ void CommonHostInterface::CheckForSettingsChanges(const Settings& old_settings)
                       g_settings.log_to_console, g_settings.log_to_debug, g_settings.log_to_window,
                       g_settings.log_to_file);
   }
-}
-
-std::string CommonHostInterface::GetStringSettingValue(const char* section, const char* key,
-                                                       const char* default_value /*= ""*/)
-{
-  return Host::GetStringSettingValue(section, key, default_value);
-}
-
-bool CommonHostInterface::GetBoolSettingValue(const char* section, const char* key, bool default_value /* = false */)
-{
-  return Host::GetBoolSettingValue(section, key, default_value);
-}
-
-int CommonHostInterface::GetIntSettingValue(const char* section, const char* key, int default_value /* = 0 */)
-{
-  return Host::GetIntSettingValue(section, key, default_value);
-}
-
-float CommonHostInterface::GetFloatSettingValue(const char* section, const char* key, float default_value /* = 0.0f */)
-{
-  return Host::GetFloatSettingValue(section, key, default_value);
-}
-
-std::vector<std::string> CommonHostInterface::GetSettingStringList(const char* section, const char* key)
-{
-  return Host::GetStringListSetting(section, key);
 }
 
 void CommonHostInterface::SetTimerResolutionIncreased(bool enabled)
@@ -1562,7 +819,7 @@ void CommonHostInterface::DisplayLoadingScreen(const char* message, int progress
   ImGui::End();
 
   ImGui::EndFrame();
-  m_display->Render();
+  Host::GetHostDisplay()->Render();
 }
 
 void CommonHostInterface::GetGameInfo(const char* path, CDImage* image, std::string* code, std::string* title)
@@ -1590,109 +847,6 @@ void CommonHostInterface::GetGameInfo(const char* path, CDImage* image, std::str
 
   const std::string display_name(FileSystem::GetDisplayNameFromPath(path));
   *title = Path::GetFileTitle(display_name);
-}
-
-bool CommonHostInterface::SaveResumeSaveState()
-{
-  if (System::IsShutdown())
-    return false;
-
-  const bool global = System::GetRunningCode().empty();
-  return SaveState(global, -1);
-}
-
-bool CommonHostInterface::IsDumpingAudio() const
-{
-  return g_spu.IsDumpingAudio();
-}
-
-bool CommonHostInterface::StartDumpingAudio(const char* filename)
-{
-  if (System::IsShutdown())
-    return false;
-
-  std::string auto_filename;
-  if (!filename)
-  {
-    const auto& code = System::GetRunningCode();
-    if (code.empty())
-    {
-      auto_filename = GetUserDirectoryRelativePath("dump/audio/%s.wav", GetTimestampStringForFileName().GetCharArray());
-    }
-    else
-    {
-      auto_filename = GetUserDirectoryRelativePath("dump/audio/%s_%s.wav", code.c_str(),
-                                                   GetTimestampStringForFileName().GetCharArray());
-    }
-
-    filename = auto_filename.c_str();
-  }
-
-  if (g_spu.StartDumpingAudio(filename))
-  {
-    AddFormattedOSDMessage(5.0f, TranslateString("OSDMessage", "Started dumping audio to '%s'."), filename);
-    return true;
-  }
-  else
-  {
-    AddFormattedOSDMessage(10.0f, TranslateString("OSDMessage", "Failed to start dumping audio to '%s'."), filename);
-    return false;
-  }
-}
-
-void CommonHostInterface::StopDumpingAudio()
-{
-  if (System::IsShutdown() || !g_spu.StopDumpingAudio())
-    return;
-
-  AddOSDMessage(TranslateStdString("OSDMessage", "Stopped dumping audio."), 5.0f);
-}
-
-bool CommonHostInterface::SaveScreenshot(const char* filename /* = nullptr */, bool full_resolution /* = true */,
-                                         bool apply_aspect_ratio /* = true */, bool compress_on_thread /* = true */)
-{
-  if (System::IsShutdown())
-    return false;
-
-  std::string auto_filename;
-  if (!filename)
-  {
-    const auto& code = System::GetRunningCode();
-    const char* extension = "png";
-    if (code.empty())
-    {
-      auto_filename = GetUserDirectoryRelativePath("screenshots" FS_OSPATH_SEPARATOR_STR "%s.%s",
-                                                   GetTimestampStringForFileName().GetCharArray(), extension);
-    }
-    else
-    {
-      auto_filename = GetUserDirectoryRelativePath("screenshots" FS_OSPATH_SEPARATOR_STR "%s_%s.%s", code.c_str(),
-                                                   GetTimestampStringForFileName().GetCharArray(), extension);
-    }
-
-    filename = auto_filename.c_str();
-  }
-
-  if (FileSystem::FileExists(filename))
-  {
-    AddFormattedOSDMessage(10.0f, TranslateString("OSDMessage", "Screenshot file '%s' already exists."), filename);
-    return false;
-  }
-
-  const bool internal_resolution = GetBoolSettingValue("Display", "InternalResolutionScreenshots", false);
-  const bool screenshot_saved =
-    internal_resolution ?
-      m_display->WriteDisplayTextureToFile(filename, full_resolution, apply_aspect_ratio, compress_on_thread) :
-      m_display->WriteScreenshotToFile(filename, compress_on_thread);
-
-  if (!screenshot_saved)
-  {
-    AddFormattedOSDMessage(10.0f, TranslateString("OSDMessage", "Failed to save screenshot to '%s'"), filename);
-    return false;
-  }
-
-  AddFormattedOSDMessage(5.0f, TranslateString("OSDMessage", "Screenshot saved to '%s'."), filename);
-  return true;
 }
 
 void CommonHostInterface::ApplyGameSettings(bool display_osd_messages)
@@ -1774,14 +928,15 @@ void CommonHostInterface::ApplyControllerCompatibilitySettings(u64 controller_ma
           supported_controller_string.AppendString(", ");
 
         supported_controller_string.AppendString(
-          TranslateString("ControllerType", Settings::GetControllerTypeDisplayName(supported_ctype)));
+          Host::TranslateString("ControllerType", Settings::GetControllerTypeDisplayName(supported_ctype)));
       }
 
-      AddFormattedOSDMessage(
+      Host::AddFormattedOSDMessage(
         30.0f,
-        TranslateString("OSDMessage", "Controller in port %u (%s) is not supported for %s.\nSupported controllers: "
-                                      "%s\nPlease configure a supported controller from the list above."),
-        i + 1u, TranslateString("ControllerType", Settings::GetControllerTypeDisplayName(ctype)).GetCharArray(),
+        Host::TranslateString("OSDMessage",
+                              "Controller in port %u (%s) is not supported for %s.\nSupported controllers: "
+                              "%s\nPlease configure a supported controller from the list above."),
+        i + 1u, Host::TranslateString("ControllerType", Settings::GetControllerTypeDisplayName(ctype)).GetCharArray(),
         System::GetRunningTitle().c_str(), supported_controller_string.GetCharArray());
     }
   }
@@ -1826,294 +981,6 @@ bool CommonHostInterface::UpdateControllerInputMapFromGameSettings()
   return true;
 }
 #endif
-
-std::string CommonHostInterface::GetCheatFileName() const
-{
-  const std::string& title = System::GetRunningTitle();
-  if (title.empty())
-    return {};
-
-  return GetUserDirectoryRelativePath("cheats/%s.cht", title.c_str());
-}
-
-bool CommonHostInterface::LoadCheatList(const char* filename)
-{
-  if (System::IsShutdown())
-    return false;
-
-  std::unique_ptr<CheatList> cl = std::make_unique<CheatList>();
-  if (!cl->LoadFromFile(filename, CheatList::Format::Autodetect))
-  {
-    AddFormattedOSDMessage(15.0f, TranslateString("OSDMessage", "Failed to load cheats from '%s'."), filename);
-    return false;
-  }
-
-  if (cl->GetEnabledCodeCount() > 0)
-  {
-    AddOSDMessage(TranslateStdString("OSDMessage", "%n cheats are enabled. This may result in instability.", "",
-                                     cl->GetEnabledCodeCount()),
-                  30.0f);
-  }
-
-  System::SetCheatList(std::move(cl));
-  return true;
-}
-
-bool CommonHostInterface::LoadCheatListFromGameTitle()
-{
-  if (IsCheevosChallengeModeActive())
-    return false;
-
-  const std::string filename(GetCheatFileName());
-  if (filename.empty() || !FileSystem::FileExists(filename.c_str()))
-    return false;
-
-  return LoadCheatList(filename.c_str());
-}
-
-bool CommonHostInterface::LoadCheatListFromDatabase()
-{
-  if (System::GetRunningCode().empty() || IsCheevosChallengeModeActive())
-    return false;
-
-  std::unique_ptr<CheatList> cl = std::make_unique<CheatList>();
-  if (!cl->LoadFromPackage(System::GetRunningCode()))
-    return false;
-
-  Log_InfoPrintf("Loaded %u cheats from database.", cl->GetCodeCount());
-  System::SetCheatList(std::move(cl));
-  return true;
-}
-
-bool CommonHostInterface::SaveCheatList()
-{
-  if (!System::IsValid() || !System::HasCheatList())
-    return false;
-
-  const std::string filename(GetCheatFileName());
-  if (filename.empty())
-    return false;
-
-  if (!System::GetCheatList()->SaveToPCSXRFile(filename.c_str()))
-  {
-    AddFormattedOSDMessage(15.0f, TranslateString("OSDMessage", "Failed to save cheat list to '%s'"), filename.c_str());
-  }
-
-  return true;
-}
-
-bool CommonHostInterface::SaveCheatList(const char* filename)
-{
-  if (!System::IsValid() || !System::HasCheatList())
-    return false;
-
-  if (!System::GetCheatList()->SaveToPCSXRFile(filename))
-    return false;
-
-  // This shouldn't be needed, but lupdate doesn't gather this string otherwise...
-  const u32 code_count = System::GetCheatList()->GetCodeCount();
-  AddFormattedOSDMessage(5.0f, TranslateString("OSDMessage", "Saved %n cheats to '%s'.", "", code_count), filename);
-  return true;
-}
-
-bool CommonHostInterface::DeleteCheatList()
-{
-  if (!System::IsValid())
-    return false;
-
-  const std::string filename(GetCheatFileName());
-  if (!filename.empty())
-  {
-    if (!FileSystem::DeleteFile(filename.c_str()))
-      return false;
-
-    AddFormattedOSDMessage(5.0f, TranslateString("OSDMessage", "Deleted cheat list '%s'."), filename.c_str());
-  }
-
-  System::SetCheatList(nullptr);
-  return true;
-}
-
-void CommonHostInterface::ClearCheatList(bool save_to_file)
-{
-  if (!System::IsValid())
-    return;
-
-  CheatList* cl = System::GetCheatList();
-  if (!cl)
-    return;
-
-  while (cl->GetCodeCount() > 0)
-    cl->RemoveCode(cl->GetCodeCount() - 1);
-
-  if (save_to_file)
-    SaveCheatList();
-}
-
-void CommonHostInterface::SetCheatCodeState(u32 index, bool enabled, bool save_to_file)
-{
-  if (!System::IsValid() || !System::HasCheatList())
-    return;
-
-  CheatList* cl = System::GetCheatList();
-  if (index >= cl->GetCodeCount())
-    return;
-
-  CheatCode& cc = cl->GetCode(index);
-  if (cc.enabled == enabled)
-    return;
-
-  cc.enabled = enabled;
-  if (!enabled)
-    cc.ApplyOnDisable();
-
-  if (enabled)
-  {
-    AddFormattedOSDMessage(5.0f, TranslateString("OSDMessage", "Cheat '%s' enabled."), cc.description.c_str());
-  }
-  else
-  {
-    AddFormattedOSDMessage(5.0f, TranslateString("OSDMessage", "Cheat '%s' disabled."), cc.description.c_str());
-  }
-
-  if (save_to_file)
-    SaveCheatList();
-}
-
-void CommonHostInterface::ApplyCheatCode(u32 index)
-{
-  if (!System::HasCheatList() || index >= System::GetCheatList()->GetCodeCount())
-    return;
-
-  const CheatCode& cc = System::GetCheatList()->GetCode(index);
-  if (!cc.enabled)
-  {
-    cc.Apply();
-    AddFormattedOSDMessage(5.0f, TranslateString("OSDMessage", "Applied cheat '%s'."), cc.description.c_str());
-  }
-  else
-  {
-    AddFormattedOSDMessage(5.0f, TranslateString("OSDMessage", "Cheat '%s' is already enabled."),
-                           cc.description.c_str());
-  }
-}
-
-void CommonHostInterface::TogglePostProcessing()
-{
-  if (!m_display)
-    return;
-
-  g_settings.display_post_processing = !g_settings.display_post_processing;
-  if (g_settings.display_post_processing)
-  {
-    AddKeyedOSDMessage("PostProcessing", TranslateStdString("OSDMessage", "Post-processing is now enabled."), 10.0f);
-
-    if (!m_display->SetPostProcessingChain(g_settings.display_post_process_chain))
-      AddOSDMessage(TranslateStdString("OSDMessage", "Failed to load post processing shader chain."), 20.0f);
-  }
-  else
-  {
-    AddKeyedOSDMessage("PostProcessing", TranslateStdString("OSDMessage", "Post-processing is now disabled."), 10.0f);
-    m_display->SetPostProcessingChain({});
-  }
-}
-
-void CommonHostInterface::ReloadPostProcessingShaders()
-{
-  if (!m_display || !g_settings.display_post_processing)
-    return;
-
-  if (!m_display->SetPostProcessingChain(g_settings.display_post_process_chain))
-    AddOSDMessage(TranslateStdString("OSDMessage", "Failed to load post-processing shader chain."), 20.0f);
-  else
-    AddOSDMessage(TranslateStdString("OSDMessage", "Post-processing shaders reloaded."), 10.0f);
-}
-
-void CommonHostInterface::ToggleWidescreen()
-{
-  Panic("Fixme");
-#if 0
-  g_settings.gpu_widescreen_hack = !g_settings.gpu_widescreen_hack;
-
-  const GameSettings::Entry* gs = m_game_list->GetGameSettings(System::GetRunningPath(), System::GetRunningCode());
-  DisplayAspectRatio user_ratio;
-  if (gs && gs->display_aspect_ratio.has_value())
-  {
-    user_ratio = gs->display_aspect_ratio.value();
-  }
-  else
-  {
-    std::lock_guard<std::recursive_mutex> guard(m_settings_mutex);
-    user_ratio = Settings::ParseDisplayAspectRatio(
-                   m_settings_interface
-                     ->GetStringValue("Display", "AspectRatio",
-                                      Settings::GetDisplayAspectRatioName(Settings::DEFAULT_DISPLAY_ASPECT_RATIO))
-                     .c_str())
-                   .value_or(DisplayAspectRatio::Auto);
-  }
-
-  if (user_ratio == DisplayAspectRatio::Auto || user_ratio == DisplayAspectRatio::PAR1_1 ||
-      user_ratio == DisplayAspectRatio::R4_3)
-  {
-    g_settings.display_aspect_ratio = g_settings.gpu_widescreen_hack ? DisplayAspectRatio::R16_9 : user_ratio;
-  }
-  else
-  {
-    g_settings.display_aspect_ratio = g_settings.gpu_widescreen_hack ? user_ratio : DisplayAspectRatio::Auto;
-  }
-
-  if (g_settings.gpu_widescreen_hack)
-  {
-    AddKeyedFormattedOSDMessage(
-      "WidescreenHack", 5.0f,
-      TranslateString("OSDMessage", "Widescreen hack is now enabled, and aspect ratio is set to %s."),
-      TranslateString("DisplayAspectRatio", Settings::GetDisplayAspectRatioName(g_settings.display_aspect_ratio))
-        .GetCharArray());
-  }
-  else
-  {
-    AddKeyedFormattedOSDMessage(
-      "WidescreenHack", 5.0f,
-      TranslateString("OSDMessage", "Widescreen hack is now disabled, and aspect ratio is set to %s."),
-      TranslateString("DisplayAspectRatio", Settings::GetDisplayAspectRatioName(g_settings.display_aspect_ratio))
-        .GetCharArray());
-  }
-
-  GTE::UpdateAspectRatio();
-#endif
-}
-
-void CommonHostInterface::SwapMemoryCards()
-{
-  System::SwapMemoryCards();
-
-  if (System::HasMemoryCard(0) && System::HasMemoryCard(1))
-  {
-    g_host_interface->AddOSDMessage(
-      g_host_interface->TranslateStdString("OSDMessage", "Swapped memory card ports. Both ports have a memory card."),
-      10.0f);
-  }
-  else if (System::HasMemoryCard(1))
-  {
-    g_host_interface->AddOSDMessage(
-      g_host_interface->TranslateStdString("OSDMessage",
-                                           "Swapped memory card ports. Port 2 has a memory card, Port 1 is empty."),
-      10.0f);
-  }
-  else if (System::HasMemoryCard(0))
-  {
-    g_host_interface->AddOSDMessage(
-      g_host_interface->TranslateStdString("OSDMessage",
-                                           "Swapped memory card ports. Port 1 has a memory card, Port 2 is empty."),
-      10.0f);
-  }
-  else
-  {
-    g_host_interface->AddOSDMessage(
-      g_host_interface->TranslateStdString("OSDMessage", "Swapped memory card ports. Neither port has a memory card."),
-      10.0f);
-  }
-}
 
 bool CommonHostInterface::ParseFullscreenMode(const std::string_view& mode, u32* width, u32* height,
                                               float* refresh_rate)
@@ -2177,14 +1044,15 @@ bool CommonHostInterface::RequestRenderWindowScale(float scale)
   if (!System::IsValid() || scale == 0)
     return false;
 
+  HostDisplay* display = Host::GetHostDisplay();
   const float y_scale =
-    (static_cast<float>(m_display->GetDisplayWidth()) / static_cast<float>(m_display->GetDisplayHeight())) /
-    m_display->GetDisplayAspectRatio();
+    (static_cast<float>(display->GetDisplayWidth()) / static_cast<float>(display->GetDisplayHeight())) /
+    display->GetDisplayAspectRatio();
 
   const u32 requested_width =
-    std::max<u32>(static_cast<u32>(std::ceil(static_cast<float>(m_display->GetDisplayWidth()) * scale)), 1);
+    std::max<u32>(static_cast<u32>(std::ceil(static_cast<float>(display->GetDisplayWidth()) * scale)), 1);
   const u32 requested_height =
-    std::max<u32>(static_cast<u32>(std::ceil(static_cast<float>(m_display->GetDisplayHeight()) * y_scale * scale)), 1);
+    std::max<u32>(static_cast<u32>(std::ceil(static_cast<float>(display->GetDisplayHeight()) * y_scale * scale)), 1);
 
   return RequestRenderWindowSize(static_cast<s32>(requested_width), static_cast<s32>(requested_height));
 }
@@ -2206,7 +1074,7 @@ std::unique_ptr<ByteStream> CommonHostInterface::OpenPackageFile(const char* pat
 
 #ifdef WITH_DISCORD_PRESENCE
 
-void CommonHostInterface::SetDiscordPresenceEnabled(bool enabled)
+void CommonHost::SetDiscordPresenceEnabled(bool enabled)
 {
   if (m_discord_presence_enabled == enabled)
     return;
@@ -2218,7 +1086,7 @@ void CommonHostInterface::SetDiscordPresenceEnabled(bool enabled)
     ShutdownDiscordPresence();
 }
 
-void CommonHostInterface::InitializeDiscordPresence()
+void CommonHost::InitializeDiscordPresence()
 {
   if (m_discord_presence_active)
     return;
@@ -2230,7 +1098,7 @@ void CommonHostInterface::InitializeDiscordPresence()
   UpdateDiscordPresence(false);
 }
 
-void CommonHostInterface::ShutdownDiscordPresence()
+void CommonHost::ShutdownDiscordPresence()
 {
   if (!m_discord_presence_active)
     return;
@@ -2243,7 +1111,7 @@ void CommonHostInterface::ShutdownDiscordPresence()
 #endif
 }
 
-void CommonHostInterface::UpdateDiscordPresence(bool rich_presence_only)
+void CommonHost::UpdateDiscordPresence(bool rich_presence_only)
 {
   if (!m_discord_presence_active)
     return;
@@ -2301,7 +1169,7 @@ void CommonHostInterface::UpdateDiscordPresence(bool rich_presence_only)
   Discord_UpdatePresence(&rp);
 }
 
-void CommonHostInterface::PollDiscordPresence()
+void CommonHost::PollDiscordPresence()
 {
   if (!m_discord_presence_active)
     return;
@@ -2315,7 +1183,7 @@ void CommonHostInterface::PollDiscordPresence()
 
 #ifdef WITH_CHEEVOS
 
-void CommonHostInterface::UpdateCheevosActive(SettingsInterface& si)
+void CommonHost::UpdateCheevosActive(SettingsInterface& si)
 {
   const bool cheevos_enabled = si.GetBoolValue("Cheevos", "Enabled", false);
   const bool cheevos_test_mode = si.GetBoolValue("Cheevos", "TestMode", false);
@@ -2340,7 +1208,9 @@ void CommonHostInterface::UpdateCheevosActive(SettingsInterface& si)
     {
       if (!Cheevos::Initialize(cheevos_test_mode, cheevos_use_first_disc_from_playlist, cheevos_rich_presence,
                                cheevos_hardcore, cheevos_unofficial_test_mode))
-        ReportError("Failed to initialize cheevos after settings change.");
+      {
+        Host::ReportErrorAsync("Error", "Failed to initialize cheevos after settings change.");
+      }
     }
   }
 }
@@ -2349,7 +1219,6 @@ void CommonHostInterface::UpdateCheevosActive(SettingsInterface& si)
 
 BEGIN_HOTKEY_LIST(g_common_hotkeys)
 END_HOTKEY_LIST()
-
 
 #if 0
 

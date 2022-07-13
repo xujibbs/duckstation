@@ -144,11 +144,11 @@ void GameListSearchDirectoriesModel::openEntryInExplorer(QWidget* parent, int ro
 
 void GameListSearchDirectoriesModel::loadFromSettings()
 {
-  std::vector<std::string> path_list = m_host_interface->GetSettingStringList("GameList", "Paths");
+  std::vector<std::string> path_list = Host::GetBaseStringListSetting("GameList", "Paths");
   for (std::string& entry : path_list)
     m_entries.push_back({QString::fromStdString(entry), false});
 
-  path_list = m_host_interface->GetSettingStringList("GameList", "RecursivePaths");
+  path_list = Host::GetBaseStringListSetting("GameList", "RecursivePaths");
   for (std::string& entry : path_list)
     m_entries.push_back({QString::fromStdString(entry), true});
 }
@@ -167,12 +167,12 @@ void GameListSearchDirectoriesModel::saveToSettings()
   }
 
   if (paths.empty())
-    m_host_interface->RemoveSettingValue("GameList", "Paths");
+    Host::DeleteBaseSettingValue("GameList", "Paths");
   else
-    m_host_interface->SetStringListSettingValue("GameList", "Paths", paths);
+    Host::SetBaseStringListSettingValue("GameList", "Paths", paths);
 
   if (recursive_paths.empty())
-    m_host_interface->RemoveSettingValue("GameList", "RecursivePaths");
+    Host::DeleteBaseSettingValue("GameList", "RecursivePaths");
   else
-    m_host_interface->SetStringListSettingValue("GameList", "RecursivePaths", recursive_paths);
+    Host::SetBaseStringListSettingValue("GameList", "RecursivePaths", recursive_paths);
 }

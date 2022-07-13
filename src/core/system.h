@@ -34,12 +34,38 @@ struct SystemBootParameters
   bool force_software_renderer = false;
 };
 
+struct SaveStateInfo
+{
+  std::string path;
+  std::time_t timestamp;
+  s32 slot;
+  bool global;
+};
+
+struct ExtendedSaveStateInfo
+{
+  std::string path;
+  std::string title;
+  std::string game_code;
+  std::string media_path;
+  std::time_t timestamp;
+  s32 slot;
+  bool global;
+
+  u32 screenshot_width;
+  u32 screenshot_height;
+  std::vector<u32> screenshot_data;
+};
+
 namespace System {
 
 enum : u32
 {
   // 5 megabytes is sufficient for now, at the moment they're around 4.3MB, or 10.3MB with 8MB RAM enabled.
-  MAX_SAVE_STATE_SIZE = 11 * 1024 * 1024
+  MAX_SAVE_STATE_SIZE = 11 * 1024 * 1024,
+
+  PER_GAME_SAVE_STATE_SLOTS = 10,
+  GLOBAL_SAVE_STATE_SLOTS = 10
 };
 
 enum : TickCount
@@ -81,6 +107,9 @@ DiscRegion GetRegionForImage(CDImage* cdi);
 DiscRegion GetRegionForExe(const char* path);
 DiscRegion GetRegionForPsf(const char* path);
 std::optional<DiscRegion> GetRegionForPath(const char* image_path);
+
+/// Returns the path for the game settings ini file for the specified serial.
+std::string GetGameSettingsPath(const std::string_view& game_serial);
 
 State GetState();
 void SetState(State new_state);
@@ -147,12 +176,36 @@ float GetThrottleFrequency();
 float GetCPUThreadUsage();
 float GetCPUThreadAverageTime();
 
-bool Boot(const SystemBootParameters& params);
-void Reset();
-void Shutdown();
+/// Loads global settings (i.e. EmuConfig).
+void LoadSettings(bool display_osd_messages);
+void SetDefaultSettings(SettingsInterface& si);
 
-bool LoadState(ByteStream* state, bool update_display = true);
-bool SaveState(ByteStream* state, u32 screenshot_size = 256);
+/// Reloads settings, and applies any changes present.
+void ApplySettings(bool display_osd_messages);
+
+/// Reloads game specific settings, and applys any changes present.
+bool ReloadGameSettings(bool display_osd_messages);
+
+bool BootSystem(std::shared_ptr<SystemBootParameters> parameters);
+void PauseSystem(bool paused);
+void ResetSystem();
+void DestroySystem();
+
+/// Loads state from the specified filename.
+bool LoadState(const char* filename);
+bool SaveState(const char* filename);
+
+/// Loads the current emulation state from file. Specifying a slot of -1 loads the "resume" game state.
+bool LoadStateFromSlot(bool global, s32 slot);
+
+/// Saves the current emulation state to a file. Specifying a slot of -1 saves the "resume" save state.
+bool SaveStateToSlot(bool global, s32 slot);
+
+/// Runs the VM until the CPU execution is canceled.
+void Execute();
+
+/// Switches the GPU renderer by saving state, recreating the display window, and restoring state (if needed).
+void RecreateSystem();
 
 /// Recreates the GPU component, saving/loading the state so it is preserved. Call when the GPU renderer changes.
 bool RecreateGPU(GPURenderer renderer, bool update_display = true);
@@ -163,7 +216,6 @@ void RunFrames();
 
 /// Sets target emulation speed.
 float GetTargetSpeed();
-void SetTargetSpeed(float speed);
 
 /// Adjusts the throttle frequency, i.e. how many times we should sleep per second.
 void SetThrottleFrequency(float frequency);
@@ -186,7 +238,10 @@ void ResetControllers();
 void UpdateMemoryCardTypes();
 void UpdatePerGameMemoryCards();
 bool HasMemoryCard(u32 slot);
+
+/// Swaps memory cards in slot 1/2.
 void SwapMemoryCards();
+
 void UpdateMultitaps();
 
 /// Dumps RAM to a file.
@@ -233,6 +288,140 @@ void ApplyCheatCode(const CheatCode& code);
 /// Sets or clears the provided cheat list, applying every frame.
 void SetCheatList(std::unique_ptr<CheatList> cheats);
 
+/// Checks for settings changes, std::move() the old settings away for comparing beforehand.
+void CheckForSettingsChanges(const Settings& old_settings);
+
+/// Updates throttler.
+void UpdateSpeedLimiterState();
+
+/// Toggles fast forward state.
+bool IsFastForwardEnabled();
+void SetFastForwardEnabled(bool enabled);
+
+/// Toggles turbo state.
+bool IsTurboEnabled();
+void SetTurboEnabled(bool enabled);
+
+/// Toggles rewind state.
+bool IsRewinding();
+void SetRewindState(bool enabled);
+
+void DoFrameStep();
+void DoToggleCheats();
+
+/// Returns the path to a save state file. Specifying an index of -1 is the "resume" save state.
+std::string GetGameSaveStateFileName(const char* game_code, s32 slot);
+
+/// Returns the path to a save state file. Specifying an index of -1 is the "resume" save state.
+std::string GetGlobalSaveStateFileName(s32 slot);
+
+/// Moves the current save state file to a backup name, if it exists.
+void RenameCurrentSaveStateToBackup(const char* filename);
+
+/// Returns the most recent resume save state.
+std::string GetMostRecentResumeSaveStatePath();
+
+/// Returns the path to the cheat file for the specified game title.
+std::string GetCheatFileName();
+
+/// Powers off the system, optionally saving the resume state.
+void PowerOffSystem(bool save_resume_state);
+
+/// Returns true if an undo load state exists.
+bool CanUndoLoadState();
+
+/// Returns save state info for the undo slot, if present.
+std::optional<ExtendedSaveStateInfo> GetUndoSaveStateInfo();
+
+/// Undoes a load state, i.e. restores the state prior to the load.
+bool UndoLoadState();
+
+/// Returns true if the specified file/disc image is resumable.
+bool CanResumeSystemFromFile(const char* filename);
+
+/// Loads the resume save state for the given game. Optionally boots the game anyway if loading fails.
+bool ResumeSystemFromState(const char* filename, bool boot_on_failure);
+
+/// Loads the most recent resume save state. This may be global or per-game.
+bool ResumeSystemFromMostRecentState();
+
+/// Saves the resume save state, call when shutting down.
+bool SaveResumeSaveState();
+
+/// Returns a list of save states for the specified game code.
+std::vector<SaveStateInfo> GetAvailableSaveStates(const char* game_code);
+
+/// Returns save state info if present. If game_code is null or empty, assumes global state.
+std::optional<SaveStateInfo> GetSaveStateInfo(const char* game_code, s32 slot);
+
+/// Returns save state info from opened save state stream.
+std::optional<ExtendedSaveStateInfo> GetExtendedSaveStateInfo(ByteStream* stream);
+
+/// Returns save state info if present. If game_code is null or empty, assumes global state.
+std::optional<ExtendedSaveStateInfo> GetExtendedSaveStateInfo(const char* game_code, s32 slot);
+
+/// Deletes save states for the specified game code. If resume is set, the resume state is deleted too.
+void DeleteSaveStates(const char* game_code, bool resume);
+
+/// Returns intended output volume considering fast forwarding.
+s32 GetAudioOutputVolume();
+void UpdateVolume();
+
+/// Returns true if currently dumping audio.
+bool IsDumpingAudio();
+
+/// Starts dumping audio to a file. If no file name is provided, one will be generated automatically.
+bool StartDumpingAudio(const char* filename = nullptr);
+
+/// Stops dumping audio to file if it has been started.
+void StopDumpingAudio();
+
+/// Saves a screenshot to the specified file. IF no file name is provided, one will be generated automatically.
+bool SaveScreenshot(const char* filename = nullptr, bool full_resolution = true, bool apply_aspect_ratio = true,
+                    bool compress_on_thread = true);
+
+/// Loads the cheat list from the specified file.
+bool LoadCheatList(const char* filename);
+
+/// Loads the cheat list for the current game title from the user directory.
+bool LoadCheatListFromGameTitle();
+
+/// Loads the cheat list for the current game code from the built-in code database.
+bool LoadCheatListFromDatabase();
+
+/// Saves the current cheat list to the game title's file.
+bool SaveCheatList();
+
+/// Saves the current cheat list to the specified file.
+bool SaveCheatList(const char* filename);
+
+/// Deletes the cheat list, if present.
+bool DeleteCheatList();
+
+/// Removes all cheats from the cheat list.
+void ClearCheatList(bool save_to_file);
+
+/// Enables/disabled the specified cheat code.
+void SetCheatCodeState(u32 index, bool enabled, bool save_to_file);
+
+/// Immediately applies the specified cheat code.
+void ApplyCheatCode(u32 index);
+
+/// Temporarily toggles post-processing on/off.
+void TogglePostProcessing();
+
+/// Reloads post processing shaders with the current configuration.
+void ReloadPostProcessingShaders();
+
+/// Toggle Widescreen Hack and Aspect Ratio
+void ToggleWidescreen();
+
+/// Returns true if the state should be saved on shutdown.
+bool ShouldSaveResumeState();
+
+/// Returns true if fast forwarding or slow motion is currently active.
+bool IsRunningAtNonStandardSpeed();
+
 //////////////////////////////////////////////////////////////////////////
 // Memory Save States (Rewind and Runahead)
 //////////////////////////////////////////////////////////////////////////
@@ -240,8 +429,76 @@ void CalculateRewindMemoryUsage(u32 num_saves, u64* ram_usage, u64* vram_usage);
 void ClearMemorySaveStates();
 void UpdateMemorySaveStateSettings();
 bool LoadRewindState(u32 skip_saves = 0, bool consume_state = true);
-bool IsRewinding();
-void SetRewinding(bool enabled);
 void SetRunaheadReplayFlag();
 
 } // namespace System
+
+namespace Host {
+/// Called with the settings lock held, when system settings are being loaded (should load input sources, etc).
+void LoadSettings(SettingsInterface& si, std::unique_lock<std::mutex>& lock);
+
+/// Called after settings are updated.
+void CheckForSettingsChanges(const Settings& old_settings);
+
+/// Called when the VM is starting initialization, but has not been completed yet.
+void OnSystemStarting();
+
+/// Called when the VM is created.
+void OnSystemStarted();
+
+/// Called when the VM is shut down or destroyed.
+void OnSystemDestroyed();
+
+/// Called when the VM is paused.
+void OnSystemPaused();
+
+/// Called when the VM is resumed after being paused.
+void OnSystemResumed();
+
+/// Called when performance metrics are updated, approximately once a second.
+void OnPerformanceMetricsUpdated();
+
+/// Called when a save state is loading, before the file is processed.
+// void OnSaveStateLoading(const std::string_view& filename);
+
+/// Called after a save state is successfully loaded. If the save state was invalid, was_successful will be false.
+// void OnSaveStateLoaded(const std::string_view& filename, bool was_successful);
+
+/// Called when a save state is being created/saved. The compression/write to disk is asynchronous, so this callback
+/// just signifies that the save has started, not necessarily completed.
+// void OnSaveStateSaved(const std::string_view& filename);
+
+/// Provided by the host; called when the running executable changes.
+void OnGameChanged(const std::string& disc_path, const std::string& game_serial, const std::string& game_name);
+
+/// Provided by the host; called once per frame at guest vsync.
+void PumpMessagesOnCPUThread();
+
+/// Provided by the host; called when a state is saved, and the frontend should invalidate its save state cache.
+// void InvalidateSaveStateCache();
+
+/// Requests a specific display window size.
+// void RequestResizeHostDisplay(s32 width, s32 height);
+
+/// Safely executes a function on the VM thread.
+// void RunOnCPUThread(std::function<void()> function, bool block = false);
+
+/// Asynchronously starts refreshing the game list.
+// void RefreshGameListAsync(bool invalidate_cache);
+
+/// Cancels game list refresh, if there is one in progress.
+// void CancelGameListRefresh();
+
+/// Requests shut down and exit of the hosting application. This may not actually exit,
+/// if the user cancels the shutdown confirmation.
+// void RequestExit(bool save_state_if_running);
+
+/// Requests shut down of the current virtual machine.
+// void RequestVMShutdown(bool save_state);
+
+/// Returns true if the hosting application is currently fullscreen.
+// bool IsFullscreen();
+
+/// Alters fullscreen state of hosting application.
+// void SetFullscreen(bool enabled);
+} // namespace Host

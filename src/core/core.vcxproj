@@ -46,6 +46,7 @@
     <ClCompile Include="gpu.cpp" />
     <ClCompile Include="gpu_hw.cpp" />
     <ClCompile Include="gpu_hw_opengl.cpp" />
+    <ClCompile Include="host.cpp" />
     <ClCompile Include="host_display.cpp" />
     <ClCompile Include="host_interface.cpp" />
     <ClCompile Include="host_interface_progress_callback.cpp" />
@@ -80,6 +81,7 @@
     <ClInclude Include="cdrom.h" />
     <ClInclude Include="cdrom_async_reader.h" />
     <ClInclude Include="cheats.h" />
+    <ClInclude Include="cheevos.h" />
     <ClInclude Include="cpu_core.h" />
     <ClInclude Include="cpu_core_private.h" />
     <ClInclude Include="cpu_disasm.h" />

@@ -1,11 +1,20 @@
 #pragma once
 
+#include "common/string.h"
 #include "common/types.h"
 
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
+
+struct WindowInfo;
+enum class AudioBackend : u8;
+class AudioStream;
+
+/// Marks a core string as being translatable.
+#define TRANSLATABLE(context, str) str
 
 /// Generic input bindings. These roughly match a DualShock 4 or XBox One controller.
 /// They are used for automatic binding to PS2 controller types, and for big picture mode navigation.
@@ -58,6 +67,12 @@ std::optional<std::vector<u8>> ReadResourceFile(const char* filename);
 /// Reads a resource file file from the resources directory as a string.
 std::optional<std::string> ReadResourceFileToString(const char* filename);
 
+/// Translates a string to the current language.
+TinyString TranslateString(const char* context, const char* str, const char* disambiguation = nullptr, int n = -1);
+std::string TranslateStdString(const char* context, const char* str, const char* disambiguation = nullptr, int n = -1);
+
+std::unique_ptr<AudioStream> CreateAudioStream(AudioBackend backend);
+
 /// Adds OSD messages, duration is in seconds.
 void AddOSDMessage(std::string message, float duration = 2.0f);
 void AddKeyedOSDMessage(std::string key, std::string message, float duration = 2.0f);
@@ -70,14 +85,15 @@ void ClearOSDMessages();
 void ReportErrorAsync(const std::string_view& title, const std::string_view& message);
 void ReportFormattedErrorAsync(const std::string_view& title, const char* format, ...);
 
+/// Displays a synchronous confirmation on the UI thread, i.e. blocks the caller.
+bool ConfirmMessage(const std::string_view& title, const std::string_view& message);
+bool ConfirmFormattedMessage(const std::string_view& title, const char* format, ...);
+
+/// Debugger feedback.
+void ReportDebuggerMessage(const std::string_view& message);
+void ReportFormattedDebuggerMessage(const char* format, ...) printflike(2, 3);
+
 /// Internal method used by pads to dispatch vibration updates to input sources.
 /// Intensity is normalized from 0 to 1.
 void SetPadVibrationIntensity(u32 pad_index, float large_or_single_motor_intensity, float small_motor_intensity);
-
-void OpenBackgroundProgressDialog(const char* str_id, std::string message, s32 min, s32 max, s32 value);
-void UpdateBackgroundProgressDialog(const char* str_id, std::string message, s32 min, s32 max, s32 value);
-void CloseBackgroundProgressDialog(const char* str_id);
-
-void AddNotification(float duration, std::string title, std::string text, std::string image_path);
-void ShowToast(std::string title, std::string message, float duration = 10.0f);
 } // namespace Host

@@ -214,7 +214,7 @@ void InputBindingWidget::setNewBinding()
     }
     else
     {
-      QtHost::SetBaseStringSettingValue(m_section_name.c_str(), m_key_name.c_str(), new_binding.c_str());
+      Host::SetBaseStringSettingValue(m_section_name.c_str(), m_key_name.c_str(), new_binding.c_str());
       QtHostInterface::GetInstance()->reloadInputBindings();
     }
   }
@@ -234,7 +234,7 @@ void InputBindingWidget::clearBinding()
   }
   else
   {
-    QtHost::RemoveBaseSettingValue(m_section_name.c_str(), m_key_name.c_str());
+    Host::DeleteBaseSettingValue(m_section_name.c_str(), m_key_name.c_str());
     QtHostInterface::GetInstance()->reloadInputBindings();
   }
   reloadBinding();
@@ -390,7 +390,7 @@ void InputVibrationBindingWidget::setKey(ControllerSettingsDialog* dialog, std::
 void InputVibrationBindingWidget::clearBinding()
 {
   m_binding = {};
-  QtHost::RemoveBaseSettingValue(m_section_name.c_str(), m_key_name.c_str());
+  Host::DeleteBaseSettingValue(m_section_name.c_str(), m_key_name.c_str());
   QtHostInterface::GetInstance()->reloadInputBindings();
   setText(QString());
 }
@@ -427,7 +427,7 @@ void InputVibrationBindingWidget::onClicked()
 
   const QString new_value(input_dialog.textValue());
   m_binding = new_value.toStdString();
-  QtHost::SetBaseStringSettingValue(m_section_name.c_str(), m_key_name.c_str(), m_binding.c_str());
+  Host::SetBaseStringSettingValue(m_section_name.c_str(), m_key_name.c_str(), m_binding.c_str());
   setText(new_value);
 }
 

@@ -44,9 +44,9 @@ struct Settings
 {
   Settings();
 
-  ConsoleRegion region = ConsoleRegion::Auto;
+  ConsoleRegion region = DEFAULT_CONSOLE_REGION;
 
-  CPUExecutionMode cpu_execution_mode = CPUExecutionMode::Interpreter;
+  CPUExecutionMode cpu_execution_mode = DEFAULT_CPU_EXECUTION_MODE;
   u32 cpu_overclock_numerator = 1;
   u32 cpu_overclock_denominator = 1;
   bool cpu_overclock_enable = false;
@@ -54,14 +54,14 @@ struct Settings
   bool cpu_recompiler_memory_exceptions = false;
   bool cpu_recompiler_block_linking = true;
   bool cpu_recompiler_icache = false;
-  CPUFastmemMode cpu_fastmem_mode = CPUFastmemMode::Disabled;
+  CPUFastmemMode cpu_fastmem_mode = DEFAULT_CPU_FASTMEM_MODE;
 
   float emulation_speed = 1.0f;
   float fast_forward_speed = 0.0f;
   float turbo_speed = 0.0f;
-  bool sync_to_host_refresh_rate = true;
+  bool sync_to_host_refresh_rate = false;
   bool increase_timer_resolution = true;
-  bool inhibit_screensaver = false;
+  bool inhibit_screensaver = true;
   bool start_paused = false;
   bool start_fullscreen = false;
   bool pause_on_focus_loss = false;
@@ -70,7 +70,7 @@ struct Settings
   bool confim_power_off = true;
   bool load_devices_from_save_states = false;
   bool apply_game_settings = true;
-  bool auto_load_cheats = false;
+  bool auto_load_cheats = true;
   bool disable_all_enhancements = false;
 
   bool rewind_enable = false;
@@ -78,7 +78,7 @@ struct Settings
   u32 rewind_save_slots = 10;
   u32 runahead_frames = 0;
 
-  GPURenderer gpu_renderer = GPURenderer::Software;
+  GPURenderer gpu_renderer = DEFAULT_GPU_RENDERER;
   std::string gpu_adapter;
   std::string display_post_process_chain;
   u32 gpu_resolution_scale = 1;
@@ -88,10 +88,10 @@ struct Settings
   bool gpu_threaded_presentation = true;
   bool gpu_use_debug_device = false;
   bool gpu_per_sample_shading = false;
-  bool gpu_true_color = false;
-  bool gpu_scaled_dithering = false;
-  GPUTextureFilter gpu_texture_filter = GPUTextureFilter::Nearest;
-  GPUDownsampleMode gpu_downsample_mode = GPUDownsampleMode::Disabled;
+  bool gpu_true_color = true;
+  bool gpu_scaled_dithering = true;
+  GPUTextureFilter gpu_texture_filter = DEFAULT_GPU_TEXTURE_FILTER;
+  GPUDownsampleMode gpu_downsample_mode = DEFAULT_GPU_DOWNSAMPLE_MODE;
   bool gpu_disable_interlacing = true;
   bool gpu_force_ntsc_timings = false;
   bool gpu_widescreen_hack = false;
@@ -102,8 +102,8 @@ struct Settings
   bool gpu_pgxp_cpu = false;
   bool gpu_pgxp_preserve_proj_fp = false;
   bool gpu_pgxp_depth_buffer = false;
-  DisplayCropMode display_crop_mode = DisplayCropMode::None;
-  DisplayAspectRatio display_aspect_ratio = DisplayAspectRatio::Auto;
+  DisplayCropMode display_crop_mode = DEFAULT_DISPLAY_CROP_MODE;
+  DisplayAspectRatio display_aspect_ratio = DEFAULT_DISPLAY_ASPECT_RATIO;
   u16 display_aspect_ratio_custom_numerator = 0;
   u16 display_aspect_ratio_custom_denominator = 0;
   s16 display_active_start_offset = 0;
@@ -124,10 +124,11 @@ struct Settings
   bool display_show_status_indicators = true;
   bool display_show_enhancements = false;
   bool display_all_frames = false;
+  bool display_internal_resolution_screenshots = false;
   bool video_sync_enabled = DEFAULT_VSYNC_VALUE;
   float display_max_fps = DEFAULT_DISPLAY_MAX_FPS;
   float gpu_pgxp_tolerance = -1.0f;
-  float gpu_pgxp_depth_clear_threshold = 300.0f / 4096.0f;
+  float gpu_pgxp_depth_clear_threshold = DEFAULT_GPU_PGXP_DEPTH_THRESHOLD;
 
   u8 cdrom_readahead_sectors = DEFAULT_CDROM_READAHEAD_SECTORS;
   bool cdrom_region_check = false;
@@ -136,20 +137,20 @@ struct Settings
   u32 cdrom_read_speedup = 1;
   u32 cdrom_seek_speedup = 1;
 
-  AudioBackend audio_backend = AudioBackend::Cubeb;
+  AudioBackend audio_backend = DEFAULT_AUDIO_BACKEND;
   s32 audio_output_volume = 100;
   s32 audio_fast_forward_volume = 100;
-  u32 audio_buffer_size = 2048;
-  bool audio_resampling = false;
+  u32 audio_buffer_size = DEFAULT_AUDIO_BUFFER_SIZE;
+  bool audio_resampling = true;
   bool audio_output_muted = false;
   bool audio_sync_enabled = true;
-  bool audio_dump_on_boot = true;
+  bool audio_dump_on_boot = false;
 
   // timing hacks section
-  TickCount dma_max_slice_ticks = 1000;
-  TickCount dma_halt_ticks = 100;
-  u32 gpu_fifo_size = 128;
-  TickCount gpu_max_run_ahead = 128;
+  TickCount dma_max_slice_ticks = DEFAULT_DMA_MAX_SLICE_TICKS;
+  TickCount dma_halt_ticks = DEFAULT_DMA_HALT_TICKS;
+  u32 gpu_fifo_size = DEFAULT_GPU_FIFO_SIZE;
+  TickCount gpu_max_run_ahead = DEFAULT_GPU_MAX_RUN_AHEAD;
 
   struct DebugSettings
   {
@@ -191,7 +192,7 @@ struct Settings
   // TODO: Controllers, memory cards, etc.
 
   bool bios_patch_tty_enable = false;
-  bool bios_patch_fast_boot = false;
+  bool bios_patch_fast_boot = DEFAULT_FAST_BOOT_VALUE;
   bool enable_8mb_ram = false;
 
   std::array<ControllerType, NUM_CONTROLLER_AND_CARD_PORTS> controller_types{};
@@ -202,13 +203,13 @@ struct Settings
   std::string memory_card_directory;
   bool memory_card_use_playlist_title = true;
 
-  MultitapMode multitap_mode = MultitapMode::Disabled;
+  MultitapMode multitap_mode = DEFAULT_MULTITAP_MODE;
 
   std::array<TinyString, NUM_CONTROLLER_AND_CARD_PORTS> GeneratePortLabels() const;
 
-  LOGLEVEL log_level = LOGLEVEL_INFO;
+  LOGLEVEL log_level = DEFAULT_LOG_LEVEL;
   std::string log_filter;
-  bool log_to_console = false;
+  bool log_to_console = DEFAULT_LOG_TO_CONSOLE;
   bool log_to_debug = false;
   bool log_to_window = false;
   bool log_to_file = false;
@@ -267,6 +268,8 @@ struct Settings
 
   void Load(SettingsInterface& si);
   void Save(SettingsInterface& si) const;
+
+  void FixIncompatibleSettings(bool display_osd_messages);
 
   static std::optional<LOGLEVEL> ParseLogLevelName(const char* str);
   static const char* GetLogLevelName(LOGLEVEL level);
@@ -366,6 +369,8 @@ struct Settings
   static constexpr MultitapMode DEFAULT_MULTITAP_MODE = MultitapMode::Disabled;
 
   static constexpr LOGLEVEL DEFAULT_LOG_LEVEL = LOGLEVEL_INFO;
+
+  static constexpr u32 DEFAULT_AUDIO_BUFFER_SIZE = 2048;
 
   // Enable console logging by default on Linux platforms.
 #if defined(__linux__) && !defined(__ANDROID__)

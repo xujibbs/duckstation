@@ -5,6 +5,8 @@
 
 class HostDisplayTexture;
 
+struct ExtendedSaveStateInfo;
+
 namespace FrontendCommon {
 
 class SaveStateSelectorUI
@@ -50,7 +52,7 @@ private:
   };
 
   void InitializePlaceholderListEntry(ListEntry* li, s32 slot, bool global);
-  void InitializeListEntry(ListEntry* li, CommonHostInterface::ExtendedSaveStateInfo* ssi);
+  void InitializeListEntry(ListEntry* li, ExtendedSaveStateInfo* ssi);
   std::pair<s32, bool> GetSlotTypeFromSelection(u32 selection) const;
 
   std::string m_load_legend;

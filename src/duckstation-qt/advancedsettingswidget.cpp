@@ -155,17 +155,17 @@ static void addMSAATweakOption(SettingsDialog* dialog, QTableWidget* table, cons
   QComboBox* msaa = new QComboBox(table);
   QtUtils::FillComboBoxWithMSAAModes(msaa);
   const QVariant current_msaa_mode(QtUtils::GetMSAAModeValue(
-    static_cast<uint>(QtHostInterface::GetInstance()->GetIntSettingValue("GPU", "Multisamples", 1)),
-    QtHostInterface::GetInstance()->GetBoolSettingValue("GPU", "PerSampleShading", false)));
+    static_cast<uint>(dialog->getEffectiveIntValue("GPU", "Multisamples", 1)),
+    dialog->getEffectiveBoolValue("GPU", "PerSampleShading", false)));
   const int current_msaa_index = msaa->findData(current_msaa_mode);
   if (current_msaa_index >= 0)
     msaa->setCurrentIndex(current_msaa_index);
-  msaa->connect(msaa, QOverload<int>::of(&QComboBox::currentIndexChanged), [msaa](int index) {
+  msaa->connect(msaa, QOverload<int>::of(&QComboBox::currentIndexChanged), [dialog, msaa](int index) {
     uint multisamples;
     bool ssaa;
     QtUtils::DecodeMSAAModeValue(msaa->itemData(index), &multisamples, &ssaa);
-    QtHostInterface::GetInstance()->SetIntSettingValue("GPU", "Multisamples", static_cast<int>(multisamples));
-    QtHostInterface::GetInstance()->SetBoolSettingValue("GPU", "PerSampleShading", ssaa);
+    dialog->setIntSettingValue("GPU", "Multisamples", static_cast<int>(multisamples));
+    dialog->setBoolSettingValue("GPU", "PerSampleShading", ssaa);
     QtHostInterface::GetInstance()->applySettings(false);
   });
 

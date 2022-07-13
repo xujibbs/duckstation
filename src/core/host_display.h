@@ -290,3 +290,32 @@ protected:
   bool m_display_integer_scaling = false;
   bool m_display_stretch = false;
 };
+
+namespace Host {
+/// Creates the host display. This may create a new window. The API used depends on the current configuration.
+HostDisplay* AcquireHostDisplay(/*HostDisplay::RenderAPI api*/);
+
+/// Destroys the host display. This may close the display window.
+void ReleaseHostDisplay();
+
+/// Returns a pointer to the current host display abstraction. Assumes AcquireHostDisplay() has been caled.
+HostDisplay* GetHostDisplay();
+
+/// Returns false if the window was completely occluded. If frame_skip is set, the frame won't be
+/// displayed, but the GPU command queue will still be flushed.
+//bool BeginPresentFrame(bool frame_skip);
+
+/// Presents the frame to the display, and renders OSD elements.
+//void EndPresentFrame();
+
+/// Called on the MTGS thread when a resize request is received.
+//void ResizeHostDisplay(u32 new_window_width, u32 new_window_height, float new_window_scale);
+
+/// Called on the MTGS thread when a request to update the display is received.
+/// This could be a fullscreen transition, for example.
+//void UpdateHostDisplay();
+
+/// Provided by the host; renders the display.
+void RenderDisplay();
+void InvalidateDisplay();
+} // namespace Host

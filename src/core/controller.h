@@ -40,6 +40,7 @@ public:
   {
     const char* name;
     const char* display_name;
+    u32 bind_index;
     ControllerBindingType type;
     GenericInputBinding generic_mapping;
   };
@@ -132,6 +133,9 @@ public:
   /// Returns true if the given pad index is a multitap slot.
   static bool PadIsMultitapSlot(u32 index);
   static bool PortAndSlotIsMultitap(u32 port, u32 slot);
+
+  /// Returns the configuration section for the specified gamepad.
+  static std::string GetSettingsSection(u32 pad);
 
 protected:
   u32 m_index;

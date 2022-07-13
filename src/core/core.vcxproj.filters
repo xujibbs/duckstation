@@ -58,6 +58,7 @@
     <ClCompile Include="texture_replacements.cpp" />
     <ClCompile Include="multitap.cpp" />
     <ClCompile Include="gpu_hw_d3d12.cpp" />
+    <ClCompile Include="host.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="types.h" />
@@ -122,5 +123,6 @@
     <ClInclude Include="gdb_protocol.h" />
     <ClInclude Include="host.h" />
     <ClInclude Include="host_settings.h" />
+    <ClInclude Include="cheevos.h" />
   </ItemGroup>
 </Project>

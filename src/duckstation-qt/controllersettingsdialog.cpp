@@ -5,7 +5,7 @@
 #include "controllerglobalsettingswidget.h"
 #include "core/controller.h"
 #include "core/host_settings.h"
-#include "frontend-common/ini_settings_interface.h"
+#include "util/ini_settings_interface.h"
 #include "frontend-common/input_manager.h"
 #include "hotkeysettingswidget.h"
 #include "qthostinterface.h"
@@ -37,16 +37,18 @@ ControllerSettingsDialog::ControllerSettingsDialog(QWidget* parent /* = nullptr 
   connect(m_ui.deleteProfile, &QPushButton::clicked, this, &ControllerSettingsDialog::onDeleteProfileClicked);
   connect(m_ui.restoreDefaults, &QPushButton::clicked, this, &ControllerSettingsDialog::onRestoreDefaultsClicked);
 
-  // connect(g_emu_thread, &EmuThread::onInputDevicesEnumerated, this,
-  // &ControllerSettingsDialog::onInputDevicesEnumerated); connect(g_emu_thread, &EmuThread::onInputDeviceConnected,
-  // this, &ControllerSettingsDialog::onInputDeviceConnected); connect(g_emu_thread,
-  // &EmuThread::onInputDeviceDisconnected, this, &ControllerSettingsDialog::onInputDeviceDisconnected);
-  // connect(g_emu_thread, &EmuThread::onVibrationMotorsEnumerated, this,
-  // &ControllerSettingsDialog::onVibrationMotorsEnumerated);
+  connect(QtHostInterface::GetInstance(), &QtHostInterface::onInputDevicesEnumerated, this,
+          &ControllerSettingsDialog::onInputDevicesEnumerated);
+  connect(QtHostInterface::GetInstance(), &QtHostInterface::onInputDeviceConnected, this,
+          &ControllerSettingsDialog::onInputDeviceConnected);
+  connect(QtHostInterface::GetInstance(), &QtHostInterface::onInputDeviceDisconnected, this,
+          &ControllerSettingsDialog::onInputDeviceDisconnected);
+  connect(QtHostInterface::GetInstance(), &QtHostInterface::onVibrationMotorsEnumerated, this,
+          &ControllerSettingsDialog::onVibrationMotorsEnumerated);
 
   // trigger a device enumeration to populate the device list
-  // g_emu_thread->enumerateInputDevices();
-  // g_emu_thread->enumerateVibrationMotors();
+  QtHostInterface::GetInstance()->enumerateInputDevices();
+  QtHostInterface::GetInstance()->enumerateVibrationMotors();
 }
 
 ControllerSettingsDialog::~ControllerSettingsDialog() = default;
@@ -212,9 +214,7 @@ void ControllerSettingsDialog::onInputDeviceConnected(const QString& identifier,
 {
   m_device_list.emplace_back(identifier, device_name);
   m_global_settings->addDeviceToList(identifier, device_name);
-#if 0
-  g_emu_thread->enumerateVibrationMotors();
-#endif
+  QtHostInterface::GetInstance()->enumerateVibrationMotors();
 }
 
 void ControllerSettingsDialog::onInputDeviceDisconnected(const QString& identifier)
@@ -229,9 +229,7 @@ void ControllerSettingsDialog::onInputDeviceDisconnected(const QString& identifi
   }
 
   m_global_settings->removeDeviceFromList(identifier);
-#if 0
-  g_emu_thread->enumerateVibrationMotors();
-#endif
+  QtHostInterface::GetInstance()->enumerateVibrationMotors();
 }
 
 void ControllerSettingsDialog::onVibrationMotorsEnumerated(const QList<InputBindingKey>& motors)
@@ -276,7 +274,7 @@ void ControllerSettingsDialog::setBoolValue(const char* section, const char* key
   }
   else
   {
-    QtHost::SetBaseBoolSettingValue(section, key, value);
+    Host::SetBaseBoolSettingValue(section, key, value);
     QtHostInterface::GetInstance()->applySettings();
   }
 }
@@ -291,7 +289,7 @@ void ControllerSettingsDialog::setStringValue(const char* section, const char* k
   }
   else
   {
-    QtHost::SetBaseStringSettingValue(key, section, value);
+    Host::SetBaseStringSettingValue(key, section, value);
     QtHostInterface::GetInstance()->applySettings();
   }
 }
@@ -306,7 +304,7 @@ void ControllerSettingsDialog::clearSettingValue(const char* section, const char
   }
   else
   {
-    QtHost::RemoveBaseSettingValue(section, key);
+    Host::DeleteBaseSettingValue(section, key);
     QtHostInterface::GetInstance()->applySettings();
   }
 }
@@ -395,11 +393,11 @@ void ControllerSettingsDialog::updateListDescription(u32 global_slot, Controller
   for (int i = 0; i < m_ui.settingsCategory->count(); i++)
   {
     QListWidgetItem* item = m_ui.settingsCategory->item(i);
-    const QVariant data(item->data(Qt::UserRole));
+    const QVariant item_data(item->data(Qt::UserRole));
     bool is_ok;
-    if (data.toUInt(&is_ok) == global_slot && is_ok)
+    if (item_data.toUInt(&is_ok) == global_slot && is_ok)
     {
-      const bool is_mtap_port = Controller::PadIsMultitapSlot(global_slot);
+      //const bool is_mtap_port = Controller::PadIsMultitapSlot(global_slot);
       const auto [port, slot] = Controller::ConvertPadToPortAndSlot(global_slot);
       const bool mtap_enabled = getBoolValue("Pad", (port == 0) ? "MultitapPort1" : "MultitapPort2", false);
 

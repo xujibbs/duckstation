@@ -10,6 +10,7 @@
 #include "core/bios.h"
 #include "core/bus.h"
 #include "core/cpu_core.h"
+#include "core/host.h"
 #include "core/host_display.h"
 #include "core/host_interface.h"
 #include "core/host_settings.h"
@@ -164,7 +165,7 @@ void Cheevos::FormattedError(const char* format, ...)
 
   va_end(ap);
 
-  g_host_interface->AddOSDMessage(str.GetCharArray(), 10.0f);
+  Host::AddOSDMessage(str.GetCharArray(), 10.0f);
   Log_ErrorPrint(str.GetCharArray());
 }
 
@@ -302,8 +303,8 @@ bool Cheevos::Initialize(bool test_mode, bool use_first_disc_from_playlist, bool
   rc_runtime_init(&s_rcheevos_runtime);
 
   s_last_ping_time.Reset();
-  s_username = g_host_interface->GetStringSettingValue("Cheevos", "Username");
-  s_login_token = g_host_interface->GetStringSettingValue("Cheevos", "Token");
+  s_username = Host::GetBaseStringSettingValue("Cheevos", "Username");
+  s_login_token = Host::GetBaseStringSettingValue("Cheevos", "Token");
   s_logged_in = (!s_username.empty() && !s_login_token.empty());
 
   if (IsLoggedIn() && System::IsValid())
@@ -515,6 +516,16 @@ bool Cheevos::IsRichPresenceEnabled()
   return s_rich_presence_enabled;
 }
 
+bool Cheevos::IsChallengeModeActive()
+{
+  return g_active && g_challenge_mode;
+}
+
+void Cheevos::DisplayBlockedByChallengeModeMessage()
+{
+  Panic("Fixme");
+}
+
 const std::string& Cheevos::GetUsername()
 {
   return s_username;
@@ -547,7 +558,6 @@ void Cheevos::LoginCallback(s32 status_code, const FrontendCommon::HTTPDownloade
     Host::SetBaseStringSettingValue("Cheevos", "Token", login_token.c_str());
     Host::SetBaseStringSettingValue("Cheevos", "LoginTimestamp",
                                     TinyString::FromFormat("%" PRIu64, static_cast<u64>(std::time(nullptr))));
-    Host::CommitBaseSettingChanges();
   }
 
   if (g_active)
@@ -590,8 +600,7 @@ bool Cheevos::LoginAsync(const char* username, const char* password)
   if (FullscreenUI::IsInitialized())
   {
     ImGuiFullscreen::OpenBackgroundProgressDialog(
-      "cheevos_async_login", g_host_interface->TranslateStdString("Cheevos", "Logging in to RetroAchivements..."), 0, 1,
-      0);
+      "cheevos_async_login", Host::TranslateStdString("Cheevos", "Logging in to RetroAchivements..."), 0, 1, 0);
   }
 
   SendLogin(username, password, s_http_downloader.get(), LoginASyncCallback);
@@ -623,7 +632,7 @@ bool Cheevos::Login(const char* username, const char* password)
   SendLogin(username, password, http_downloader.get(), LoginCallback);
   http_downloader->WaitForAllRequests();
 
-  return !g_host_interface->GetStringSettingValue("Cheevos", "Token").empty();
+  return !Host::GetBaseStringSettingValue("Cheevos", "Token").empty();
 }
 
 void Cheevos::Logout()
@@ -647,7 +656,6 @@ void Cheevos::Logout()
     Host::DeleteBaseSettingValue("Cheevos", "Username");
     Host::DeleteBaseSettingValue("Cheevos", "Token");
     Host::DeleteBaseSettingValue("Cheevos", "LoginTimestamp");
-    Host::CommitBaseSettingChanges();
   }
 }
 
@@ -672,7 +680,7 @@ void Cheevos::UpdateImageDownloadProgress()
   if (!FullscreenUI::IsInitialized())
     return;
 
-  std::string message(g_host_interface->TranslateStdString("Cheevos", "Downloading achievement resources..."));
+  std::string message(Host::TranslateStdString("Cheevos", "Downloading achievement resources..."));
   if (!s_image_download_progress_active)
   {
     ImGuiFullscreen::OpenBackgroundProgressDialog(str_id, std::move(message), 0,
@@ -750,30 +758,29 @@ void Cheevos::DisplayAchievementSummary()
 {
   std::string title = s_game_title;
   if (g_challenge_mode)
-    title += g_host_interface->TranslateString("Cheevos", " (Hardcore Mode)");
+    title += Host::TranslateString("Cheevos", " (Hardcore Mode)");
 
   std::string summary;
   if (GetAchievementCount() > 0)
   {
     summary = StringUtil::StdStringFromFormat(
-      g_host_interface->TranslateString("Cheevos", "You have earned %u of %u achievements, and %u of %u points."),
+      Host::TranslateString("Cheevos", "You have earned %u of %u achievements, and %u of %u points."),
       GetUnlockedAchiementCount(), GetAchievementCount(), GetCurrentPointsForGame(), GetMaximumPointsForGame());
   }
   else
   {
-    summary = g_host_interface->TranslateString("Cheevos", "This game has no achievements.");
+    summary = Host::TranslateString("Cheevos", "This game has no achievements.");
   }
   if (GetLeaderboardCount() > 0)
   {
     summary.push_back('\n');
     if (g_challenge_mode)
     {
-      summary.append(g_host_interface->TranslateString("Cheevos", "Leaderboards are enabled."));
+      summary.append(Host::TranslateString("Cheevos", "Leaderboards are enabled."));
     }
     else
     {
-      summary.append(
-        g_host_interface->TranslateString("Cheevos", "Leaderboards are DISABLED because Hardcore Mode is off."));
+      summary.append(Host::TranslateString("Cheevos", "Leaderboards are DISABLED because Hardcore Mode is off."));
     }
   }
 
@@ -1201,9 +1208,8 @@ void Cheevos::GameChanged(const std::string& path, CDImage* image)
 
   if (s_game_hash.empty())
   {
-    g_host_interface->AddOSDMessage(
-      g_host_interface->TranslateStdString("OSDMessage", "Failed to read executable from disc. Achievements disabled."),
-      10.0f);
+    Host::AddOSDMessage(
+      Host::TranslateStdString("OSDMessage", "Failed to read executable from disc. Achievements disabled."), 10.0f);
     return;
   }
 
@@ -1751,13 +1757,13 @@ int Cheevos::RAIntegration::RACallbackIsActive()
 void Cheevos::RAIntegration::RACallbackCauseUnpause()
 {
   if (System::IsValid())
-    g_host_interface->PauseSystem(false);
+    System::PauseSystem(false);
 }
 
 void Cheevos::RAIntegration::RACallbackCausePause()
 {
   if (System::IsValid())
-    g_host_interface->PauseSystem(true);
+    System::PauseSystem(true);
 }
 
 void Cheevos::RAIntegration::RACallbackRebuildMenu()
@@ -1774,7 +1780,7 @@ void Cheevos::RAIntegration::RACallbackResetEmulator()
 {
   g_challenge_mode = RA_HardcoreModeIsActive() != 0;
   if (System::IsValid())
-    g_host_interface->ResetSystem();
+    System::ResetSystem();
 }
 
 void Cheevos::RAIntegration::RACallbackLoadROM(const char* unused)

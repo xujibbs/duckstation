@@ -45,7 +45,7 @@ static void BindWidgetToInputProfileBool(SettingsInterface* sif, WidgetType* wid
 
     Accessor::connectValueChanged(widget, [widget, section = std::move(section), key = std::move(key)]() {
       const bool new_value = Accessor::getBoolValue(widget);
-      QtHost::SetBaseBoolSettingValue(section.c_str(), key.c_str(), new_value);
+      Host::SetBaseBoolSettingValue(section.c_str(), key.c_str(), new_value);
       QtHostInterface::GetInstance()->applySettings();
     });
   }
@@ -77,7 +77,7 @@ static void BindWidgetToInputProfileFloat(SettingsInterface* sif, WidgetType* wi
 
     Accessor::connectValueChanged(widget, [widget, section = std::move(section), key = std::move(key)]() {
       const float new_value = Accessor::getFloatValue(widget);
-      QtHost::SetBaseFloatSettingValue(section.c_str(), key.c_str(), new_value);
+      Host::SetBaseFloatSettingValue(section.c_str(), key.c_str(), new_value);
       QtHostInterface::GetInstance()->applySettings();
     });
   }
@@ -109,7 +109,7 @@ static void BindWidgetToInputProfileNormalized(SettingsInterface* sif, WidgetTyp
 
     Accessor::connectValueChanged(widget, [widget, section = std::move(section), key = std::move(key), range]() {
       const float new_value = (static_cast<float>(Accessor::getIntValue(widget)) / range);
-      QtHost::SetBaseFloatSettingValue(section.c_str(), key.c_str(), new_value);
+      Host::SetBaseFloatSettingValue(section.c_str(), key.c_str(), new_value);
       QtHostInterface::GetInstance()->applySettings();
     });
   }
@@ -150,9 +150,9 @@ static void BindWidgetToInputProfileString(SettingsInterface* sif, WidgetType* w
     Accessor::connectValueChanged(widget, [widget, section = std::move(section), key = std::move(key)]() {
       const QString new_value = Accessor::getStringValue(widget);
       if (!new_value.isEmpty())
-        QtHost::SetBaseStringSettingValue(section.c_str(), key.c_str(), new_value.toUtf8().constData());
+        Host::SetBaseStringSettingValue(section.c_str(), key.c_str(), new_value.toUtf8().constData());
       else
-        QtHost::RemoveBaseSettingValue(section.c_str(), key.c_str());
+        Host::DeleteBaseSettingValue(section.c_str(), key.c_str());
 
       QtHostInterface::GetInstance()->applySettings();
     });

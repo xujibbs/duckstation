@@ -70,8 +70,7 @@ bool ImGuiManager::Initialize()
     return false;
   }
 
-  // HostDisplay* display = Host::GetHostDisplay();
-  HostDisplay* display = g_host_interface->GetDisplay();
+  HostDisplay* display = Host::GetHostDisplay();
   s_global_scale =
     std::max(1.0f, display->GetWindowScale() * static_cast<float>(/*EmuConfig.GS.OsdScale*/ 100.0 / 100.0));
 
@@ -128,7 +127,7 @@ void ImGuiManager::Shutdown()
 {
   FullscreenUI::Shutdown();
 
-  HostDisplay* display = g_host_interface->GetDisplay();
+  HostDisplay* display = Host::GetHostDisplay();
   if (display)
     display->DestroyImGuiContext();
   if (ImGui::GetCurrentContext())
@@ -145,7 +144,7 @@ void ImGuiManager::Shutdown()
 
 void ImGuiManager::WindowResized()
 {
-  HostDisplay* display = g_host_interface->GetDisplay();
+  HostDisplay* display = Host::GetHostDisplay();
 
   const u32 new_width = display ? display->GetWindowWidth() : 0;
   const u32 new_height = display ? display->GetWindowHeight() : 0;
@@ -161,7 +160,7 @@ void ImGuiManager::WindowResized()
 
 void ImGuiManager::UpdateScale()
 {
-  HostDisplay* display = g_host_interface->GetDisplay();
+  HostDisplay* display = Host::GetHostDisplay();
   const float window_scale = display ? display->GetWindowScale() : 1.0f;
   const float scale = std::max(window_scale * static_cast<float>(/*EmuConfig.GS.OsdScale*/ 100.0 / 100.0), 1.0f);
 
@@ -527,7 +526,7 @@ bool ImGuiManager::AddFullscreenFontsIfMissing()
     AddImGuiFonts(false);
   }
 
-  g_host_interface->GetDisplay()->UpdateImGuiFontTexture();
+  Host::GetHostDisplay()->UpdateImGuiFontTexture();
   NewFrame();
 
   return HasFullscreenFonts();
@@ -708,9 +707,8 @@ void ImGuiManager::FormatProcessorStat(String& text, double usage, double time)
 void ImGuiManager::DrawPerformanceOverlay()
 {
   if (!(g_settings.display_show_fps | g_settings.display_show_vps | g_settings.display_show_speed |
-        g_settings.display_show_resolution | System::IsPaused() |
-        static_cast<CommonHostInterface*>(g_host_interface)->IsFastForwardEnabled() |
-        static_cast<CommonHostInterface*>(g_host_interface)->IsTurboEnabled()))
+        g_settings.display_show_resolution | System::IsPaused() | System::IsFastForwardEnabled() |
+        System::IsTurboEnabled()))
   {
     return;
   }
@@ -794,8 +792,7 @@ void ImGuiManager::DrawPerformanceOverlay()
     if (/*g_settings.display_show_cpu*/ true)
     {
       text.Clear();
-      text.AppendFmtString("{:.2f}ms ({:.2f}ms worst)", System::GetAverageFrameTime(),
-                     System::GetWorstFrameTime());
+      text.AppendFmtString("{:.2f}ms ({:.2f}ms worst)", System::GetAverageFrameTime(), System::GetWorstFrameTime());
       DRAW_LINE(s_fixed_font, text, IM_COL32(255, 255, 255, 255));
 
       text.Clear();

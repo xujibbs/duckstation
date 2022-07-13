@@ -170,6 +170,9 @@
     <QtUi Include="controllerbindingwidget_analog_controller.ui">
       <FileType>Document</FileType>
     </QtUi>
+    <QtUi Include="controllerbindingwidget_digital_controller.ui">
+      <FileType>Document</FileType>
+    </QtUi>
     <QtUi Include="controllerglobalsettingswidget.ui">
       <FileType>Document</FileType>
     </QtUi>

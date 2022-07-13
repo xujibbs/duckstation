@@ -217,3 +217,8 @@ bool Controller::PortAndSlotIsMultitap(u32 port, u32 slot)
 {
   return (slot != 0);
 }
+
+std::string Controller::GetSettingsSection(u32 pad)
+{
+  return fmt::format("Pad{}", pad + 1u);
+}

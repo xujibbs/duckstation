@@ -475,7 +475,7 @@ static void BindWidgetToBoolSetting(SettingsInterface* sif, WidgetType* widget, 
 
     Accessor::connectValueChanged(widget, [widget, section = std::move(section), key = std::move(key)]() {
       const bool new_value = Accessor::getBoolValue(widget);
-      QtHost::SetBaseBoolSettingValue(section.c_str(), key.c_str(), new_value);
+      Host::SetBaseBoolSettingValue(section.c_str(), key.c_str(), new_value);
       QtHostInterface::GetInstance()->applySettings();
     });
   }
@@ -518,7 +518,7 @@ static void BindWidgetToIntSetting(SettingsInterface* sif, WidgetType* widget, s
     Accessor::connectValueChanged(
       widget, [widget, section = std::move(section), key = std::move(key), option_offset]() {
         const int new_value = Accessor::getIntValue(widget);
-        QtHost::SetBaseIntSettingValue(section.c_str(), key.c_str(), new_value + option_offset);
+        Host::SetBaseIntSettingValue(section.c_str(), key.c_str(), new_value + option_offset);
         QtHostInterface::GetInstance()->applySettings();
       });
   }
@@ -558,7 +558,7 @@ static void BindWidgetToFloatSetting(SettingsInterface* sif, WidgetType* widget,
 
     Accessor::connectValueChanged(widget, [widget, section = std::move(section), key = std::move(key)]() {
       const float new_value = Accessor::getFloatValue(widget);
-      QtHost::SetBaseFloatSettingValue(section.c_str(), key.c_str(), new_value);
+      Host::SetBaseFloatSettingValue(section.c_str(), key.c_str(), new_value);
       QtHostInterface::GetInstance()->applySettings();
     });
   }
@@ -598,7 +598,7 @@ static void BindWidgetToNormalizedSetting(SettingsInterface* sif, WidgetType* wi
 
     Accessor::connectValueChanged(widget, [widget, section = std::move(section), key = std::move(key), range]() {
       const float new_value = (static_cast<float>(Accessor::getIntValue(widget)) / range);
-      QtHost::SetBaseFloatSettingValue(section.c_str(), key.c_str(), new_value);
+      Host::SetBaseFloatSettingValue(section.c_str(), key.c_str(), new_value);
       QtHostInterface::GetInstance()->applySettings();
     });
   }
@@ -640,9 +640,9 @@ static void BindWidgetToStringSetting(SettingsInterface* sif, WidgetType* widget
     Accessor::connectValueChanged(widget, [widget, section = std::move(section), key = std::move(key)]() {
       const QString new_value = Accessor::getStringValue(widget);
       if (!new_value.isEmpty())
-        QtHost::SetBaseStringSettingValue(section.c_str(), key.c_str(), new_value.toUtf8().constData());
+        Host::SetBaseStringSettingValue(section.c_str(), key.c_str(), new_value.toUtf8().constData());
       else
-        QtHost::RemoveBaseSettingValue(section.c_str(), key.c_str());
+        Host::DeleteBaseSettingValue(section.c_str(), key.c_str());
 
       QtHostInterface::GetInstance()->applySettings();
     });
@@ -708,7 +708,7 @@ static void BindWidgetToEnumSetting(SettingsInterface* sif, WidgetType* widget, 
       widget, [widget, section = std::move(section), key = std::move(key), to_string_function]() {
         const DataType value = static_cast<DataType>(static_cast<UnderlyingType>(Accessor::getIntValue(widget)));
         const char* string_value = to_string_function(value);
-        QtHost::SetBaseStringSettingValue(section.c_str(), key.c_str(), string_value);
+        Host::SetBaseStringSettingValue(section.c_str(), key.c_str(), string_value);
         QtHostInterface::GetInstance()->applySettings();
       });
   }
@@ -770,7 +770,7 @@ static void BindWidgetToEnumSetting(SettingsInterface* sif, WidgetType* widget, 
 
     Accessor::connectValueChanged(widget, [widget, section = std::move(section), key = std::move(key), enum_names]() {
       const UnderlyingType value = static_cast<UnderlyingType>(Accessor::getIntValue(widget));
-      QtHost::SetBaseStringSettingValue(section.c_str(), key.c_str(), enum_names[value]);
+      Host::SetBaseStringSettingValue(section.c_str(), key.c_str(), enum_names[value]);
       QtHostInterface::GetInstance()->applySettings();
     });
   }
@@ -834,7 +834,7 @@ static void BindWidgetToEnumSetting(SettingsInterface* sif, WidgetType* widget, 
 
     Accessor::connectValueChanged(widget, [widget, section = std::move(section), key = std::move(key), enum_values]() {
       const int value = Accessor::getIntValue(widget);
-      QtHost::SetBaseStringSettingValue(section.c_str(), key.c_str(), enum_values[value]);
+      Host::SetBaseStringSettingValue(section.c_str(), key.c_str(), enum_values[value]);
       QtHostInterface::GetInstance()->applySettings();
     });
   }
@@ -870,11 +870,11 @@ static void BindWidgetToFolderSetting(SettingsInterface* sif, WidgetType* widget
     if (!new_value.empty())
     {
       std::string relative_path(Path::MakeRelative(new_value, EmuFolders::DataRoot));
-      QtHost::SetBaseStringSettingValue(section.c_str(), key.c_str(), relative_path.c_str());
+      Host::SetBaseStringSettingValue(section.c_str(), key.c_str(), relative_path.c_str());
     }
     else
     {
-      QtHost::RemoveBaseSettingValue(section.c_str(), key.c_str());
+      Host::DeleteBaseSettingValue(section.c_str(), key.c_str());
     }
 
     QtHostInterface::GetInstance()->updateEmuFolders();

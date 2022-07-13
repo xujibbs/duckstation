@@ -188,7 +188,7 @@ void UpdateAspectRatio()
   {
     case DisplayAspectRatio::MatchWindow:
     {
-      const HostDisplay* display = g_host_interface->GetDisplay();
+      const HostDisplay* display = Host::GetHostDisplay();
       if (!display)
       {
         s_aspect_ratio = DisplayAspectRatio::R4_3;

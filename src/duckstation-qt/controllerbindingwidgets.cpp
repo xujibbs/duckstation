@@ -23,10 +23,6 @@ ControllerBindingWidget::ControllerBindingWidget(QWidget* parent, ControllerSett
   populateControllerTypes();
   onTypeChanged();
 
-  ControllerSettingWidgetBinder::BindWidgetToInputProfileString(m_dialog->getProfileSettingsInterface(),
-                                                                m_ui.controllerType, m_config_section, "Type",
-                                                                Controller::GetDefaultPadType(port));
-
   connect(m_ui.controllerType, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
           &ControllerBindingWidget::onTypeChanged);
   connect(m_ui.automaticBinding, &QPushButton::clicked, this, &ControllerBindingWidget::doAutomaticBinding);
@@ -51,21 +47,10 @@ void ControllerBindingWidget::populateControllerTypes()
 
     m_ui.controllerType->addItem(qApp->translate("ControllerType", cinfo->display_name), QVariant(static_cast<int>(i)));
   }
-}
 
-void ControllerBindingWidget::onTypeChanged()
-{
-  const bool is_initializing = (m_current_widget == nullptr);
   const std::string controller_type_name(
     m_dialog->getStringValue(m_config_section.c_str(), "Type", Controller::GetDefaultPadType(m_port_number)));
   m_controller_type = Settings::ParseControllerTypeName(controller_type_name.c_str()).value_or(ControllerType::None);
-
-  if (!is_initializing)
-  {
-    m_ui.verticalLayout->removeWidget(m_current_widget);
-    delete m_current_widget;
-    m_current_widget = nullptr;
-  }
 
   const int index = m_ui.controllerType->findData(QVariant(static_cast<int>(m_controller_type)));
   if (index >= 0 && index != m_ui.controllerType->currentIndex())
@@ -73,8 +58,21 @@ void ControllerBindingWidget::onTypeChanged()
     QSignalBlocker sb(m_ui.controllerType);
     m_ui.controllerType->setCurrentIndex(index);
   }
+}
 
-  if (m_controller_type == ControllerType::AnalogController)
+void ControllerBindingWidget::populateBindingWidget()
+{
+  const bool is_initializing = (m_current_widget == nullptr);
+  if (!is_initializing)
+  {
+    m_ui.verticalLayout->removeWidget(m_current_widget);
+    delete m_current_widget;
+    m_current_widget = nullptr;
+  }
+
+  if (m_controller_type == ControllerType::DigitalController)
+    m_current_widget = ControllerBindingWidget_DigitalController::createInstance(this);
+  else if (m_controller_type == ControllerType::AnalogController)
     m_current_widget = ControllerBindingWidget_AnalogController::createInstance(this);
   else
     m_current_widget = new ControllerBindingWidget_Base(this);
@@ -84,6 +82,27 @@ void ControllerBindingWidget::onTypeChanged()
   // no need to do this on first init, only changes
   if (!is_initializing)
     m_dialog->updateListDescription(m_port_number, this);
+}
+
+void ControllerBindingWidget::onTypeChanged()
+{
+  bool ok;
+  const int index = m_ui.controllerType->currentData().toInt(&ok);
+  if (!ok || index < 0 || index >= static_cast<int>(ControllerType::Count))
+    return;
+
+  m_controller_type = static_cast<ControllerType>(index);
+
+  SettingsInterface* sif = m_dialog->getProfileSettingsInterface();
+  if (sif)
+    sif->SetStringValue(m_config_section.c_str(), "Type", Settings::GetControllerTypeName(m_controller_type));
+  else
+    Host::SetBaseStringSettingValue(m_config_section.c_str(), "Type", Settings::GetControllerTypeName(m_controller_type));
+
+  // TODO: reloadInputProfile() ?
+  QtHostInterface::GetInstance()->applySettings();
+
+  populateBindingWidget();
 }
 
 void ControllerBindingWidget::doAutomaticBinding()
@@ -270,6 +289,29 @@ void ControllerBindingWidget_Base::initBindingWidgets()
     ControllerSettingWidgetBinder::BindWidgetToInputProfileFloat(sif, widget, config_section, "LargeMotorScale",
                                                                  Controller::DEFAULT_MOTOR_SCALE);
 }
+
+//////////////////////////////////////////////////////////////////////////
+
+ControllerBindingWidget_DigitalController::ControllerBindingWidget_DigitalController(ControllerBindingWidget* parent)
+  : ControllerBindingWidget_Base(parent)
+{
+  m_ui.setupUi(this);
+  initBindingWidgets();
+}
+
+ControllerBindingWidget_DigitalController::~ControllerBindingWidget_DigitalController() {}
+
+QIcon ControllerBindingWidget_DigitalController::getIcon() const
+{
+  return QIcon::fromTheme("gamepad-line");
+}
+
+ControllerBindingWidget_Base* ControllerBindingWidget_DigitalController::createInstance(ControllerBindingWidget* parent)
+{
+  return new ControllerBindingWidget_DigitalController(parent);
+}
+
+//////////////////////////////////////////////////////////////////////////
 
 ControllerBindingWidget_AnalogController::ControllerBindingWidget_AnalogController(ControllerBindingWidget* parent)
   : ControllerBindingWidget_Base(parent)

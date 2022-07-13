@@ -38,7 +38,7 @@ void DigitalController::SetBindState(u32 index, float value)
   if (index >= static_cast<u32>(Button::Count))
     return;
 
-  const bool pressed = (value > 0.0f);
+  const bool pressed = (value >= 0.5f);
   const u16 bit = u16(1) << static_cast<u8>(index);
   if (pressed)
   {
@@ -130,27 +130,25 @@ std::unique_ptr<DigitalController> DigitalController::Create(u32 index)
 }
 
 static const Controller::ControllerBindingInfo s_binding_info[] = {
-#define BUTTON(name, display_name, genb)                                                                               \
+#define BUTTON(name, display_name, button, genb)                                                                       \
   {                                                                                                                    \
-    name, display_name, Controller::ControllerBindingType::Button, genb                                                \
+    name, display_name, static_cast<u32>(button), Controller::ControllerBindingType::Button, genb                      \
   }
 
-  BUTTON("Select", "Select", GenericInputBinding::Select),
-  BUTTON("L3", "Select", GenericInputBinding::L3),
-  BUTTON("R3", "Select", GenericInputBinding::R3),
-  BUTTON("Start", "Select", GenericInputBinding::Start),
-  BUTTON("Up", "D-Pad Up", GenericInputBinding::DPadUp),
-  BUTTON("Right", "D-Pad Right", GenericInputBinding::DPadRight),
-  BUTTON("Down", "D-Pad Down", GenericInputBinding::DPadDown),
-  BUTTON("Left", "D-Pad Left", GenericInputBinding::DPadLeft),
-  BUTTON("L2", "L2", GenericInputBinding::L2),
-  BUTTON("R2", "R2", GenericInputBinding::R2),
-  BUTTON("L1", "L1", GenericInputBinding::L1),
-  BUTTON("R1", "R1", GenericInputBinding::R1),
-  BUTTON("Triangle", "Triangle", GenericInputBinding::Triangle),
-  BUTTON("Circle", "Circle", GenericInputBinding::Circle),
-  BUTTON("Cross", "Cross", GenericInputBinding::Cross),
-  BUTTON("Square", "Square", GenericInputBinding::Square),
+  BUTTON("Up", "D-Pad Up", DigitalController::Button::Up, GenericInputBinding::DPadUp),
+  BUTTON("Right", "D-Pad Right", DigitalController::Button::Right, GenericInputBinding::DPadRight),
+  BUTTON("Down", "D-Pad Down", DigitalController::Button::Down, GenericInputBinding::DPadDown),
+  BUTTON("Left", "D-Pad Left", DigitalController::Button::Left, GenericInputBinding::DPadLeft),
+  BUTTON("Triangle", "Triangle", DigitalController::Button::Triangle, GenericInputBinding::Triangle),
+  BUTTON("Circle", "Circle", DigitalController::Button::Circle, GenericInputBinding::Circle),
+  BUTTON("Cross", "Cross", DigitalController::Button::Cross, GenericInputBinding::Cross),
+  BUTTON("Square", "Square", DigitalController::Button::Square, GenericInputBinding::Square),
+  BUTTON("Select", "Select", DigitalController::Button::Select, GenericInputBinding::Select),
+  BUTTON("Start", "Start", DigitalController::Button::Start, GenericInputBinding::Start),
+  BUTTON("L1", "L1", DigitalController::Button::L1, GenericInputBinding::L1),
+  BUTTON("R1", "R1", DigitalController::Button::R1, GenericInputBinding::R1),
+  BUTTON("L2", "L2", DigitalController::Button::L2, GenericInputBinding::L2),
+  BUTTON("R2", "R2", DigitalController::Button::R2, GenericInputBinding::R2),
 
 #undef BUTTON
 };

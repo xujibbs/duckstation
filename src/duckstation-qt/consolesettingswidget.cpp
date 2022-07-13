@@ -140,7 +140,7 @@ void ConsoleSettingsWidget::onEnableCPUClockSpeedControlChecked(int state)
       return;
     }
 
-    QtHost::SetBaseBoolSettingValue("UI", "CPUOverclockingWarningShown", true);
+    Host::SetBaseBoolSettingValue("UI", "CPUOverclockingWarningShown", true);
   }
 
   m_ui.cpuClockSpeed->setEnabled(state == Qt::Checked);

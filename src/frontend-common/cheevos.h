@@ -1,6 +1,7 @@
 #pragma once
 #include "common/string.h"
 #include "core/types.h"
+#include "core/cheevos.h"
 #include <functional>
 #include <optional>
 #include <string>
@@ -82,10 +83,7 @@ ALWAYS_INLINE bool IsChallengeModeEnabled()
   return g_challenge_mode;
 }
 
-ALWAYS_INLINE bool IsChallengeModeActive()
-{
-  return g_active && g_challenge_mode;
-}
+bool IsChallengeModeActive();
 
 ALWAYS_INLINE bool HasActiveGame()
 {

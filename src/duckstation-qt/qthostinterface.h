@@ -1,9 +1,11 @@
 #pragma once
 #include "common/event.h"
 #include "core/host_interface.h"
+#include "core/host_settings.h"
 #include "core/system.h"
 #include "frontend-common/common_host_interface.h"
 #include "frontend-common/game_list.h"
+#include "frontend-common/input_manager.h"
 #include "qtutils.h"
 #include <QtCore/QByteArray>
 #include <QtCore/QObject>
@@ -53,28 +55,7 @@ public:
 
   void RunLater(std::function<void()> func) override;
 
-public Q_SLOTS:
-  void ReportError(const char* message) override;
-  void ReportMessage(const char* message) override;
-  void ReportDebuggerMessage(const char* message) override;
-  bool ConfirmMessage(const char* message) override;
-
 public:
-  /// Thread-safe settings access.
-  void SetBoolSettingValue(const char* section, const char* key, bool value);
-  void SetIntSettingValue(const char* section, const char* key, int value);
-  void SetFloatSettingValue(const char* section, const char* key, float value);
-  void SetStringSettingValue(const char* section, const char* key, const char* value);
-  void SetStringListSettingValue(const char* section, const char* key, const std::vector<std::string>& values);
-  bool AddValueToStringList(const char* section, const char* key, const char* value);
-  bool RemoveValueFromStringList(const char* section, const char* key, const char* value);
-  void RemoveSettingValue(const char* section, const char* key);
-
-  TinyString TranslateString(const char* context, const char* str, const char* disambiguation = nullptr,
-                             int n = -1) const override;
-  std::string TranslateStdString(const char* context, const char* str, const char* disambiguation = nullptr,
-                                 int n = -1) const override;
-
   bool RequestRenderWindowSize(s32 new_window_width, s32 new_window_height) override;
   void* GetTopLevelWindowHandle() const override;
 
@@ -89,8 +70,10 @@ public:
 
   ALWAYS_INLINE MainWindow* getMainWindow() const { return m_main_window; }
   void setMainWindow(MainWindow* window);
-  HostDisplay* createHostDisplay();
-  void connectDisplaySignals(QtDisplayWidget* widget);
+
+
+  ALWAYS_INLINE QEventLoop* getEventLoop() const { return m_worker_thread_event_loop; }
+
   void reinstallTranslator();
 
   void populateLoadStateMenu(const char* game_code, QMenu* menu);
@@ -119,12 +102,28 @@ public:
   /// Returns program directory as a QString.
   QString getProgramDirectory() const;
 
+  /// Called back from the GS thread when the display state changes (e.g. fullscreen, render to main).
+  static HostDisplay* createHostDisplay();
+  HostDisplay* acquireHostDisplay();
+  void connectDisplaySignals(QtDisplayWidget* widget);
+  void releaseHostDisplay();
+  void updateDisplay();
+  void renderDisplay();
+
+  void onSystemStarted();
+  void onSystemPaused();
+  void onSystemResumed();
+  void onSystemDestroyed();
+
 Q_SIGNALS:
-  void errorReported(const QString& message);
-  void messageReported(const QString& message);
+  void errorReported(const QString& title, const QString& message);
+  bool messageConfirmed(const QString& title, const QString& message);
   void debuggerMessageReported(const QString& message);
-  bool messageConfirmed(const QString& message);
   void settingsResetToDefault();
+  void onInputDevicesEnumerated(const QList<QPair<QString, QString>>& devices);
+  void onInputDeviceConnected(const QString& identifier, const QString& device_name);
+  void onInputDeviceDisconnected(const QString& identifier);
+  void onVibrationMotorsEnumerated(const QList<InputBindingKey>& motors);
   void emulationStarting();
   void emulationStarted();
   void emulationStopped();
@@ -149,8 +148,11 @@ public Q_SLOTS:
   void setDefaultSettings();
   void applySettings(bool display_osd_messages = false);
   void reloadGameSettings();
-  void reloadInputBindings();
   void applyInputProfile(const QString& profile_path);
+  void reloadInputSources();
+  void reloadInputBindings();
+  void enumerateInputDevices();
+  void enumerateVibrationMotors();
   void bootSystem(std::shared_ptr<SystemBootParameters> params);
   void resumeSystemFromState(const QString& filename, bool boot_on_failure);
   void resumeSystemFromMostRecentState();
@@ -184,7 +186,6 @@ public Q_SLOTS:
   void requestRenderWindowScale(qreal scale);
   void executeOnEmulationThread(std::function<void()> callback, bool wait = false);
   void OnAchievementsRefreshed() override;
-  void OnDisplayInvalidated() override;
 
 private Q_SLOTS:
   void doStopThread();
@@ -197,23 +198,10 @@ private Q_SLOTS:
   void doBackgroundControllerPoll();
 
 protected:
-  bool AcquireHostDisplay() override;
-  void ReleaseHostDisplay() override;
   bool IsFullscreen() const override;
   bool SetFullscreen(bool enabled) override;
 
   void RequestExit() override;
-
-  void OnSystemCreated() override;
-  void OnSystemPaused(bool paused) override;
-  void OnSystemDestroyed() override;
-  void OnSystemPerformanceCountersUpdated() override;
-  void OnRunningGameChanged(const std::string& path, CDImage* image, const std::string& game_code,
-                            const std::string& game_title) override;
-
-  void SetDefaultSettings(SettingsInterface& si) override;
-  void SetDefaultSettings() override;
-  void ApplySettings(bool display_osd_messages) override;
 
   void SetMouseMode(bool relative, bool hide_cursor) override;
 
@@ -258,7 +246,6 @@ private:
   bool initializeOnThread();
   void shutdownOnThread();
   void installTranslator();
-  void renderDisplay();
   void checkRenderToMainState();
   void updateDisplayState();
   void queueSettingsSave();
@@ -281,31 +268,25 @@ private:
   bool m_lost_exclusive_fullscreen = false;
 };
 
+extern QtHostInterface* g_emu_thread;
+
 namespace QtHost {
 /// Sets batch mode (exit after game shutdown).
-//bool InBatchMode();
-//void SetBatchMode(bool enabled);
+// bool InBatchMode();
+// void SetBatchMode(bool enabled);
 
 /// Executes a function on the UI thread.
 void RunOnUIThread(const std::function<void()>& func, bool block = false);
 
 /// Returns the application name and version, optionally including debug/devel config indicator.
-//QString GetAppNameAndVersion();
+// QString GetAppNameAndVersion();
 
 /// Returns the debug/devel config indicator.
-//QString GetAppConfigSuffix();
+// QString GetAppConfigSuffix();
 
 /// Returns the base path for resources. This may be : prefixed, if we're using embedded resources.
-//QString GetResourcesBasePath();
+// QString GetResourcesBasePath();
 
 /// Thread-safe settings access.
-void SetBaseBoolSettingValue(const char* section, const char* key, bool value);
-void SetBaseIntSettingValue(const char* section, const char* key, int value);
-void SetBaseFloatSettingValue(const char* section, const char* key, float value);
-void SetBaseStringSettingValue(const char* section, const char* key, const char* value);
-void SetBaseStringListSettingValue(const char* section, const char* key, const std::vector<std::string>& values);
-bool AddBaseValueToStringList(const char* section, const char* key, const char* value);
-bool RemoveBaseValueFromStringList(const char* section, const char* key, const char* value);
-void RemoveBaseSettingValue(const char* section, const char* key);
 void QueueSettingsSave();
 } // namespace QtHost

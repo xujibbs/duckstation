@@ -1,6 +1,7 @@
 #include "memorycardeditordialog.h"
 #include "common/file_system.h"
 #include "common/string_util.h"
+#include "core/host.h"
 #include "core/host_interface.h"
 #include "qtutils.h"
 #include <QtCore/QFileInfo>

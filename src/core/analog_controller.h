@@ -39,6 +39,19 @@ public:
     Count
   };
 
+  enum class HalfAxis : u8
+  {
+    LLeft,
+    LRight,
+    LDown,
+    LUp,
+    RLeft,
+    RRight,
+    RDown,
+    RUp,
+    Count
+  };
+
   static constexpr u8 NUM_MOTORS = 2;
 
   static const Controller::ControllerInfo INFO;
@@ -80,19 +93,6 @@ private:
     Command47,         // 0x47
     Command4C,         // 0x4C
     GetSetRumble       // 0x4D
-  };
-
-  enum class HalfAxis : u8
-  {
-    LLeft,
-    LRight,
-    LDown,
-    LUp,
-    RLeft,
-    RRight,
-    RDown,
-    RUp,
-    Count
   };
 
   Command m_command = Command::Idle;

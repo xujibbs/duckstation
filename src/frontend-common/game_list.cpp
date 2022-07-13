@@ -8,7 +8,7 @@
 #include "common/progress_callback.h"
 #include "common/string_util.h"
 #include "core/bios.h"
-#include "core/host_interface.h"
+#include "core/host.h"
 #include "core/psf_loader.h"
 #include "core/settings.h"
 #include "core/system.h"

@@ -351,8 +351,8 @@ void SettingsDialog::setBoolSettingValue(const char* section, const char* key, s
   }
   else
   {
-    value.has_value() ? QtHost::SetBaseBoolSettingValue(section, key, value.value()) :
-                        QtHost::RemoveBaseSettingValue(section, key);
+    value.has_value() ? Host::SetBaseBoolSettingValue(section, key, value.value()) :
+                        Host::DeleteBaseSettingValue(section, key);
     QtHostInterface::GetInstance()->applySettings();
   }
 }
@@ -367,8 +367,8 @@ void SettingsDialog::setIntSettingValue(const char* section, const char* key, st
   }
   else
   {
-    value.has_value() ? QtHost::SetBaseIntSettingValue(section, key, value.value()) :
-                        QtHost::RemoveBaseSettingValue(section, key);
+    value.has_value() ? Host::SetBaseIntSettingValue(section, key, value.value()) :
+                        Host::DeleteBaseSettingValue(section, key);
     QtHostInterface::GetInstance()->applySettings();
   }
 }
@@ -383,8 +383,8 @@ void SettingsDialog::setFloatSettingValue(const char* section, const char* key, 
   }
   else
   {
-    value.has_value() ? QtHost::SetBaseFloatSettingValue(section, key, value.value()) :
-                        QtHost::RemoveBaseSettingValue(section, key);
+    value.has_value() ? Host::SetBaseFloatSettingValue(section, key, value.value()) :
+                        Host::DeleteBaseSettingValue(section, key);
     QtHostInterface::GetInstance()->applySettings();
   }
 }
@@ -399,8 +399,8 @@ void SettingsDialog::setStringSettingValue(const char* section, const char* key,
   }
   else
   {
-    value.has_value() ? QtHost::SetBaseStringSettingValue(section, key, value.value()) :
-                        QtHost::RemoveBaseSettingValue(section, key);
+    value.has_value() ? Host::SetBaseStringSettingValue(section, key, value.value()) :
+                        Host::DeleteBaseSettingValue(section, key);
     QtHostInterface::GetInstance()->applySettings();
   }
 }
@@ -415,7 +415,7 @@ void SettingsDialog::removeSettingValue(const char* section, const char* key)
   }
   else
   {
-    QtHost::RemoveBaseSettingValue(section, key);
+    Host::DeleteBaseSettingValue(section, key);
     QtHostInterface::GetInstance()->applySettings();
   }
 }

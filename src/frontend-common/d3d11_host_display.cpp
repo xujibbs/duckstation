@@ -6,6 +6,7 @@
 #include "common/string_util.h"
 #include "common_host_interface.h"
 #include "core/host_interface.h"
+#include "core/host_settings.h"
 #include "core/settings.h"
 #include "core/shader_cache_version.h"
 #include "display_ps.hlsl.h"
@@ -395,8 +396,7 @@ bool D3D11HostDisplay::CreateSwapChain(const DXGI_MODE_DESC* fullscreen_mode)
   if (m_window_info.type != WindowInfo::Type::Win32)
     return false;
 
-  m_using_flip_model_swap_chain =
-    fullscreen_mode || !g_host_interface->GetBoolSettingValue("Display", "UseBlitSwapChain", false);
+  m_using_flip_model_swap_chain = fullscreen_mode || !Host::GetBoolSettingValue("Display", "UseBlitSwapChain", false);
 
   const HWND window_hwnd = reinterpret_cast<HWND>(m_window_info.window_handle);
   RECT client_rc{};

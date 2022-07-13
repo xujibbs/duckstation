@@ -5,6 +5,7 @@
 
 #include "ui_controllerbindingwidget.h"
 #include "ui_controllerbindingwidget_analog_controller.h"
+#include "ui_controllerbindingwidget_digital_controller.h"
 
 class InputBindingWidget;
 class ControllerSettingsDialog;
@@ -32,6 +33,7 @@ private Q_SLOTS:
 
 private:
   void populateControllerTypes();
+  void populateBindingWidget();
   void doDeviceAutomaticBinding(const QString& device);
   void saveAndRefresh();
 
@@ -72,6 +74,22 @@ public:
 
 protected:
   void initBindingWidgets();
+};
+
+class ControllerBindingWidget_DigitalController final : public ControllerBindingWidget_Base
+{
+  Q_OBJECT
+
+public:
+  ControllerBindingWidget_DigitalController(ControllerBindingWidget* parent);
+  ~ControllerBindingWidget_DigitalController();
+
+  QIcon getIcon() const override;
+
+  static ControllerBindingWidget_Base* createInstance(ControllerBindingWidget* parent);
+
+private:
+  Ui::ControllerBindingWidget_DigitalController m_ui;
 };
 
 class ControllerBindingWidget_AnalogController final : public ControllerBindingWidget_Base

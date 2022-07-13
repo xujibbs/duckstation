@@ -112,7 +112,6 @@ static bool ParseBindingAndGetSource(const std::string_view& binding, InputBindi
 
 static bool IsAxisHandler(const InputEventHandler& handler);
 
-static std::string GetPadSettingsSection(u32 pad);
 static void AddHotkeyBindings(SettingsInterface& si);
 static void AddPadBindings(SettingsInterface& si, u32 pad, const char* default_type);
 static void UpdateContinuedVibration();
@@ -525,11 +524,6 @@ std::vector<const HotkeyInfo*> InputManager::GetHotkeyList()
   return ret;
 }
 
-std::string InputManager::GetPadSettingsSection(u32 pad)
-{
-  return fmt::format("Pad{}", pad + 1u);
-}
-
 void InputManager::AddHotkeyBindings(SettingsInterface& si)
 {
   for (const HotkeyInfo* hotkey_list : s_hotkey_list)
@@ -547,27 +541,27 @@ void InputManager::AddHotkeyBindings(SettingsInterface& si)
 
 void InputManager::AddPadBindings(SettingsInterface& si, u32 pad_index, const char* default_type)
 {
-  const std::string section(GetPadSettingsSection(pad_index));
+  const std::string section(Controller::GetSettingsSection(pad_index));
   const std::string type(si.GetStringValue(section.c_str(), "Type", default_type));
   std::optional<ControllerType> ctype = Settings::ParseControllerTypeName(type.c_str());
   if (!ctype.has_value() || ctype == ControllerType::None)
     return;
 
-  const std::vector<std::string> bind_names = Controller::GetControllerBinds(type);
-  if (!bind_names.empty())
+  const Controller::ControllerInfo* cinfo = Controller::GetControllerInfo(ctype.value());
+  if (!cinfo)
+    return;
+
+  for (u32 i = 0; i < cinfo->num_bindings; i++)
   {
-    for (u32 bind_index = 0; bind_index < static_cast<u32>(bind_names.size()); bind_index++)
+    const Controller::ControllerBindingInfo& bi = cinfo->bindings[i];
+    const std::vector<std::string> bindings(si.GetStringList(section.c_str(), bi.name));
+    if (!bindings.empty())
     {
-      const std::string& bind_name = bind_names[bind_index];
-      const std::vector<std::string> bindings(si.GetStringList(section.c_str(), bind_name.c_str()));
-      if (!bindings.empty())
-      {
-        AddBindings(bindings, InputAxisEventHandler{[pad_index, bind_index, bind_names](float value) {
-                      Controller* c = System::GetController(pad_index);
-                      if (c)
-                        c->SetBindState(bind_index, value);
-                    }});
-      }
+      AddBindings(bindings, InputAxisEventHandler{[pad_index, bind_index = bi.bind_index](float value) {
+                    Controller* c = System::GetController(pad_index);
+                    if (c)
+                      c->SetBindState(bind_index, value);
+                  }});
     }
   }
 
@@ -875,7 +869,7 @@ void InputManager::SetDefaultConfig(SettingsInterface& si)
   // Default pad types and parameters.
   for (u32 i = 0; i < NUM_CONTROLLER_AND_CARD_PORTS; i++)
   {
-    const std::string section(GetPadSettingsSection(i));
+    const std::string section(Controller::GetSettingsSection(i));
     si.ClearSection(section.c_str());
     si.SetStringValue(section.c_str(), "Type", Controller::GetDefaultPadType(i));
     si.SetFloatValue(section.c_str(), "Deadzone", Controller::DEFAULT_STICK_DEADZONE);
@@ -891,11 +885,17 @@ void InputManager::SetDefaultConfig(SettingsInterface& si)
   si.SetStringValue("Hotkeys", "TogglePause", "Keyboard/Space");
   si.SetStringValue("Hotkeys", "ToggleFullscreen", "Keyboard/Alt+Return");
   si.SetStringValue("Hotkeys", "Screenshot", "Keyboard/F10");
+
+  si.SetStringValue("Hotkeys", "PowerOff", "Keyboard/Escape");
+  si.SetStringValue("Hotkeys", "LoadSelectedSaveState", "Keyboard/F1");
+  si.SetStringValue("Hotkeys", "SaveSelectedSaveState", "Keyboard/F2");
+  si.SetStringValue("Hotkeys", "SelectPreviousSaveStateSlot", "Keyboard/F3");
+  si.SetStringValue("Hotkeys", "SelectNextSaveStateSlot", "Keyboard/F4");
 }
 
 void InputManager::ClearPortBindings(SettingsInterface& si, u32 port)
 {
-  const std::string section(GetPadSettingsSection(port));
+  const std::string section(Controller::GetSettingsSection(port));
   const std::string type(si.GetStringValue(section.c_str(), "Type", Controller::GetDefaultPadType(port)));
 
   const Controller::ControllerInfo* info = Controller::GetControllerInfo(type);
@@ -918,7 +918,7 @@ void InputManager::CopyConfiguration(SettingsInterface* dest_si, const SettingsI
 
   for (u32 port = 0; port < NUM_CONTROLLER_AND_CARD_PORTS; port++)
   {
-    const std::string section(GetPadSettingsSection(port));
+    const std::string section(Controller::GetSettingsSection(port));
     const std::string type(src_si.GetStringValue(section.c_str(), "Type", Controller::GetDefaultPadType(port)));
     if (copy_pad_config)
       dest_si->SetStringValue(section.c_str(), "Type", type.c_str());
@@ -996,7 +996,7 @@ static u32 TryMapGenericMapping(SettingsInterface& si, const std::string& sectio
 bool InputManager::MapController(SettingsInterface& si, u32 controller,
                                  const std::vector<std::pair<GenericInputBinding, std::string>>& mapping)
 {
-  const std::string section(GetPadSettingsSection(controller));
+  const std::string section(Controller::GetSettingsSection(controller));
   const std::string type(si.GetStringValue(section.c_str(), "Type", Controller::GetDefaultPadType(controller)));
   const Controller::ControllerInfo* info = Controller::GetControllerInfo(type);
   if (!info)
@@ -1027,13 +1027,11 @@ bool InputManager::MapController(SettingsInterface& si, u32 controller,
   return (num_mappings > 0);
 }
 
-
 std::string InputManager::GetInputProfilePath(const std::string_view& name)
 {
   Panic("Fixme");
   return {};
 }
-
 
 std::vector<std::string> InputManager::GetInputProfileNames()
 {

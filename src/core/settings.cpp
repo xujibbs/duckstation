@@ -1,14 +1,18 @@
 #include "settings.h"
+#include "cheevos.h"
 #include "common/assert.h"
 #include "common/file_system.h"
+#include "common/log.h"
 #include "common/make_array.h"
 #include "common/string_util.h"
+#include "host.h"
 #include "host_display.h"
 #include "host_interface.h"
 #include <algorithm>
 #include <array>
 #include <cctype>
 #include <numeric>
+Log_SetChannel(Settings);
 
 Settings g_settings;
 
@@ -68,7 +72,16 @@ float SettingInfo::FloatStepValue() const
   return step_value ? StringUtil::FromChars<float>(step_value).value_or(fallback_value) : fallback_value;
 }
 
-Settings::Settings() = default;
+Settings::Settings()
+{
+  controller_types[0] = DEFAULT_CONTROLLER_1_TYPE;
+  memory_card_types[0] = DEFAULT_MEMORY_CARD_1_TYPE;
+  for (u32 i = 1; i < NUM_CONTROLLER_AND_CARD_PORTS; i++)
+  {
+    controller_types[i] = DEFAULT_CONTROLLER_2_TYPE;
+    memory_card_types[i] = DEFAULT_MEMORY_CARD_2_TYPE;
+  }
+}
 
 bool Settings::HasAnyPerGameMemoryCards() const
 {
@@ -239,11 +252,13 @@ void Settings::Load(SettingsInterface& si)
   display_show_status_indicators = si.GetBoolValue("Display", "ShowStatusIndicators", true);
   display_show_enhancements = si.GetBoolValue("Display", "ShowEnhancements", false);
   display_all_frames = si.GetBoolValue("Display", "DisplayAllFrames", false);
+  display_internal_resolution_screenshots = si.GetBoolValue("Display", "InternalResolutionScreenshots", false);
   video_sync_enabled = si.GetBoolValue("Display", "VSync", DEFAULT_VSYNC_VALUE);
   display_post_process_chain = si.GetStringValue("Display", "PostProcessChain", "");
   display_max_fps = si.GetFloatValue("Display", "MaxFPS", DEFAULT_DISPLAY_MAX_FPS);
 
-  cdrom_readahead_sectors = static_cast<u8>(si.GetIntValue("CDROM", "ReadaheadSectors", DEFAULT_CDROM_READAHEAD_SECTORS));
+  cdrom_readahead_sectors =
+    static_cast<u8>(si.GetIntValue("CDROM", "ReadaheadSectors", DEFAULT_CDROM_READAHEAD_SECTORS));
   cdrom_region_check = si.GetBoolValue("CDROM", "RegionCheck", false);
   cdrom_load_image_to_ram = si.GetBoolValue("CDROM", "LoadImageToRAM", false);
   cdrom_mute_cd_audio = si.GetBoolValue("CDROM", "MuteCDAudio", false);
@@ -255,7 +270,7 @@ void Settings::Load(SettingsInterface& si)
       .value_or(DEFAULT_AUDIO_BACKEND);
   audio_output_volume = si.GetIntValue("Audio", "OutputVolume", 100);
   audio_fast_forward_volume = si.GetIntValue("Audio", "FastForwardVolume", 100);
-  audio_buffer_size = si.GetIntValue("Audio", "BufferSize", HostInterface::DEFAULT_AUDIO_BUFFER_SIZE);
+  audio_buffer_size = si.GetIntValue("Audio", "BufferSize", DEFAULT_AUDIO_BUFFER_SIZE);
   audio_resampling = si.GetBoolValue("Audio", "Resampling", true);
   audio_output_muted = si.GetBoolValue("Audio", "OutputMuted", false);
   audio_sync_enabled = si.GetBoolValue("Audio", "Sync", true);
@@ -416,6 +431,7 @@ void Settings::Save(SettingsInterface& si) const
   si.SetBoolValue("Display", "ShowStatusIndicators", display_show_status_indicators);
   si.SetBoolValue("Display", "ShowEnhancements", display_show_enhancements);
   si.SetBoolValue("Display", "DisplayAllFrames", display_all_frames);
+  si.SetBoolValue("Display", "InternalResolutionScreenshots", display_internal_resolution_screenshots);
   si.SetBoolValue("Display", "VSync", video_sync_enabled);
   if (display_post_process_chain.empty())
     si.DeleteValue("Display", "PostProcessChain");
@@ -500,6 +516,104 @@ void Settings::Save(SettingsInterface& si) const
                  texture_replacements.dump_vram_write_width_threshold);
   si.SetIntValue("TextureReplacements", "DumpVRAMWriteHeightThreshold",
                  texture_replacements.dump_vram_write_height_threshold);
+}
+
+void Settings::FixIncompatibleSettings(bool display_osd_messages)
+{
+  if (g_settings.disable_all_enhancements)
+  {
+    Log_WarningPrintf("All enhancements disabled by config setting.");
+    g_settings.cpu_overclock_enable = false;
+    g_settings.cpu_overclock_active = false;
+    g_settings.enable_8mb_ram = false;
+    g_settings.gpu_resolution_scale = 1;
+    g_settings.gpu_multisamples = 1;
+    g_settings.gpu_per_sample_shading = false;
+    g_settings.gpu_true_color = false;
+    g_settings.gpu_scaled_dithering = false;
+    g_settings.gpu_texture_filter = GPUTextureFilter::Nearest;
+    g_settings.gpu_disable_interlacing = false;
+    g_settings.gpu_force_ntsc_timings = false;
+    g_settings.gpu_widescreen_hack = false;
+    g_settings.gpu_pgxp_enable = false;
+    g_settings.gpu_24bit_chroma_smoothing = false;
+    g_settings.cdrom_read_speedup = 1;
+    g_settings.cdrom_seek_speedup = 1;
+    g_settings.cdrom_mute_cd_audio = false;
+    g_settings.texture_replacements.enable_vram_write_replacements = false;
+    g_settings.bios_patch_fast_boot = false;
+    g_settings.bios_patch_tty_enable = false;
+  }
+
+  if (g_settings.display_integer_scaling && g_settings.display_linear_filtering)
+  {
+    Log_WarningPrintf("Disabling linear filter due to integer upscaling.");
+    g_settings.display_linear_filtering = false;
+  }
+
+  if (g_settings.display_integer_scaling && g_settings.display_stretch)
+  {
+    Log_WarningPrintf("Disabling stretch due to integer upscaling.");
+    g_settings.display_stretch = false;
+  }
+
+  if (g_settings.gpu_pgxp_enable)
+  {
+    if (g_settings.gpu_renderer == GPURenderer::Software)
+    {
+      if (display_osd_messages)
+      {
+        Host::AddOSDMessage(
+          Host::TranslateStdString("OSDMessage", "PGXP is incompatible with the software renderer, disabling PGXP."),
+          10.0f);
+      }
+      g_settings.gpu_pgxp_enable = false;
+    }
+  }
+
+#ifndef WITH_MMAP_FASTMEM
+  if (g_settings.cpu_fastmem_mode == CPUFastmemMode::MMap)
+  {
+    Log_WarningPrintf("mmap fastmem is not available on this platform, using LUT instead.");
+    g_settings.cpu_fastmem_mode = CPUFastmemMode::LUT;
+  }
+#endif
+
+#if defined(__ANDROID__) && defined(__arm__) && !defined(__aarch64__) && !defined(_M_ARM64)
+  if (g_settings.rewind_enable)
+  {
+    Host::AddOSDMessage(Host::TranslateStdString("OSDMessage", "Rewind is not supported on 32-bit ARM for Android."),
+                        30.0f);
+    g_settings.rewind_enable = false;
+  }
+#endif
+
+  // if challenge mode is enabled, disable things like rewind since they use save states
+  if (Cheevos::IsChallengeModeActive())
+  {
+    g_settings.emulation_speed =
+      (g_settings.emulation_speed != 0.0f) ? std::max(g_settings.emulation_speed, 1.0f) : 0.0f;
+    g_settings.fast_forward_speed =
+      (g_settings.fast_forward_speed != 0.0f) ? std::max(g_settings.fast_forward_speed, 1.0f) : 0.0f;
+    g_settings.turbo_speed = (g_settings.turbo_speed != 0.0f) ? std::max(g_settings.turbo_speed, 1.0f) : 0.0f;
+    g_settings.rewind_enable = false;
+    g_settings.auto_load_cheats = false;
+    if (g_settings.cpu_overclock_enable && g_settings.GetCPUOverclockPercent() < 100)
+    {
+      g_settings.cpu_overclock_enable = false;
+      g_settings.UpdateOverclockActive();
+    }
+    g_settings.debugging.enable_gdb_server = false;
+    g_settings.debugging.show_vram = false;
+    g_settings.debugging.show_gpu_state = false;
+    g_settings.debugging.show_cdrom_state = false;
+    g_settings.debugging.show_spu_state = false;
+    g_settings.debugging.show_timers_state = false;
+    g_settings.debugging.show_mdec_state = false;
+    g_settings.debugging.show_dma_state = false;
+    g_settings.debugging.dump_cpu_to_vram_copies = false;
+    g_settings.debugging.dump_vram_to_cpu_copies = false;
+  }
 }
 
 static std::array<const char*, LOGLEVEL_COUNT> s_log_level_names = {
@@ -655,14 +769,12 @@ const char* Settings::GetCPUFastmemModeDisplayName(CPUFastmemMode mode)
 
 static constexpr auto s_gpu_renderer_names = make_array(
 #ifdef _WIN32
-  "D3D11",
-  "D3D12",
+  "D3D11", "D3D12",
 #endif
   "Vulkan", "OpenGL", "Software");
 static constexpr auto s_gpu_renderer_display_names = make_array(
 #ifdef _WIN32
-  TRANSLATABLE("GPURenderer", "Hardware (D3D11)"),
-  TRANSLATABLE("GPURenderer", "Hardware (D3D12)"),
+  TRANSLATABLE("GPURenderer", "Hardware (D3D11)"), TRANSLATABLE("GPURenderer", "Hardware (D3D12)"),
 #endif
   TRANSLATABLE("GPURenderer", "Hardware (Vulkan)"), TRANSLATABLE("GPURenderer", "Hardware (OpenGL)"),
   TRANSLATABLE("GPURenderer", "Software"));
@@ -812,7 +924,7 @@ float Settings::GetDisplayAspectRatioValue() const
   {
     case DisplayAspectRatio::MatchWindow:
     {
-      const HostDisplay* display = g_host_interface->GetDisplay();
+      const HostDisplay* display = Host::GetHostDisplay();
       if (!display)
         return s_display_aspect_ratio_values[static_cast<int>(DEFAULT_DISPLAY_ASPECT_RATIO)];
 

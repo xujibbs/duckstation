@@ -3,6 +3,7 @@
 #include "common/log.h"
 #include "common/timer.h"
 #include "gpu_hw_shadergen.h"
+#include "host.h"
 #include "host_display.h"
 #include "shader_cache_version.h"
 #include "system.h"
@@ -55,10 +56,10 @@ bool GPU_HW_OpenGL::Initialize(HostDisplay* host_display)
      (host_display->GetRenderAPI() == HostDisplay::RenderAPI::OpenGLES && GLAD_GL_ES_VERSION_3_0));
   if (!opengl_is_available)
   {
-    g_host_interface->AddOSDMessage(
-      g_host_interface->TranslateStdString("OSDMessage", "OpenGL renderer unavailable, your driver or hardware is not "
-                                                         "recent enough. OpenGL 3.1 or OpenGL ES 3.0 is required."),
-      20.0f);
+    Host::AddOSDMessage(Host::TranslateStdString("OSDMessage",
+                                                 "OpenGL renderer unavailable, your driver or hardware is not "
+                                                 "recent enough. OpenGL 3.1 or OpenGL ES 3.0 is required."),
+                        20.0f);
     return false;
   }
 

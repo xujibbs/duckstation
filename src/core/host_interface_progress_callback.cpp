@@ -1,4 +1,5 @@
 #include "host_interface_progress_callback.h"
+#include "host.h"
 #include "common/log.h"
 Log_SetChannel(HostInterfaceProgressCallback);
 
@@ -72,17 +73,16 @@ void HostInterfaceProgressCallback::DisplayDebugMessage(const char* message) { L
 void HostInterfaceProgressCallback::ModalError(const char* message)
 {
   Log_ErrorPrint(message);
-  g_host_interface->ReportError(message);
+  Host::ReportErrorAsync("Error", message);
 }
 
 bool HostInterfaceProgressCallback::ModalConfirmation(const char* message)
 {
   Log_InfoPrint(message);
-  return g_host_interface->ConfirmMessage(message);
+  return Host::ConfirmMessage("Confirm", message);
 }
 
 void HostInterfaceProgressCallback::ModalInformation(const char* message)
 {
   Log_InfoPrint(message);
-  g_host_interface->ReportMessage(message);
 }

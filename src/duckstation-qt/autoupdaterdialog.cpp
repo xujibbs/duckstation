@@ -418,7 +418,7 @@ void AutoUpdaterDialog::downloadUpdateClicked()
 bool AutoUpdaterDialog::updateNeeded() const
 {
   QString last_checked_sha =
-    QString::fromStdString(m_host_interface->GetStringSettingValue("AutoUpdater", "LastVersion"));
+    QString::fromStdString(Host::GetBaseStringSettingValue("AutoUpdater", "LastVersion"));
 
   Log_InfoPrintf("Current SHA: %s", g_scm_hash_str);
   Log_InfoPrintf("Latest SHA: %s", m_latest_sha.toUtf8().constData());
@@ -435,7 +435,7 @@ bool AutoUpdaterDialog::updateNeeded() const
 
 void AutoUpdaterDialog::skipThisUpdateClicked()
 {
-  m_host_interface->SetStringSettingValue("AutoUpdater", "LastVersion", m_latest_sha.toUtf8().constData());
+  Host::SetBaseStringSettingValue("AutoUpdater", "LastVersion", m_latest_sha.toUtf8().constData());
   done(0);
 }
 
