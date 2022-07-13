@@ -3,7 +3,7 @@
 #include "common/log.h"
 #include "common/minizip_helpers.h"
 #include "common/string_util.h"
-#include "qthostinterface.h"
+#include "qthost.h"
 #include "qtutils.h"
 #include "scmversion/scmversion.h"
 #include "unzip.h"

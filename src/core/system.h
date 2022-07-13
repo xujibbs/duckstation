@@ -1,6 +1,5 @@
 #pragma once
 #include "common/timer.h"
-#include "host_interface.h"
 #include "settings.h"
 #include "timing_event.h"
 #include "types.h"

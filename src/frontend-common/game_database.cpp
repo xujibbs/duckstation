@@ -3,10 +3,10 @@
 #include "common/file_system.h"
 #include "common/log.h"
 #include "common/string_util.h"
-#include "core/host_interface.h"
 #include "core/system.h"
 #include "rapidjson/document.h"
 #include "rapidjson/error/en.h"
+#include "core/host.h"
 #include <iomanip>
 #include <memory>
 #include <optional>
@@ -22,24 +22,15 @@ GameDatabase::~GameDatabase()
 
 bool GameDatabase::Load()
 {
-  // TODO: use stream directly
-  std::unique_ptr<ByteStream> stream(
-    g_host_interface->OpenPackageFile("database/gamedb.json", BYTESTREAM_OPEN_READ | BYTESTREAM_OPEN_STREAMED));
-  if (!stream)
-  {
-    Log_ErrorPrintf("Failed to open game database");
-    return false;
-  }
-
-  std::string gamedb_data(ByteStream::ReadStreamToString(stream.get(), false));
-  if (gamedb_data.empty())
+  std::optional<std::string> gamedb_data(Host::ReadResourceFileToString("gamedb.json"));
+  if (!gamedb_data.has_value())
   {
     Log_ErrorPrintf("Failed to read game database");
     return false;
   }
 
   std::unique_ptr<rapidjson::Document> json = std::make_unique<rapidjson::Document>();
-  json->Parse(gamedb_data.c_str(), gamedb_data.size());
+  json->Parse(gamedb_data->c_str(), gamedb_data->size());
   if (json->HasParseError())
   {
     Log_ErrorPrintf("Failed to parse game database: %s at offset %zu",

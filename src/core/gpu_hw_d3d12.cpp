@@ -11,7 +11,6 @@
 #include "common/timer.h"
 #include "gpu_hw_shadergen.h"
 #include "host_display.h"
-#include "host_interface.h"
 #include "system.h"
 Log_SetChannel(GPU_HW_D3D12);
 

@@ -15,7 +15,7 @@
 #include "gdbserver.h"
 #include "memorycardeditordialog.h"
 #include "qtdisplaywidget.h"
-#include "qthostinterface.h"
+#include "qthost.h"
 #include "qtutils.h"
 #include "scmversion/scmversion.h"
 #include "settingsdialog.h"
@@ -995,7 +995,7 @@ void MainWindow::setupAdditionalUi()
   {
     QAction* action = m_ui.menuWindowSize->addAction(tr("%1x Scale").arg(scale));
     connect(action, &QAction::triggered,
-            [scale]() { QtHostInterface::GetInstance()->requestRenderWindowScale(scale); });
+            [scale]() { g_emu_thread->requestRenderWindowScale(scale); });
   }
 
 #ifdef WITH_RAINTEGRATION
@@ -1016,7 +1016,7 @@ void MainWindow::setupAdditionalUi()
 
         QAction* raAction = raMenu->addAction(QString::fromUtf8(title));
         connect(raAction, &QAction::triggered, this, [id]() {
-          QtHostInterface::GetInstance()->executeOnEmulationThread(
+          g_emu_thread->executeOnEmulationThread(
             [id]() { Cheevos::RAIntegration::ActivateMenuItem(id); });
         });
       }
@@ -1901,7 +1901,7 @@ void MainWindow::onCPUDebuggerClosed()
 
 void MainWindow::onToolsOpenDataDirectoryTriggered()
 {
-  QtUtils::OpenURL(this, QUrl::fromLocalFile(m_host_interface->getUserDirectoryRelativePath(QString())));
+  QtUtils::OpenURL(this, QUrl::fromLocalFile(QString::fromStdString(EmuFolders::DataRoot)));
 }
 
 void MainWindow::checkForUpdates(bool display_message)

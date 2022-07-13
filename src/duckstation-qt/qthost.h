@@ -1,9 +1,9 @@
 #pragma once
 #include "common/event.h"
-#include "core/host_interface.h"
+#include "core/host.h"
 #include "core/host_settings.h"
 #include "core/system.h"
-#include "frontend-common/common_host_interface.h"
+#include "frontend-common/common_host.h"
 #include "frontend-common/game_list.h"
 #include "frontend-common/input_manager.h"
 #include "qtutils.h"
@@ -31,6 +31,8 @@ class QTranslator;
 
 class INISettingsInterface;
 
+class HostDisplay;
+
 class MainWindow;
 class QtDisplayWidget;
 
@@ -38,7 +40,7 @@ Q_DECLARE_METATYPE(std::shared_ptr<SystemBootParameters>);
 Q_DECLARE_METATYPE(const GameListEntry*);
 Q_DECLARE_METATYPE(GPURenderer);
 
-class QtHostInterface final : public QObject, public CommonHostInterface
+class QtHostInterface final : public QObject
 {
   Q_OBJECT
 
@@ -46,21 +48,16 @@ public:
   explicit QtHostInterface(QObject* parent = nullptr);
   ~QtHostInterface();
 
-  ALWAYS_INLINE static QtHostInterface* GetInstance() { return static_cast<QtHostInterface*>(g_host_interface); }
+  bool Initialize();
+  void Shutdown();
 
-  const char* GetFrontendName() const override;
-
-  bool Initialize() override;
-  void Shutdown() override;
-
-  void RunLater(std::function<void()> func) override;
+  void RunLater(std::function<void()> func);
 
 public:
-  ALWAYS_INLINE const GameList* getGameList() const { return GetGameList(); }
-  ALWAYS_INLINE GameList* getGameList() { return GetGameList(); }
+  ALWAYS_INLINE const GameList* getGameList() const { return CommonHost::GetGameList(); }
+  ALWAYS_INLINE GameList* getGameList() { return CommonHost::GetGameList(); }
   void refreshGameList(bool invalidate_cache = false, bool invalidate_database = false);
 
-  ALWAYS_INLINE bool inBatchMode() const { return InBatchMode(); }
   ALWAYS_INLINE void requestExit() { RequestExit(); }
 
   ALWAYS_INLINE bool isOnWorkerThread() const { return QThread::currentThread() == m_worker_thread; }
@@ -87,17 +84,8 @@ public:
 
   void saveInputProfile(const QString& profile_path);
 
-  /// Returns a path relative to the user directory.
-  QString getUserDirectoryRelativePath(const QString& arg) const;
-
-  /// Returns a path relative to the application directory (for system files).
-  QString getProgramDirectoryRelativePath(const QString& arg) const;
-
   /// Returns a list of supported languages and codes (suffixes for translation files).
   static std::vector<std::pair<QString, QString>> getAvailableLanguageList();
-
-  /// Returns program directory as a QString.
-  QString getProgramDirectory() const;
 
   /// Called back from the GS thread when the display state changes (e.g. fullscreen, render to main).
   static HostDisplay* createHostDisplay();
@@ -194,10 +182,10 @@ private Q_SLOTS:
   void doBackgroundControllerPoll();
 
 protected:
-  bool IsFullscreen() const override;
-  bool SetFullscreen(bool enabled) override;
+  bool IsFullscreen() const;
+  bool SetFullscreen(bool enabled);
 
-  void RequestExit() override;
+  void RequestExit();
 
 private:
   enum : u32
@@ -266,8 +254,10 @@ extern QtHostInterface* g_emu_thread;
 
 namespace QtHost {
 /// Sets batch mode (exit after game shutdown).
-// bool InBatchMode();
-// void SetBatchMode(bool enabled);
+bool InBatchMode();
+
+/// Sets NoGUI mode (implys batch mode, does not display main window, exits on shutdown).
+bool InNoGUIMode();
 
 /// Executes a function on the UI thread.
 void RunOnUIThread(const std::function<void()>& func, bool block = false);

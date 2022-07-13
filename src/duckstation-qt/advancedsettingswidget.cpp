@@ -166,7 +166,7 @@ static void addMSAATweakOption(SettingsDialog* dialog, QTableWidget* table, cons
     QtUtils::DecodeMSAAModeValue(msaa->itemData(index), &multisamples, &ssaa);
     dialog->setIntSettingValue("GPU", "Multisamples", static_cast<int>(multisamples));
     dialog->setBoolSettingValue("GPU", "PerSampleShading", ssaa);
-    QtHostInterface::GetInstance()->applySettings(false);
+    g_emu_thread->applySettings(false);
   });
 
   table->setCellWidget(row, 1, msaa);
@@ -193,7 +193,7 @@ AdvancedSettingsWidget::AdvancedSettingsWidget(SettingsDialog* dialog, QWidget* 
   SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.showDebugMenu, "Main", "ShowDebugMenu", false);
 
   connect(m_ui.resetToDefaultButton, &QPushButton::clicked, this, &AdvancedSettingsWidget::onResetToDefaultClicked);
-  connect(m_ui.showDebugMenu, &QCheckBox::toggled, QtHostInterface::GetInstance()->getMainWindow(),
+  connect(m_ui.showDebugMenu, &QCheckBox::toggled, g_emu_thread->getMainWindow(),
           &MainWindow::updateDebugMenuVisibility, Qt::QueuedConnection);
 
   m_ui.tweakOptionTable->setColumnWidth(0, 380);

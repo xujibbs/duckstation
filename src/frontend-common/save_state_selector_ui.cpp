@@ -14,7 +14,7 @@ Log_SetChannel(SaveStateSelectorUI);
 
 namespace FrontendCommon {
 
-SaveStateSelectorUI::SaveStateSelectorUI(CommonHostInterface* host_interface) : m_host_interface(host_interface) {}
+SaveStateSelectorUI::SaveStateSelectorUI() = default;
 
 SaveStateSelectorUI::~SaveStateSelectorUI() = default;
 

@@ -4,7 +4,6 @@
 #include "common/log.h"
 #include "dma.h"
 #include "host.h"
-#include "host_interface.h"
 #include "imgui.h"
 #include "interrupt_controller.h"
 #include "system.h"

@@ -98,7 +98,7 @@ void AudioSettingsWidget::updateVolumeLabel()
 void AudioSettingsWidget::onOutputVolumeChanged(int new_value)
 {
   m_dialog->setIntSettingValue("Audio", "OutputVolume", new_value);
-  QtHostInterface::GetInstance()->setAudioOutputVolume(new_value, m_ui.fastForwardVolume->value());
+  g_emu_thread->setAudioOutputVolume(new_value, m_ui.fastForwardVolume->value());
 
   updateVolumeLabel();
 }
@@ -106,7 +106,7 @@ void AudioSettingsWidget::onOutputVolumeChanged(int new_value)
 void AudioSettingsWidget::onFastForwardVolumeChanged(int new_value)
 {
   m_dialog->setIntSettingValue("Audio", "FastForwardVolume", new_value);
-  QtHostInterface::GetInstance()->setAudioOutputVolume(m_ui.volume->value(), new_value);
+  g_emu_thread->setAudioOutputVolume(m_ui.volume->value(), new_value);
 
   updateVolumeLabel();
 }
@@ -115,5 +115,5 @@ void AudioSettingsWidget::onOutputMutedChanged(int new_state)
 {
   const bool muted = (new_state != 0);
   m_dialog->setBoolSettingValue("Audio", "OutputMuted", muted);
-  QtHostInterface::GetInstance()->setAudioOutputMuted(muted);
+  g_emu_thread->setAudioOutputMuted(muted);
 }

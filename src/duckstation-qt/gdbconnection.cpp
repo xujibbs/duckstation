@@ -1,5 +1,5 @@
 #include "gdbconnection.h"
-#include "qthostinterface.h"
+#include "qthost.h"
 #include "common/log.h"
 #include "core/gdb_protocol.h"
 Log_SetChannel(GDBConnection);
@@ -13,7 +13,7 @@ GDBConnection::GDBConnection(QObject *parent, int descriptor)
   connect(&m_socket, &QTcpSocket::disconnected, this, &GDBConnection::gotDisconnected);
 
   if (m_socket.setSocketDescriptor(m_descriptor)) {
-    QtHostInterface::GetInstance()->pauseSystem(true, true);
+    g_emu_thread->pauseSystem(true, true);
   }
   else {
     Log_ErrorPrintf("(%u) Failed to set socket descriptor: %s", m_descriptor, m_socket.errorString().toUtf8().constData());
@@ -37,12 +37,12 @@ void GDBConnection::receivedData()
 
       if (GDBProtocol::IsPacketInterrupt(m_readBuffer)) {
         Log_DebugPrintf("(%u) > Interrupt request", m_descriptor);
-        QtHostInterface::GetInstance()->pauseSystem(true, true);
+        g_emu_thread->pauseSystem(true, true);
         m_readBuffer.erase();
       }
       else if (GDBProtocol::IsPacketContinue(m_readBuffer)) {
         Log_DebugPrintf("(%u) > Continue request", m_descriptor);
-        QtHostInterface::GetInstance()->pauseSystem(false, false);
+        g_emu_thread->pauseSystem(false, false);
         m_readBuffer.erase();
       }
       else if (GDBProtocol::IsPacketComplete(m_readBuffer)) {

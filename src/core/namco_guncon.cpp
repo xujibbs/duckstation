@@ -3,7 +3,6 @@
 #include "common/log.h"
 #include "gpu.h"
 #include "host_display.h"
-#include "host_interface.h"
 #include "resources.h"
 #include "system.h"
 #include "util/state_wrapper.h"

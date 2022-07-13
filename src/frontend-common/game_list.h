@@ -108,12 +108,6 @@ public:
   bool GetDatabaseEntryForDisc(CDImage* image, GameDatabaseEntry* entry);
   bool IsPathExcluded(const std::string& path) const;
 
-  void SetCacheFilename(std::string filename) { m_cache_filename = std::move(filename); }
-  void SetUserCompatibilityListFilename(std::string filename)
-  {
-    m_user_compatibility_list_filename = std::move(filename);
-  }
-  void SetUserGameSettingsFilename(std::string filename) { m_user_game_settings_filename = std::move(filename); }
   void SetSearchDirectoriesFromSettings(SettingsInterface& si);
 
   void AddDirectory(std::string path, bool recursive);
@@ -129,7 +123,7 @@ public:
                           const GameSettings::Entry& new_entry, bool save_to_list = true);
 
   std::string GetCoverImagePathForEntry(const GameListEntry* entry) const;
-  std::string GetCoverImagePath(const std::string& path, const std::string& code, const std::string& title) const;
+  std::string GetCoverImagePath(const std::string& path, const std::string& serial, const std::string& title) const;
   std::string GetNewCoverImagePathForEntry(const GameListEntry* entry, const char* new_filename) const;
 
 private:
@@ -183,9 +177,6 @@ private:
 
   std::vector<DirectoryEntry> m_search_directories;
   std::vector<std::string> m_excluded_paths;
-  std::string m_cache_filename;
-  std::string m_user_compatibility_list_filename;
-  std::string m_user_game_settings_filename;
   bool m_database_load_tried = false;
   bool m_compatibility_list_load_tried = false;
   bool m_game_settings_load_tried = false;

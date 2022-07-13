@@ -116,18 +116,13 @@ std::vector<std::string> PostProcessingChain::GetAvailableShaderNames()
 {
   std::vector<std::string> names;
 
-  std::string program_dir = g_host_interface->GetProgramDirectoryRelativePath("shaders");
-  std::string user_dir = g_host_interface->GetUserDirectoryRelativePath("shaders");
   FileSystem::FindResultsArray results;
-  FileSystem::FindFiles(user_dir.c_str(), "*.glsl",
+  FileSystem::FindFiles(Path::Combine(EmuFolders::Resources, "shaders").c_str(), "*.glsl",
                         FILESYSTEM_FIND_FILES | FILESYSTEM_FIND_RECURSIVE | FILESYSTEM_FIND_RELATIVE_PATHS, &results);
-  if (program_dir != user_dir)
-  {
-    FileSystem::FindFiles(program_dir.c_str(), "*.glsl",
-                          FILESYSTEM_FIND_FILES | FILESYSTEM_FIND_RECURSIVE | FILESYSTEM_FIND_RELATIVE_PATHS |
-                            FILESYSTEM_FIND_KEEP_ARRAY,
-                          &results);
-  }
+  FileSystem::FindFiles(EmuFolders::Shaders.c_str(), "*.glsl",
+                        FILESYSTEM_FIND_FILES | FILESYSTEM_FIND_RECURSIVE | FILESYSTEM_FIND_RELATIVE_PATHS |
+                          FILESYSTEM_FIND_KEEP_ARRAY,
+                        &results);
 
   for (FILESYSTEM_FIND_DATA& fd : results)
   {

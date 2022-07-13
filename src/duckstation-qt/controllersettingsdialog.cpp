@@ -8,7 +8,7 @@
 #include "util/ini_settings_interface.h"
 #include "frontend-common/input_manager.h"
 #include "hotkeysettingswidget.h"
-#include "qthostinterface.h"
+#include "qthost.h"
 
 #include <QtWidgets/QInputDialog>
 #include <QtWidgets/QMessageBox>
@@ -37,18 +37,18 @@ ControllerSettingsDialog::ControllerSettingsDialog(QWidget* parent /* = nullptr 
   connect(m_ui.deleteProfile, &QPushButton::clicked, this, &ControllerSettingsDialog::onDeleteProfileClicked);
   connect(m_ui.restoreDefaults, &QPushButton::clicked, this, &ControllerSettingsDialog::onRestoreDefaultsClicked);
 
-  connect(QtHostInterface::GetInstance(), &QtHostInterface::onInputDevicesEnumerated, this,
+  connect(g_emu_thread, &QtHostInterface::onInputDevicesEnumerated, this,
           &ControllerSettingsDialog::onInputDevicesEnumerated);
-  connect(QtHostInterface::GetInstance(), &QtHostInterface::onInputDeviceConnected, this,
+  connect(g_emu_thread, &QtHostInterface::onInputDeviceConnected, this,
           &ControllerSettingsDialog::onInputDeviceConnected);
-  connect(QtHostInterface::GetInstance(), &QtHostInterface::onInputDeviceDisconnected, this,
+  connect(g_emu_thread, &QtHostInterface::onInputDeviceDisconnected, this,
           &ControllerSettingsDialog::onInputDeviceDisconnected);
-  connect(QtHostInterface::GetInstance(), &QtHostInterface::onVibrationMotorsEnumerated, this,
+  connect(g_emu_thread, &QtHostInterface::onVibrationMotorsEnumerated, this,
           &ControllerSettingsDialog::onVibrationMotorsEnumerated);
 
   // trigger a device enumeration to populate the device list
-  QtHostInterface::GetInstance()->enumerateInputDevices();
-  QtHostInterface::GetInstance()->enumerateVibrationMotors();
+  g_emu_thread->enumerateInputDevices();
+  g_emu_thread->enumerateVibrationMotors();
 }
 
 ControllerSettingsDialog::~ControllerSettingsDialog() = default;
@@ -153,7 +153,7 @@ void ControllerSettingsDialog::onLoadProfileClicked()
     InputManager::CopyConfiguration(Host::Internal::GetBaseSettingsLayer(), *m_profile_interface, true, true, false);
     QtHost::QueueSettingsSave();
   }
-  QtHostInterface::GetInstance()->applySettings();
+  g_emu_thread->applySettings();
 
   // make it visible
   switchProfile({});
@@ -214,7 +214,7 @@ void ControllerSettingsDialog::onInputDeviceConnected(const QString& identifier,
 {
   m_device_list.emplace_back(identifier, device_name);
   m_global_settings->addDeviceToList(identifier, device_name);
-  QtHostInterface::GetInstance()->enumerateVibrationMotors();
+  g_emu_thread->enumerateVibrationMotors();
 }
 
 void ControllerSettingsDialog::onInputDeviceDisconnected(const QString& identifier)
@@ -229,7 +229,7 @@ void ControllerSettingsDialog::onInputDeviceDisconnected(const QString& identifi
   }
 
   m_global_settings->removeDeviceFromList(identifier);
-  QtHostInterface::GetInstance()->enumerateVibrationMotors();
+  g_emu_thread->enumerateVibrationMotors();
 }
 
 void ControllerSettingsDialog::onVibrationMotorsEnumerated(const QList<InputBindingKey>& motors)
@@ -270,12 +270,12 @@ void ControllerSettingsDialog::setBoolValue(const char* section, const char* key
   {
     m_profile_interface->SetBoolValue(section, key, value);
     m_profile_interface->Save();
-    QtHostInterface::GetInstance()->reloadGameSettings();
+    g_emu_thread->reloadGameSettings();
   }
   else
   {
     Host::SetBaseBoolSettingValue(section, key, value);
-    QtHostInterface::GetInstance()->applySettings();
+    g_emu_thread->applySettings();
   }
 }
 
@@ -285,12 +285,12 @@ void ControllerSettingsDialog::setStringValue(const char* section, const char* k
   {
     m_profile_interface->SetStringValue(section, key, value);
     m_profile_interface->Save();
-    QtHostInterface::GetInstance()->reloadGameSettings();
+    g_emu_thread->reloadGameSettings();
   }
   else
   {
     Host::SetBaseStringSettingValue(key, section, value);
-    QtHostInterface::GetInstance()->applySettings();
+    g_emu_thread->applySettings();
   }
 }
 
@@ -300,12 +300,12 @@ void ControllerSettingsDialog::clearSettingValue(const char* section, const char
   {
     m_profile_interface->DeleteValue(section, key);
     m_profile_interface->Save();
-    QtHostInterface::GetInstance()->reloadGameSettings();
+    g_emu_thread->reloadGameSettings();
   }
   else
   {
     Host::DeleteBaseSettingValue(section, key);
-    QtHostInterface::GetInstance()->applySettings();
+    g_emu_thread->applySettings();
   }
 }
 

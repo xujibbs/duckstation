@@ -12,7 +12,6 @@
 #include "core/cpu_core.h"
 #include "core/host.h"
 #include "core/host_display.h"
-#include "core/host_interface.h"
 #include "core/host_settings.h"
 #include "core/system.h"
 #include "fullscreen_ui.h"
@@ -732,9 +731,8 @@ std::string Cheevos::GetBadgeImageFilename(const char* badge_name, bool locked, 
     // well, this comes from the internet.... :)
     std::string clean_name(badge_name);
     Path::SanitizeFileName(clean_name);
-    return g_host_interface->GetUserDirectoryRelativePath("cache" FS_OSPATH_SEPARATOR_STR
-                                                          "achievement_badge" FS_OSPATH_SEPARATOR_STR "%s%s.png",
-                                                          clean_name.c_str(), locked ? "_lock" : "");
+    return Path::Combine(EmuFolders::Cache, fmt::format("achievement_badge" FS_OSPATH_SEPARATOR_STR "{}{}.png",
+                                                        clean_name.c_str(), locked ? "_lock" : ""));
   }
 }
 
@@ -876,8 +874,7 @@ void Cheevos::GetPatchesCallback(s32 status_code, const FrontendCommon::HTTPDown
   std::string icon_name(GetOptionalString(patch_data, "ImageIcon"));
   if (!icon_name.empty())
   {
-    s_game_icon = g_host_interface->GetUserDirectoryRelativePath(
-      "cache" FS_OSPATH_SEPARATOR_STR "achievement_gameicon" FS_OSPATH_SEPARATOR_STR "%u.png", g_game_id);
+    s_game_icon = Path::Combine(EmuFolders::Cache, fmt::format("achievement_gameicon" FS_OSPATH_SEPARATOR_STR "{}.png", g_game_id));
     if (!FileSystem::FileExists(s_game_icon.c_str()))
     {
       // for some reason rurl doesn't have this :(

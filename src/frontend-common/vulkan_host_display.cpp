@@ -9,7 +9,7 @@
 #include "common/vulkan/stream_buffer.h"
 #include "common/vulkan/swap_chain.h"
 #include "common/vulkan/util.h"
-#include "common_host_interface.h"
+#include "common_host.h"
 #include "core/shader_cache_version.h"
 #include "imgui.h"
 #include "imgui_impl_vulkan.h"

@@ -94,7 +94,7 @@ GeneralSettingsWidget::GeneralSettingsWidget(SettingsDialog* dialog, QWidget* pa
 
     m_ui.autoUpdateCurrentVersion->setText(tr("%1 (%2)").arg(g_scm_tag_str).arg(g_scm_date_str));
     connect(m_ui.checkForUpdates, &QPushButton::clicked,
-            [this]() { QtHostInterface::GetInstance()->getMainWindow()->checkForUpdates(true); });
+            [this]() { g_emu_thread->getMainWindow()->checkForUpdates(true); });
     current_col++;
     current_row += (current_col / 2);
     current_col %= 2;

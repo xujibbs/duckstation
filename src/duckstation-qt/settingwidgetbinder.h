@@ -14,11 +14,12 @@
 #include <QtWidgets/QSlider>
 #include <QtWidgets/QSpinBox>
 
+#include "common/assert.h"
 #include "common/path.h"
 #include "core/host_settings.h"
 #include "core/settings.h"
 
-#include "qthostinterface.h"
+#include "qthost.h"
 #include "qtutils.h"
 #include "settingsdialog.h"
 
@@ -466,7 +467,7 @@ static void BindWidgetToBoolSetting(SettingsInterface* sif, WidgetType* widget, 
         sif->DeleteValue(section.c_str(), key.c_str());
 
       sif->Save();
-      QtHostInterface::GetInstance()->reloadGameSettings();
+      g_emu_thread->reloadGameSettings();
     });
   }
   else
@@ -476,7 +477,7 @@ static void BindWidgetToBoolSetting(SettingsInterface* sif, WidgetType* widget, 
     Accessor::connectValueChanged(widget, [widget, section = std::move(section), key = std::move(key)]() {
       const bool new_value = Accessor::getBoolValue(widget);
       Host::SetBaseBoolSettingValue(section.c_str(), key.c_str(), new_value);
-      QtHostInterface::GetInstance()->applySettings();
+      g_emu_thread->applySettings();
     });
   }
 }
@@ -508,7 +509,7 @@ static void BindWidgetToIntSetting(SettingsInterface* sif, WidgetType* widget, s
           sif->DeleteValue(section.c_str(), key.c_str());
 
         sif->Save();
-        QtHostInterface::GetInstance()->reloadGameSettings();
+        g_emu_thread->reloadGameSettings();
       });
   }
   else
@@ -519,7 +520,7 @@ static void BindWidgetToIntSetting(SettingsInterface* sif, WidgetType* widget, s
       widget, [widget, section = std::move(section), key = std::move(key), option_offset]() {
         const int new_value = Accessor::getIntValue(widget);
         Host::SetBaseIntSettingValue(section.c_str(), key.c_str(), new_value + option_offset);
-        QtHostInterface::GetInstance()->applySettings();
+        g_emu_thread->applySettings();
       });
   }
 }
@@ -549,7 +550,7 @@ static void BindWidgetToFloatSetting(SettingsInterface* sif, WidgetType* widget,
         sif->DeleteValue(section.c_str(), key.c_str());
 
       sif->Save();
-      QtHostInterface::GetInstance()->reloadGameSettings();
+      g_emu_thread->reloadGameSettings();
     });
   }
   else
@@ -559,7 +560,7 @@ static void BindWidgetToFloatSetting(SettingsInterface* sif, WidgetType* widget,
     Accessor::connectValueChanged(widget, [widget, section = std::move(section), key = std::move(key)]() {
       const float new_value = Accessor::getFloatValue(widget);
       Host::SetBaseFloatSettingValue(section.c_str(), key.c_str(), new_value);
-      QtHostInterface::GetInstance()->applySettings();
+      g_emu_thread->applySettings();
     });
   }
 }
@@ -589,7 +590,7 @@ static void BindWidgetToNormalizedSetting(SettingsInterface* sif, WidgetType* wi
         sif->DeleteValue(section.c_str(), key.c_str());
 
       sif->Save();
-      QtHostInterface::GetInstance()->reloadGameSettings();
+      g_emu_thread->reloadGameSettings();
     });
   }
   else
@@ -599,7 +600,7 @@ static void BindWidgetToNormalizedSetting(SettingsInterface* sif, WidgetType* wi
     Accessor::connectValueChanged(widget, [widget, section = std::move(section), key = std::move(key), range]() {
       const float new_value = (static_cast<float>(Accessor::getIntValue(widget)) / range);
       Host::SetBaseFloatSettingValue(section.c_str(), key.c_str(), new_value);
-      QtHostInterface::GetInstance()->applySettings();
+      g_emu_thread->applySettings();
     });
   }
 }
@@ -630,7 +631,7 @@ static void BindWidgetToStringSetting(SettingsInterface* sif, WidgetType* widget
         sif->DeleteValue(section.c_str(), key.c_str());
 
       sif->Save();
-      QtHostInterface::GetInstance()->reloadGameSettings();
+      g_emu_thread->reloadGameSettings();
     });
   }
   else
@@ -644,7 +645,7 @@ static void BindWidgetToStringSetting(SettingsInterface* sif, WidgetType* widget
       else
         Host::DeleteBaseSettingValue(section.c_str(), key.c_str());
 
-      QtHostInterface::GetInstance()->applySettings();
+      g_emu_thread->applySettings();
     });
   }
 }
@@ -694,7 +695,7 @@ static void BindWidgetToEnumSetting(SettingsInterface* sif, WidgetType* widget, 
         }
 
         sif->Save();
-        QtHostInterface::GetInstance()->reloadGameSettings();
+        g_emu_thread->reloadGameSettings();
       });
   }
   else
@@ -709,7 +710,7 @@ static void BindWidgetToEnumSetting(SettingsInterface* sif, WidgetType* widget, 
         const DataType value = static_cast<DataType>(static_cast<UnderlyingType>(Accessor::getIntValue(widget)));
         const char* string_value = to_string_function(value);
         Host::SetBaseStringSettingValue(section.c_str(), key.c_str(), string_value);
-        QtHostInterface::GetInstance()->applySettings();
+        g_emu_thread->applySettings();
       });
   }
 }
@@ -761,7 +762,7 @@ static void BindWidgetToEnumSetting(SettingsInterface* sif, WidgetType* widget, 
           sif->DeleteValue(section.c_str(), key.c_str());
 
         sif->Save();
-        QtHostInterface::GetInstance()->reloadGameSettings();
+        g_emu_thread->reloadGameSettings();
       });
   }
   else
@@ -771,7 +772,7 @@ static void BindWidgetToEnumSetting(SettingsInterface* sif, WidgetType* widget, 
     Accessor::connectValueChanged(widget, [widget, section = std::move(section), key = std::move(key), enum_names]() {
       const UnderlyingType value = static_cast<UnderlyingType>(Accessor::getIntValue(widget));
       Host::SetBaseStringSettingValue(section.c_str(), key.c_str(), enum_names[value]);
-      QtHostInterface::GetInstance()->applySettings();
+      g_emu_thread->applySettings();
     });
   }
 }
@@ -824,7 +825,7 @@ static void BindWidgetToEnumSetting(SettingsInterface* sif, WidgetType* widget, 
           sif->DeleteValue(section.c_str(), key.c_str());
 
         sif->Save();
-        QtHostInterface::GetInstance()->reloadGameSettings();
+        g_emu_thread->reloadGameSettings();
       });
   }
   else
@@ -835,7 +836,7 @@ static void BindWidgetToEnumSetting(SettingsInterface* sif, WidgetType* widget, 
     Accessor::connectValueChanged(widget, [widget, section = std::move(section), key = std::move(key), enum_values]() {
       const int value = Accessor::getIntValue(widget);
       Host::SetBaseStringSettingValue(section.c_str(), key.c_str(), enum_values[value]);
-      QtHostInterface::GetInstance()->applySettings();
+      g_emu_thread->applySettings();
     });
   }
 }
@@ -877,7 +878,10 @@ static void BindWidgetToFolderSetting(SettingsInterface* sif, WidgetType* widget
       Host::DeleteBaseSettingValue(section.c_str(), key.c_str());
     }
 
-    QtHostInterface::GetInstance()->updateEmuFolders();
+    Panic("Fixme");
+#if 0
+    g_emu_thread->updateEmuFolders();
+#endif
   });
 
   if (browse_button)

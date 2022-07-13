@@ -5,7 +5,6 @@
 #include "common/string_util.h"
 #include "dma.h"
 #include "host_display.h"
-#include "host_interface.h"
 #include "imgui.h"
 #include "interrupt_controller.h"
 #include "settings.h"

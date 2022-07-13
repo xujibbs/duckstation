@@ -1,7 +1,8 @@
 #include "debuggerwindow.h"
+#include "common/assert.h"
 #include "core/cpu_core_private.h"
 #include "debuggermodels.h"
-#include "qthostinterface.h"
+#include "qthost.h"
 #include "qtutils.h"
 #include <QtCore/QSignalBlocker>
 #include <QtGui/QFontDatabase>
@@ -80,7 +81,7 @@ void DebuggerWindow::onPauseActionToggled(bool paused)
     setUIEnabled(false);
   }
 
-  QtHostInterface::GetInstance()->pauseSystem(paused);
+  g_emu_thread->pauseSystem(paused);
 }
 
 void DebuggerWindow::onRunToCursorTriggered()
@@ -93,7 +94,7 @@ void DebuggerWindow::onRunToCursorTriggered()
   }
 
   CPU::AddBreakpoint(addr.value(), true, true);
-  QtHostInterface::GetInstance()->pauseSystem(false);
+  g_emu_thread->pauseSystem(false);
 }
 
 void DebuggerWindow::onGoToPCTriggered()
@@ -176,7 +177,7 @@ void DebuggerWindow::onStepIntoActionTriggered()
 {
   Assert(System::IsPaused());
   m_registers_model->saveCurrentValues();
-  QtHostInterface::GetInstance()->singleStepCPU();
+  g_emu_thread->singleStepCPU();
   refreshAll();
 }
 
@@ -191,7 +192,7 @@ void DebuggerWindow::onStepOverActionTriggered()
 
   // unpause to let it run to the breakpoint
   m_registers_model->saveCurrentValues();
-  QtHostInterface::GetInstance()->pauseSystem(false);
+  g_emu_thread->pauseSystem(false);
 }
 
 void DebuggerWindow::onStepOutActionTriggered()
@@ -205,7 +206,7 @@ void DebuggerWindow::onStepOutActionTriggered()
 
   // unpause to let it run to the breakpoint
   m_registers_model->saveCurrentValues();
-  QtHostInterface::GetInstance()->pauseSystem(false);
+  g_emu_thread->pauseSystem(false);
 }
 
 void DebuggerWindow::onCodeViewItemActivated(QModelIndex index)
@@ -351,9 +352,9 @@ void DebuggerWindow::onMemorySearchStringChanged(const QString&)
 void DebuggerWindow::closeEvent(QCloseEvent* event)
 {
   QMainWindow::closeEvent(event);
-  QtHostInterface::GetInstance()->pauseSystem(true, true);
+  g_emu_thread->pauseSystem(true, true);
   CPU::ClearBreakpoints();
-  QtHostInterface::GetInstance()->pauseSystem(false);
+  g_emu_thread->pauseSystem(false);
   emit closed();
 }
 
@@ -379,7 +380,7 @@ void DebuggerWindow::setupAdditionalUi()
 
 void DebuggerWindow::connectSignals()
 {
-  QtHostInterface* hi = QtHostInterface::GetInstance();
+  QtHostInterface* hi = g_emu_thread;
   connect(hi, &QtHostInterface::emulationPaused, this, &DebuggerWindow::onEmulationPaused);
   connect(hi, &QtHostInterface::debuggerMessageReported, this, &DebuggerWindow::onDebuggerMessageReported);
 
@@ -410,7 +411,7 @@ void DebuggerWindow::connectSignals()
 
 void DebuggerWindow::disconnectSignals()
 {
-  QtHostInterface* hi = QtHostInterface::GetInstance();
+  QtHostInterface* hi = g_emu_thread;
   hi->disconnect(this);
 }
 

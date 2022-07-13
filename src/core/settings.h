@@ -410,6 +410,7 @@ extern std::string Dumps;
 extern std::string GameSettings;
 extern std::string InputProfiles;
 extern std::string MemoryCards;
+extern std::string Resources;
 extern std::string SaveStates;
 extern std::string Screenshots;
 extern std::string Shaders;

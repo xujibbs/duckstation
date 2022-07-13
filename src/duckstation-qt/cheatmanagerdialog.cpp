@@ -6,7 +6,7 @@
 #include "core/cpu_core.h"
 #include "core/host.h"
 #include "core/system.h"
-#include "qthostinterface.h"
+#include "qthost.h"
 #include "qtutils.h"
 #include <QtCore/QFileInfo>
 #include <QtGui/QColor>
@@ -188,7 +188,7 @@ void CheatManagerDialog::connectUi()
   connect(m_ui.scanTable, &QTableWidget::itemChanged, this, &CheatManagerDialog::scanItemChanged);
   connect(m_ui.watchTable, &QTableWidget::itemChanged, this, &CheatManagerDialog::watchItemChanged);
 
-  connect(QtHostInterface::GetInstance(), &QtHostInterface::cheatEnabled, this,
+  connect(g_emu_thread, &QtHostInterface::cheatEnabled, this,
           &CheatManagerDialog::setCheatCheckState);
 }
 
@@ -351,7 +351,7 @@ CheatList* CheatManagerDialog::getCheatList() const
   }
   if (!list)
   {
-    QtHostInterface::GetInstance()->executeOnEmulationThread(
+    g_emu_thread->executeOnEmulationThread(
       []() { System::SetCheatList(std::make_unique<CheatList>()); }, true);
     list = System::GetCheatList();
   }
@@ -417,7 +417,7 @@ void CheatManagerDialog::fillItemForCheatCode(QTreeWidgetItem* item, u32 index, 
 
 void CheatManagerDialog::saveCheatList()
 {
-  QtHostInterface::GetInstance()->executeOnEmulationThread([]() { System::SaveCheatList(); });
+  g_emu_thread->executeOnEmulationThread([]() { System::SaveCheatList(); });
 }
 
 void CheatManagerDialog::cheatListCurrentItemChanged(QTreeWidgetItem* current, QTreeWidgetItem* previous)
@@ -479,7 +479,7 @@ void CheatManagerDialog::cheatListItemChanged(QTreeWidgetItem* item, int column)
   if (cc.enabled == new_enabled)
     return;
 
-  QtHostInterface::GetInstance()->executeOnEmulationThread([index, new_enabled]() {
+  g_emu_thread->executeOnEmulationThread([index, new_enabled]() {
     System::GetCheatList()->SetCodeEnabled(static_cast<u32>(index), new_enabled);
     System::SaveCheatList();
   });
@@ -494,14 +494,14 @@ void CheatManagerDialog::activateCheat(u32 index)
   CheatCode& cc = list->GetCode(index);
   if (cc.IsManuallyActivated())
   {
-    QtHostInterface::GetInstance()->applyCheat(index);
+    g_emu_thread->applyCheat(index);
     return;
   }
 
   const bool new_enabled = !cc.enabled;
   setCheatCheckState(index, new_enabled);
 
-  QtHostInterface::GetInstance()->executeOnEmulationThread([index, new_enabled]() {
+  g_emu_thread->executeOnEmulationThread([index, new_enabled]() {
     System::GetCheatList()->SetCodeEnabled(index, new_enabled);
     System::SaveCheatList();
   });
@@ -551,7 +551,7 @@ void CheatManagerDialog::addCodeClicked()
     fillItemForCheatCode(item, list->GetCodeCount(), new_code);
     group_item->setExpanded(true);
 
-    QtHostInterface::GetInstance()->executeOnEmulationThread(
+    g_emu_thread->executeOnEmulationThread(
       [this, &new_code]() {
         System::GetCheatList()->AddCode(std::move(new_code));
         System::SaveCheatList();
@@ -597,7 +597,7 @@ void CheatManagerDialog::editCodeClicked()
       updateCheatList();
     }
 
-    QtHostInterface::GetInstance()->executeOnEmulationThread(
+    g_emu_thread->executeOnEmulationThread(
       [index, &new_code]() {
         System::GetCheatList()->SetCode(static_cast<u32>(index), std::move(new_code));
         System::SaveCheatList();
@@ -623,7 +623,7 @@ void CheatManagerDialog::deleteCodeClicked()
     return;
   }
 
-  QtHostInterface::GetInstance()->executeOnEmulationThread(
+  g_emu_thread->executeOnEmulationThread(
     [index]() {
       System::GetCheatList()->RemoveCode(static_cast<u32>(index));
       System::SaveCheatList();
@@ -663,7 +663,7 @@ void CheatManagerDialog::importFromFileTriggered()
     return;
   }
 
-  QtHostInterface::GetInstance()->executeOnEmulationThread(
+  g_emu_thread->executeOnEmulationThread(
     [&new_cheats]() {
       DebugAssert(System::HasCheatList());
       System::GetCheatList()->MergeList(new_cheats);
@@ -686,7 +686,7 @@ void CheatManagerDialog::importFromTextTriggered()
     return;
   }
 
-  QtHostInterface::GetInstance()->executeOnEmulationThread(
+  g_emu_thread->executeOnEmulationThread(
     [&new_cheats]() {
       DebugAssert(System::HasCheatList());
       System::GetCheatList()->MergeList(new_cheats);
@@ -716,7 +716,7 @@ void CheatManagerDialog::clearClicked()
     return;
   }
 
-  QtHostInterface::GetInstance()->executeOnEmulationThread([] { System::ClearCheatList(true); }, true);
+  g_emu_thread->executeOnEmulationThread([] { System::ClearCheatList(true); }, true);
   updateCheatList();
 }
 
@@ -731,7 +731,7 @@ void CheatManagerDialog::resetClicked()
     return;
   }
 
-  QtHostInterface::GetInstance()->executeOnEmulationThread([] { System::DeleteCheatList(); }, true);
+  g_emu_thread->executeOnEmulationThread([] { System::DeleteCheatList(); }, true);
   updateCheatList();
 }
 

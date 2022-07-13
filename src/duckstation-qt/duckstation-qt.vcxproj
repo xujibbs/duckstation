@@ -41,7 +41,7 @@
     <ClCompile Include="postprocessingchainconfigwidget.cpp" />
     <ClCompile Include="postprocessingshaderconfigwidget.cpp" />
     <ClCompile Include="postprocessingsettingswidget.cpp" />
-    <ClCompile Include="qthostinterface.cpp" />
+    <ClCompile Include="qthost.cpp" />
     <ClCompile Include="qtkeycodes.cpp" />
     <ClCompile Include="qtprogresscallback.cpp" />
     <ClCompile Include="qtutils.cpp" />
@@ -90,7 +90,7 @@
     <QtMoc Include="postprocessingshaderconfigwidget.h" />
     <QtMoc Include="postprocessingsettingswidget.h" />
     <QtMoc Include="mainwindow.h" />
-    <QtMoc Include="qthostinterface.h" />
+    <QtMoc Include="qthost.h" />
     <ClInclude Include="qtutils.h" />
     <QtMoc Include="settingsdialog.h" />
   </ItemGroup>
@@ -224,7 +224,7 @@
     <ClCompile Include="$(IntDir)moc_postprocessingshaderconfigwidget.cpp" />
     <ClCompile Include="$(IntDir)moc_postprocessingsettingswidget.cpp" />
     <ClCompile Include="$(IntDir)moc_qtdisplaywidget.cpp" />
-    <ClCompile Include="$(IntDir)moc_qthostinterface.cpp" />
+    <ClCompile Include="$(IntDir)moc_qthost.cpp" />
     <ClCompile Include="$(IntDir)moc_qtprogresscallback.cpp" />
     <ClCompile Include="$(IntDir)moc_settingsdialog.cpp" />
     <ClCompile Include="$(IntDir)qrc_resources.cpp" />

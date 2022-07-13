@@ -22,6 +22,11 @@
 #include <utility>
 Log_SetChannel(GameList);
 
+static std::string GetCacheFilename()
+{
+  return Path::Combine(EmuFolders::Cache, "gamelist.cache");
+}
+
 GameList::GameList() = default;
 
 GameList::~GameList() = default;
@@ -247,17 +252,15 @@ bool GameList::GetGameListEntryFromCache(const std::string& path, GameListEntry*
 
 void GameList::LoadCache()
 {
-  if (m_cache_filename.empty())
-    return;
-
+  std::string filename(GetCacheFilename());
   std::unique_ptr<ByteStream> stream =
-    ByteStream::OpenFile(m_cache_filename.c_str(), BYTESTREAM_OPEN_READ | BYTESTREAM_OPEN_STREAMED);
+    ByteStream::OpenFile(filename.c_str(), BYTESTREAM_OPEN_READ | BYTESTREAM_OPEN_STREAMED);
   if (!stream)
     return;
 
   if (!LoadEntriesFromCache(stream.get()))
   {
-    Log_WarningPrintf("Deleting corrupted cache file '%s'", m_cache_filename.c_str());
+    Log_WarningPrintf("Deleting corrupted cache file '%s'", filename.c_str());
     stream.reset();
     m_cache_map.clear();
     DeleteCacheFile();
@@ -370,13 +373,10 @@ bool GameList::LoadEntriesFromCache(ByteStream* stream)
 
 bool GameList::OpenCacheForWriting()
 {
-  if (m_cache_filename.empty())
-    return false;
-
+  const std::string filename(GetCacheFilename());
   Assert(!m_cache_write_stream);
-  m_cache_write_stream =
-    ByteStream::OpenFile(m_cache_filename.c_str(), BYTESTREAM_OPEN_CREATE | BYTESTREAM_OPEN_WRITE |
-                                                     BYTESTREAM_OPEN_APPEND | BYTESTREAM_OPEN_STREAMED);
+  m_cache_write_stream = ByteStream::OpenFile(filename.c_str(), BYTESTREAM_OPEN_CREATE | BYTESTREAM_OPEN_WRITE |
+                                                                  BYTESTREAM_OPEN_APPEND | BYTESTREAM_OPEN_STREAMED);
   if (!m_cache_write_stream || !m_cache_write_stream->SeekToEnd())
   {
     m_cache_write_stream.reset();
@@ -391,7 +391,7 @@ bool GameList::OpenCacheForWriting()
     {
       Log_ErrorPrintf("Failed to write game list cache header");
       m_cache_write_stream.reset();
-      FileSystem::DeleteFile(m_cache_filename.c_str());
+      FileSystem::DeleteFile(filename.c_str());
       return false;
     }
   }
@@ -461,14 +461,15 @@ void GameList::RewriteCacheFile()
 
 void GameList::DeleteCacheFile()
 {
+  const std::string filename(GetCacheFilename());
   Assert(!m_cache_write_stream);
-  if (!FileSystem::FileExists(m_cache_filename.c_str()))
+  if (!FileSystem::FileExists(filename.c_str()))
     return;
 
-  if (FileSystem::DeleteFile(m_cache_filename.c_str()))
-    Log_InfoPrintf("Deleted game list cache '%s'", m_cache_filename.c_str());
+  if (FileSystem::DeleteFile(filename.c_str()))
+    Log_InfoPrintf("Deleted game list cache '%s'", filename.c_str());
   else
-    Log_WarningPrintf("Failed to delete game list cache '%s'", m_cache_filename.c_str());
+    Log_WarningPrintf("Failed to delete game list cache '%s'", filename.c_str());
 }
 
 void GameList::ScanDirectory(const char* path, bool recursive, ProgressCallback* progress)
@@ -788,28 +789,14 @@ void GameList::LoadCompatibilityList()
 
   m_compatibility_list_load_tried = true;
 
-  // list we ship with
+  std::optional<std::string> compat(Host::ReadResourceFileToString("compatibility.xml"));
+  if (!compat.has_value())
   {
-    std::unique_ptr<ByteStream> file =
-      g_host_interface->OpenPackageFile("database/compatibility.xml", BYTESTREAM_OPEN_READ | BYTESTREAM_OPEN_STREAMED);
-    if (file)
-    {
-      LoadCompatibilityListFromXML(ByteStream::ReadStreamToString(file.get()));
-    }
-    else
-    {
-      Log_ErrorPrintf("Failed to load compatibility.xml from package");
-    }
+    Log_ErrorPrintf("Failed to load compatibility.xml from package");
+    return;
   }
 
-  // user's list
-  if (!m_user_compatibility_list_filename.empty() && FileSystem::FileExists(m_user_compatibility_list_filename.c_str()))
-  {
-    std::unique_ptr<ByteStream> file =
-      ByteStream::OpenFile(m_user_compatibility_list_filename.c_str(), BYTESTREAM_OPEN_READ | BYTESTREAM_OPEN_STREAMED);
-    if (file)
-      LoadCompatibilityListFromXML(ByteStream::ReadStreamToString(file.get()));
-  }
+  LoadCompatibilityListFromXML(compat.value());
 }
 
 bool GameList::LoadCompatibilityListFromXML(const std::string& xml)
@@ -911,6 +898,9 @@ static void InitElementForCompatibilityEntry(tinyxml2::XMLDocument* doc, tinyxml
 
 bool GameList::SaveCompatibilityDatabaseForEntry(const GameListCompatibilityEntry* entry)
 {
+  Panic("Fixme");
+  return false;
+#if 0
   if (m_user_compatibility_list_filename.empty())
     return false;
 
@@ -981,6 +971,7 @@ bool GameList::SaveCompatibilityDatabaseForEntry(const GameListCompatibilityEntr
 
   Log_InfoPrintf("Updated compatibility list '%s'", m_user_compatibility_list_filename.c_str());
   return true;
+#endif
 }
 
 std::string GameList::ExportCompatibilityEntry(const GameListCompatibilityEntry* entry)
@@ -1006,28 +997,14 @@ void GameList::LoadGameSettings()
 
   m_game_settings_load_tried = true;
 
-  // list we ship with
+  std::optional<std::string> gsettings(Host::ReadResourceFileToString("gamesettings.ini"));
+  if (!gsettings.has_value())
   {
-    std::unique_ptr<ByteStream> file =
-      g_host_interface->OpenPackageFile("database/gamesettings.ini", BYTESTREAM_OPEN_READ | BYTESTREAM_OPEN_STREAMED);
-    if (file)
-    {
-      m_game_settings.Load(ByteStream::ReadStreamToString(file.get()));
-    }
-    else
-    {
-      Log_ErrorPrintf("Failed to load compatibility.xml from package");
-    }
+    Log_ErrorPrintf("Failed to load gamesettings.ini from package");
+    return;
   }
 
-  // user's list
-  if (!m_user_game_settings_filename.empty() && FileSystem::FileExists(m_user_game_settings_filename.c_str()))
-  {
-    std::unique_ptr<ByteStream> file =
-      ByteStream::OpenFile(m_user_game_settings_filename.c_str(), BYTESTREAM_OPEN_READ | BYTESTREAM_OPEN_STREAMED);
-    if (file)
-      m_game_settings.Load(ByteStream::ReadStreamToString(file.get()));
-  }
+  m_game_settings.Load(gsettings.value());
 }
 
 const GameSettings::Entry* GameList::GetGameSettings(const std::string& filename, const std::string& game_code)
@@ -1062,7 +1039,10 @@ void GameList::UpdateGameSettings(const std::string& filename, const std::string
   }
 
   if (save_to_list)
-    m_game_settings.SetEntry(game_code, game_title, new_entry, m_user_game_settings_filename.c_str());
+  {
+    Panic("Fixme");
+    // m_game_settings.SetEntry(game_code, game_title, new_entry, m_user_game_settings_filename.c_str());
+  }
 }
 
 std::string GameList::GetCoverImagePathForEntry(const GameListEntry* entry) const
@@ -1070,51 +1050,48 @@ std::string GameList::GetCoverImagePathForEntry(const GameListEntry* entry) cons
   return GetCoverImagePath(entry->path, entry->code, entry->title);
 }
 
-std::string GameList::GetCoverImagePath(const std::string& path, const std::string& code,
+std::string GameList::GetCoverImagePath(const std::string& path, const std::string& serial,
                                         const std::string& title) const
 {
   static constexpr auto extensions = make_array("jpg", "jpeg", "png", "webp");
 
-  PathString cover_path;
+  std::string cover_path;
   for (const char* extension : extensions)
   {
-    // use the file title if it differs (e.g. modded games)
-    const std::string display_name(FileSystem::GetDisplayNameFromPath(path));
-    const std::string_view file_title(Path::GetFileTitle(display_name));
+
+    // Prioritize lookup by serial (Most specific)
+    if (!serial.empty())
+    {
+      const std::string cover_filename(serial + extension);
+      cover_path = Path::Combine(EmuFolders::Covers, cover_filename);
+      if (FileSystem::FileExists(cover_path.c_str()))
+        return cover_path;
+    }
+
+    // Try file title (for modded games or specific like above)
+    const std::string_view file_title(Path::GetFileTitle(path));
     if (!file_title.empty() && title != file_title)
     {
-      cover_path.Clear();
-      cover_path.AppendString(g_host_interface->GetUserDirectory().c_str());
-      cover_path.AppendCharacter(FS_OSPATH_SEPARATOR_CHARACTER);
-      cover_path.AppendString("covers");
-      cover_path.AppendCharacter(FS_OSPATH_SEPARATOR_CHARACTER);
-      cover_path.AppendString(file_title);
-      cover_path.AppendCharacter('.');
-      cover_path.AppendString(extension);
-      if (FileSystem::FileExists(cover_path))
-        return std::string(cover_path.GetCharArray());
+      std::string cover_filename(file_title);
+      cover_filename += extension;
+
+      cover_path = Path::Combine(EmuFolders::Covers, cover_filename);
+      if (FileSystem::FileExists(cover_path.c_str()))
+        return cover_path;
     }
 
-    // try the title
+    // Last resort, check the game title
     if (!title.empty())
     {
-      cover_path.Format("%s" FS_OSPATH_SEPARATOR_STR "covers" FS_OSPATH_SEPARATOR_STR "%s.%s",
-                        g_host_interface->GetUserDirectory().c_str(), title.c_str(), extension);
-      if (FileSystem::FileExists(cover_path))
-        return std::string(cover_path.GetCharArray());
-    }
-
-    // then the code
-    if (!code.empty())
-    {
-      cover_path.Format("%s" FS_OSPATH_SEPARATOR_STR "covers" FS_OSPATH_SEPARATOR_STR "%s.%s",
-                        g_host_interface->GetUserDirectory().c_str(), code.c_str(), extension);
-      if (FileSystem::FileExists(cover_path))
-        return std::string(cover_path.GetCharArray());
+      const std::string cover_filename(title + extension);
+      cover_path = Path::Combine(EmuFolders::Covers, cover_filename);
+      if (FileSystem::FileExists(cover_path.c_str()))
+        return cover_path;
     }
   }
 
-  return std::string();
+  cover_path.clear();
+  return cover_path;
 }
 
 std::string GameList::GetNewCoverImagePathForEntry(const GameListEntry* entry, const char* new_filename) const
@@ -1131,8 +1108,17 @@ std::string GameList::GetNewCoverImagePathForEntry(const GameListEntry* entry, c
       return existing_filename;
   }
 
-  return g_host_interface->GetUserDirectoryRelativePath("covers" FS_OSPATH_SEPARATOR_STR "%s%s", entry->title.c_str(),
-                                                        extension);
+  // Check for illegal characters, use serial instead.
+  std::string sanitized_name(entry->title);
+  Path::SanitizeFileName(sanitized_name);
+
+  std::string name;
+  if (sanitized_name != entry->title)
+    name = fmt::format("{}{}", entry->code, extension);
+  else
+    name = fmt::format("{}{}", entry->title, extension);
+
+  return Path::Combine(EmuFolders::Cache, name);
 }
 
 size_t GameListEntry::GetReleaseDateString(char* buffer, size_t buffer_size) const

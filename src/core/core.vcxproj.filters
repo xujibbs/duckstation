@@ -10,7 +10,6 @@
     <ClCompile Include="gpu.cpp" />
     <ClCompile Include="gpu_hw_opengl.cpp" />
     <ClCompile Include="gpu_hw.cpp" />
-    <ClCompile Include="host_interface.cpp" />
     <ClCompile Include="interrupt_controller.cpp" />
     <ClCompile Include="cdrom.cpp" />
     <ClCompile Include="gte.cpp" />
@@ -72,7 +71,6 @@
     <ClInclude Include="gpu.h" />
     <ClInclude Include="gpu_hw_opengl.h" />
     <ClInclude Include="gpu_hw.h" />
-    <ClInclude Include="host_interface.h" />
     <ClInclude Include="interrupt_controller.h" />
     <ClInclude Include="cdrom.h" />
     <ClInclude Include="gte.h" />

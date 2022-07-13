@@ -1,15 +1,10 @@
 #include "input_overlay_ui.h"
-#include "common_host_interface.h"
+#include "common_host.h"
 #include "imgui_fullscreen.h"
 #include "core/pad.h"
 #include "core/settings.h"
 #include "core/system.h"
 #include "fullscreen_ui.h"
-
-static CommonHostInterface* GetHostInterface()
-{
-  return static_cast<CommonHostInterface*>(g_host_interface);
-}
 
 namespace FrontendCommon {
 

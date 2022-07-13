@@ -1,5 +1,5 @@
 #include "postprocessingsettingswidget.h"
-#include "qthostinterface.h"
+#include "qthost.h"
 #include "settingwidgetbinder.h"
 #include <QtWidgets/QMessageBox>
 
@@ -95,5 +95,5 @@ void PostProcessingSettingsWidget::onConfigChanged(const std::string& new_config
 
 void PostProcessingSettingsWidget::onReloadClicked()
 {
-  QtHostInterface::GetInstance()->reloadPostProcessingShaders();
+  g_emu_thread->reloadPostProcessingShaders();
 }

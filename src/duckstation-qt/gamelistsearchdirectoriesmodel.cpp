@@ -1,5 +1,5 @@
 #include "gamelistsearchdirectoriesmodel.h"
-#include "qthostinterface.h"
+#include "qthost.h"
 #include "qtutils.h"
 #include <QtCore/QUrl>
 

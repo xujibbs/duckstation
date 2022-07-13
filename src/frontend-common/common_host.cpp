@@ -1,4 +1,4 @@
-#include "common_host_interface.h"
+#include "common_host.h"
 #include "IconsFontAwesome5.h"
 #include "common/assert.h"
 #include "common/byte_stream.h"
@@ -77,8 +77,6 @@ std::unique_ptr<AudioStream> CreateXAudio2AudioStream();
 Log_SetChannel(CommonHostInterface);
 
 namespace CommonHost {
-static void UpdateLogSettings(LOGLEVEL level, const char* filter, bool log_to_console, bool log_to_debug,
-                              bool log_to_window, bool log_to_file);
 #ifdef WITH_DISCORD_PRESENCE
 static void SetDiscordPresenceEnabled(bool enabled);
 static void InitializeDiscordPresence();
@@ -105,33 +103,13 @@ std::string m_discord_presence_cheevos_string;
 #endif
 #endif
 
-CommonHostInterface::CommonHostInterface() = default;
-
-CommonHostInterface::~CommonHostInterface() = default;
-
-bool CommonHostInterface::Initialize()
+bool CommonHost::Initialize()
 {
-  if (!HostInterface::Initialize())
-    return false;
-
-  InitializeUserDirectory();
-
-  // Change to the user directory so that all default/relative paths in the config are after this.
-  if (!FileSystem::SetWorkingDirectory(m_user_directory.c_str()))
-    Log_ErrorPrintf("Failed to set working directory to '%s'", m_user_directory.c_str());
-
-  // Set crash handler to dump to user directory, because of permissions.
-  CrashHandler::SetWriteDirectory(m_user_directory);
-
-  System::LoadSettings(false);
-  CommonHost::UpdateLogSettings(
-    g_settings.log_level, g_settings.log_filter.empty() ? nullptr : g_settings.log_filter.c_str(),
-    g_settings.log_to_console, g_settings.log_to_debug, g_settings.log_to_window, g_settings.log_to_file);
-
   m_game_list = std::make_unique<GameList>();
-  m_game_list->SetCacheFilename(GetUserDirectoryRelativePath("cache/gamelist.cache"));
-  m_game_list->SetUserCompatibilityListFilename(GetUserDirectoryRelativePath("compatibility.xml"));
-  m_game_list->SetUserGameSettingsFilename(GetUserDirectoryRelativePath("gamesettings.ini"));
+
+  // This will call back to Host::LoadSettings() -> ReloadSources().
+  System::LoadSettings(false);
+  UpdateLogSettings();
 
 #ifdef WITH_CHEEVOS
 #ifdef WITH_RAINTEGRATION
@@ -142,19 +120,12 @@ bool CommonHostInterface::Initialize()
   CommonHost::UpdateCheevosActive(*Host::GetSettingsInterface());
 #endif
 
-  {
-    auto lock = Host::GetSettingsLock();
-    InputManager::ReloadSources(*Host::GetSettingsInterface(), lock);
-  }
-
   return true;
 }
 
-void CommonHostInterface::Shutdown()
+void CommonHost::Shutdown()
 {
   s_input_overlay_ui.reset();
-
-  HostInterface::Shutdown();
 
 #ifdef WITH_DISCORD_PRESENCE
   CommonHost::ShutdownDiscordPresence();
@@ -167,54 +138,9 @@ void CommonHostInterface::Shutdown()
   InputManager::CloseSources();
 }
 
-GameList* CommonHostInterface::GetGameList() const
+GameList* CommonHost::GetGameList()
 {
   return m_game_list.get();
-}
-
-void CommonHostInterface::InitializeUserDirectory()
-{
-  std::fprintf(stdout, "User directory: \"%s\"\n", m_user_directory.c_str());
-
-  if (m_user_directory.empty())
-    Panic("Cannot continue without user directory set.");
-
-  if (!FileSystem::DirectoryExists(m_user_directory.c_str()))
-  {
-    std::fprintf(stderr, "User directory \"%s\" does not exist, creating.\n", m_user_directory.c_str());
-    if (!FileSystem::CreateDirectory(m_user_directory.c_str(), true))
-      std::fprintf(stderr, "Failed to create user directory \"%s\".\n", m_user_directory.c_str());
-  }
-
-  bool result = true;
-
-  result &= FileSystem::EnsureDirectoryExists(GetUserDirectoryRelativePath("bios").c_str(), false);
-  result &= FileSystem::EnsureDirectoryExists(GetUserDirectoryRelativePath("cache").c_str(), false);
-  result &= FileSystem::EnsureDirectoryExists(
-    GetUserDirectoryRelativePath("cache" FS_OSPATH_SEPARATOR_STR "achievement_badge").c_str(), false);
-  result &= FileSystem::EnsureDirectoryExists(
-    GetUserDirectoryRelativePath("cache" FS_OSPATH_SEPARATOR_STR "achievement_gameicon").c_str(), false);
-  result &= FileSystem::EnsureDirectoryExists(GetUserDirectoryRelativePath("cheats").c_str(), false);
-  result &= FileSystem::EnsureDirectoryExists(GetUserDirectoryRelativePath("covers").c_str(), false);
-  result &= FileSystem::EnsureDirectoryExists(GetUserDirectoryRelativePath("dump").c_str(), false);
-  result &= FileSystem::EnsureDirectoryExists(
-    GetUserDirectoryRelativePath("dump" FS_OSPATH_SEPARATOR_STR "audio").c_str(), false);
-  result &= FileSystem::EnsureDirectoryExists(
-    GetUserDirectoryRelativePath("dump" FS_OSPATH_SEPARATOR_STR "textures").c_str(), false);
-  result &= FileSystem::EnsureDirectoryExists(GetUserDirectoryRelativePath("inputprofiles").c_str(), false);
-  result &= FileSystem::EnsureDirectoryExists(GetUserDirectoryRelativePath("memcards").c_str(), false);
-  result &= FileSystem::EnsureDirectoryExists(GetUserDirectoryRelativePath("savestates").c_str(), false);
-  result &= FileSystem::EnsureDirectoryExists(GetUserDirectoryRelativePath("screenshots").c_str(), false);
-  result &= FileSystem::EnsureDirectoryExists(GetUserDirectoryRelativePath("shaders").c_str(), false);
-  result &= FileSystem::EnsureDirectoryExists(GetUserDirectoryRelativePath("textures").c_str(), false);
-
-  // Games directory for UWP because it's a pain to create them manually.
-#ifdef _UWP
-  result &= FileSystem::EnsureDirectoryExists(GetUserDirectoryRelativePath("games").c_str(), false);
-#endif
-
-  if (!result)
-    Host::ReportErrorAsync("Error", "Failed to create one or more user directories. This may cause issues at runtime.");
 }
 
 static void PrintCommandLineVersion(const char* frontend_name)
@@ -270,8 +196,8 @@ static void PrintCommandLineHelp(const char* progname, const char* frontend_name
     Log::SetConsoleOutputParams(false);
 }
 
-bool CommonHostInterface::ParseCommandLineParameters(int argc, char* argv[],
-                                                     std::unique_ptr<SystemBootParameters>* out_boot_params)
+bool CommonHost::ParseCommandLineParameters(int argc, char* argv[],
+                                            std::unique_ptr<SystemBootParameters>* out_boot_params)
 {
   std::optional<bool> force_fast_boot;
   std::optional<bool> force_fullscreen;
@@ -289,18 +215,21 @@ bool CommonHostInterface::ParseCommandLineParameters(int argc, char* argv[],
 
       if (CHECK_ARG("-help"))
       {
-        PrintCommandLineHelp(argv[0], GetFrontendName());
+        // PrintCommandLineHelp(argv[0], GetFrontendName());
+        Panic("fixme");
         return false;
       }
       else if (CHECK_ARG("-version"))
       {
-        PrintCommandLineVersion(GetFrontendName());
+        // PrintCommandLineVersion(GetFrontendName());
+        Panic("Fixme");
         return false;
       }
       else if (CHECK_ARG("-batch"))
       {
         Log_InfoPrintf("Enabling batch mode.");
-        m_flags.batch_mode = true;
+        // m_flags.batch_mode = true;
+        Panic("fixme");
         continue;
       }
       else if (CHECK_ARG("-fastboot"))
@@ -318,7 +247,8 @@ bool CommonHostInterface::ParseCommandLineParameters(int argc, char* argv[],
       else if (CHECK_ARG("-nocontroller"))
       {
         Log_InfoPrintf("Disabling controller support.");
-        m_flags.disable_controller_interface = true;
+        // m_flags.disable_controller_interface = true;
+        Panic("Fixme");
         continue;
       }
       else if (CHECK_ARG("-resume"))
@@ -339,7 +269,8 @@ bool CommonHostInterface::ParseCommandLineParameters(int argc, char* argv[],
       else if (CHECK_ARG("-fullscreen"))
       {
         Log_InfoPrintf("Going fullscreen after booting.");
-        m_flags.start_fullscreen = true;
+        Panic("Fixme");
+        // m_flags.start_fullscreen = true;
         force_fullscreen = true;
         continue;
       }
@@ -352,7 +283,8 @@ bool CommonHostInterface::ParseCommandLineParameters(int argc, char* argv[],
       else if (CHECK_ARG("-portable"))
       {
         Log_InfoPrintf("Using portable mode.");
-        SetUserDirectoryToProgramDirectory();
+        // SetUserDirectoryToProgramDirectory();
+        Panic("Fixme");
         continue;
       }
       else if (CHECK_ARG_PARAM("-resume"))
@@ -388,7 +320,8 @@ bool CommonHostInterface::ParseCommandLineParameters(int argc, char* argv[],
   if (state_index.has_value() || !boot_filename.empty() || !state_filename.empty())
   {
     // init user directory early since we need it for save states
-    SetUserDirectory();
+    // SetUserDirectory();
+    Panic("Fixme");
 
     if (state_index.has_value() && state_filename.empty())
     {
@@ -473,16 +406,6 @@ void CommonHost::PumpMessagesOnCPUThread()
 #endif
 }
 
-bool CommonHostInterface::IsFullscreen() const
-{
-  return false;
-}
-
-bool CommonHostInterface::SetFullscreen(bool enabled)
-{
-  return false;
-}
-
 bool CommonHost::CreateHostDisplayResources()
 {
   m_logo_texture = FullscreenUI::LoadTextureResource("logo.png", false);
@@ -524,82 +447,25 @@ std::unique_ptr<AudioStream> Host::CreateAudioStream(AudioBackend backend)
   }
 }
 
-void CommonHost::UpdateLogSettings(LOGLEVEL level, const char* filter, bool log_to_console, bool log_to_debug,
-                                   bool log_to_window, bool log_to_file)
+void CommonHost::UpdateLogSettings()
 {
-  Log::SetFilterLevel(level);
-  Log::SetConsoleOutputParams(g_settings.log_to_console, filter, level);
-  Log::SetDebugOutputParams(g_settings.log_to_debug, filter, level);
+  Log::SetFilterLevel(g_settings.log_level);
+  Log::SetConsoleOutputParams(g_settings.log_to_console,
+                              g_settings.log_filter.empty() ? nullptr : g_settings.log_filter.c_str(),
+                              g_settings.log_level);
+  Log::SetDebugOutputParams(g_settings.log_to_debug,
+                            g_settings.log_filter.empty() ? nullptr : g_settings.log_filter.c_str(),
+                            g_settings.log_level);
 
-  if (log_to_file)
+  if (g_settings.log_to_file)
   {
-    Log::SetFileOutputParams(g_settings.log_to_file,
-                             g_host_interface->GetUserDirectoryRelativePath("duckstation.log").c_str(), true, filter,
-                             level);
+    Log::SetFileOutputParams(g_settings.log_to_file, Path::Combine(EmuFolders::DataRoot, "duckstation.log").c_str(),
+                             true, g_settings.log_filter.empty() ? nullptr : g_settings.log_filter.c_str(),
+                             g_settings.log_level);
   }
   else
   {
     Log::SetFileOutputParams(false, nullptr);
-  }
-}
-
-void CommonHostInterface::SetUserDirectory()
-{
-  if (!m_user_directory.empty())
-    return;
-
-  std::fprintf(stdout, "Program directory \"%s\"\n", m_program_directory.c_str());
-
-  if (FileSystem::FileExists(
-        StringUtil::StdStringFromFormat("%s" FS_OSPATH_SEPARATOR_STR "%s", m_program_directory.c_str(), "portable.txt")
-          .c_str()) ||
-      FileSystem::FileExists(
-        StringUtil::StdStringFromFormat("%s" FS_OSPATH_SEPARATOR_STR "%s", m_program_directory.c_str(), "settings.ini")
-          .c_str()))
-  {
-    std::fprintf(stdout, "portable.txt or old settings.ini found, using program directory as user directory.\n");
-    m_user_directory = m_program_directory;
-  }
-  else
-  {
-#if defined(_WIN32) && !defined(_UWP)
-    // On Windows, use My Documents\DuckStation.
-    PWSTR documents_directory;
-    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Documents, 0, NULL, &documents_directory)))
-    {
-      const std::string documents_directory_str(StringUtil::WideStringToUTF8String(documents_directory));
-      if (!documents_directory_str.empty())
-      {
-        m_user_directory = StringUtil::StdStringFromFormat("%s" FS_OSPATH_SEPARATOR_STR "%s",
-                                                           documents_directory_str.c_str(), "DuckStation");
-      }
-      CoTaskMemFree(documents_directory);
-    }
-#elif defined(__linux__) || defined(__FreeBSD__)
-    // On Linux, use .local/share/duckstation as a user directory by default.
-    const char* xdg_data_home = getenv("XDG_DATA_HOME");
-    if (xdg_data_home && xdg_data_home[0] == '/')
-    {
-      m_user_directory = StringUtil::StdStringFromFormat("%s/duckstation", xdg_data_home);
-    }
-    else
-    {
-      const char* home_path = getenv("HOME");
-      if (home_path)
-        m_user_directory = StringUtil::StdStringFromFormat("%s/.local/share/duckstation", home_path);
-    }
-#elif defined(__APPLE__)
-    // On macOS, default to ~/Library/Application Support/DuckStation.
-    const char* home_path = getenv("HOME");
-    if (home_path)
-      m_user_directory = StringUtil::StdStringFromFormat("%s/Library/Application Support/DuckStation", home_path);
-#endif
-
-    if (m_user_directory.empty())
-    {
-      std::fprintf(stderr, "User directory path could not be determined, falling back to program directory.");
-      m_user_directory = m_program_directory;
-    }
   }
 }
 
@@ -660,17 +526,6 @@ void CommonHost::OnGameChanged(const std::string& disc_path, const std::string& 
   // if (Cheevos::IsLoggedIn())
   // Cheevos::GameChanged(path, image);
 #endif
-}
-
-std::string CommonHostInterface::GetSettingsFileName() const
-{
-  std::string filename;
-  if (!s_settings_filename.empty())
-    filename = s_settings_filename;
-  else
-    filename = GetUserDirectoryRelativePath("settings.ini");
-
-  return filename;
 }
 
 void CommonHost::SetDefaultSettings(SettingsInterface& si)
@@ -736,30 +591,12 @@ void CommonHost::CheckForSettingsChanges(const Settings& old_settings)
       g_settings.log_to_debug != old_settings.log_to_debug || g_settings.log_to_window != old_settings.log_to_window ||
       g_settings.log_to_file != old_settings.log_to_file)
   {
-    UpdateLogSettings(g_settings.log_level, g_settings.log_filter.empty() ? nullptr : g_settings.log_filter.c_str(),
-                      g_settings.log_to_console, g_settings.log_to_debug, g_settings.log_to_window,
-                      g_settings.log_to_file);
+    UpdateLogSettings();
   }
 }
 
-void CommonHostInterface::SetTimerResolutionIncreased(bool enabled)
-{
-#if defined(_WIN32) && !defined(_UWP)
-  static bool current_state = false;
-  if (current_state == enabled)
-    return;
-
-  current_state = enabled;
-
-  if (enabled)
-    timeBeginPeriod(1);
-  else
-    timeEndPeriod(1);
-#endif
-}
-
-void Host::DisplayLoadingScreen(const char* message, int progress_min /*= -1*/,
-                                               int progress_max /*= -1*/, int progress_value /*= -1*/)
+void Host::DisplayLoadingScreen(const char* message, int progress_min /*= -1*/, int progress_max /*= -1*/,
+                                int progress_value /*= -1*/)
 {
   const auto& io = ImGui::GetIO();
   const float scale = io.DisplayFramebufferScale.x;
@@ -842,6 +679,7 @@ void Host::GetGameInfo(const char* path, CDImage* image, std::string* code, std:
   *title = Path::GetFileTitle(display_name);
 }
 
+#if 0
 void CommonHostInterface::ApplyGameSettings(bool display_osd_messages)
 {
   g_settings.controller_disable_analog_mode_forcing = false;
@@ -921,7 +759,6 @@ void CommonHostInterface::ApplyControllerCompatibilitySettings(u64 controller_ma
 #undef BIT_FOR
 }
 
-#if 0
 bool CommonHostInterface::UpdateControllerInputMapFromGameSettings()
 {
   // this gets called while booting, so can't use valid
@@ -958,16 +795,6 @@ bool CommonHostInterface::UpdateControllerInputMapFromGameSettings()
   return true;
 }
 #endif
-
-std::unique_ptr<ByteStream> CommonHostInterface::OpenPackageFile(const char* path, u32 flags)
-{
-  const u32 allowed_flags = (BYTESTREAM_OPEN_READ | BYTESTREAM_OPEN_SEEKABLE | BYTESTREAM_OPEN_STREAMED);
-  const std::string full_path(
-    StringUtil::StdStringFromFormat("%s" FS_OSPATH_SEPARATOR_STR "%s", m_program_directory.c_str(), path));
-  const u32 real_flags = (flags & allowed_flags) | BYTESTREAM_OPEN_READ;
-  Log_DevPrintf("Requesting package file '%s'", path);
-  return ByteStream::OpenFile(full_path.c_str(), real_flags);
-}
 
 #ifdef WITH_DISCORD_PRESENCE
 

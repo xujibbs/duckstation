@@ -1,6 +1,7 @@
-﻿#include "qthostinterface.h"
+﻿#include "qthost.h"
 #include "common/assert.h"
 #include "common/byte_stream.h"
+#include "common/crash_handler.h"
 #include "common/file_system.h"
 #include "common/log.h"
 #include "common/path.h"
@@ -56,6 +57,7 @@ Log_SetChannel(QtHostInterface);
 
 enum : u32
 {
+  SETTINGS_VERSION = 3,
   SETTINGS_SAVE_DELAY = 1000,
 };
 
@@ -63,17 +65,27 @@ enum : u32
 // Local function declarations
 //////////////////////////////////////////////////////////////////////////
 namespace QtHost {
+static bool InitializeConfig();
+static bool ShouldUsePortableMode();
+static void SetAppRoot();
+static void SetResourcesDirectory();
+static void SetDataDirectory();
+static bool SetCriticalFolders();
+static void SetDefaultConfig(SettingsInterface& si);
 static void SaveSettings();
+static void HookSignals();
 } // namespace QtHost
 
 static std::unique_ptr<INISettingsInterface> s_base_settings_interface;
 static std::unique_ptr<QTimer> s_settings_save_timer;
-
 static std::unique_ptr<HostDisplay> s_host_display;
+static bool s_batch_mode = false;
+static bool s_nogui_mode = false;
+static bool s_start_fullscreen_ui = false;
 
 QtHostInterface* g_emu_thread;
 
-QtHostInterface::QtHostInterface(QObject* parent) : QObject(parent), CommonHostInterface()
+QtHostInterface::QtHostInterface(QObject* parent) : QObject(parent)
 {
   qRegisterMetaType<std::shared_ptr<SystemBootParameters>>();
   qRegisterMetaType<const GameListEntry*>();
@@ -85,11 +97,6 @@ QtHostInterface::~QtHostInterface()
 {
   Assert(!s_host_display);
   g_emu_thread = nullptr;
-}
-
-const char* QtHostInterface::GetFrontendName() const
-{
-  return "DuckStation Qt Frontend";
 }
 
 std::vector<std::pair<QString, QString>> QtHostInterface::getAvailableLanguageList()
@@ -113,6 +120,9 @@ std::vector<std::pair<QString, QString>> QtHostInterface::getAvailableLanguageLi
 
 bool QtHostInterface::Initialize()
 {
+  if (!QtHost::InitializeConfig())
+    return false;
+
   createThread();
   if (!m_worker_thread->waitForInit())
     return false;
@@ -128,34 +138,182 @@ void QtHostInterface::Shutdown()
   delete m_main_window;
 }
 
-bool QtHostInterface::initializeOnThread()
+bool QtHost::InBatchMode()
 {
-  SetUserDirectory();
+  return s_batch_mode;
+}
 
-  s_base_settings_interface = std::make_unique<INISettingsInterface>(GetSettingsFileName());
+bool QtHost::InNoGUIMode()
+{
+  return s_nogui_mode;
+}
+
+bool QtHost::InitializeConfig()
+{
+  if (!SetCriticalFolders())
+    return false;
+
+  const std::string path(Path::Combine(EmuFolders::DataRoot, "settings.ini"));
+  Log_InfoPrintf("Loading config from %s.", path.c_str());
+  s_base_settings_interface = std::make_unique<INISettingsInterface>(std::move(path));
   Host::Internal::SetBaseSettingsLayer(s_base_settings_interface.get());
 
-  const bool loaded = s_base_settings_interface->Load();
-  if (!loaded)
+  uint settings_version;
+  if (!s_base_settings_interface->Load() ||
+      !s_base_settings_interface->GetUIntValue("Main", "SettingsVersion", &settings_version) ||
+      settings_version != SETTINGS_VERSION)
   {
-    Panic("fixme");
-    // SetDefaultSettings(*s_base_settings_interface.get());
-  }
-
-  const int settings_version = s_base_settings_interface->GetIntValue("Main", "SettingsVersion", -1);
-  if (settings_version != SETTINGS_VERSION)
-  {
-    Host::ReportFormattedErrorAsync("Error", "Settings version %d does not match expected version %d, resetting",
-                                    settings_version, SETTINGS_VERSION);
-
-    s_base_settings_interface->Clear();
-    s_base_settings_interface->SetIntValue("Main", "SettingsVersion", SETTINGS_VERSION);
-    // SetDefaultSettings(*s_base_settings_interface);
     Panic("Fixme");
+#if 0
+    QMessageBox::critical(
+      g_main_window, qApp->translate("QtHost", "Settings Reset"),
+      qApp->translate("QtHost", "Settings do not exist or are the incorrect version, resetting to defaults."));
+    SetDefaultConfig(*s_base_settings_interface);
     s_base_settings_interface->Save();
+#endif
   }
 
-  if (!CommonHostInterface::Initialize())
+  EmuFolders::LoadConfig(*s_base_settings_interface.get());
+  EmuFolders::EnsureFoldersExist();
+  return true;
+}
+
+void QtHost::SetDefaultConfig(SettingsInterface& si)
+{
+  si.SetUIntValue("Main", "SettingsVersion", SETTINGS_VERSION);
+
+  System::SetDefaultSettings(si);
+  CommonHost::SetDefaultSettings(si);
+  EmuFolders::Save(si);
+}
+
+bool QtHost::SetCriticalFolders()
+{
+  SetAppRoot();
+  SetResourcesDirectory();
+  SetDataDirectory();
+
+  // logging of directories in case something goes wrong super early
+  Log_InfoPrintf("AppRoot Directory: %s", EmuFolders::AppRoot.c_str());
+  Log_InfoPrintf("DataRoot Directory: %s", EmuFolders::DataRoot.c_str());
+  Log_InfoPrintf("Resources Directory: %s", EmuFolders::Resources.c_str());
+
+  // Write crash dumps to the data directory, since that'll be accessible for certain.
+  CrashHandler::SetWriteDirectory(EmuFolders::DataRoot);
+
+  if (!FileSystem::SetWorkingDirectory(EmuFolders::DataRoot.c_str()))
+    Log_ErrorPrintf("Failed to set working directory to '%s'", EmuFolders::DataRoot.c_str());
+
+  // the resources directory should exist, bail out if not
+  if (!FileSystem::DirectoryExists(EmuFolders::Resources.c_str()))
+  {
+    QMessageBox::critical(nullptr, QStringLiteral("Error"),
+                          QStringLiteral("Resources directory is missing, your installation is incomplete."));
+    return false;
+  }
+
+  return true;
+}
+
+bool QtHost::ShouldUsePortableMode()
+{
+  // Check whether portable.ini exists in the program directory.
+  return (FileSystem::FileExists(Path::Combine(EmuFolders::AppRoot, "portable.txt").c_str()) ||
+          FileSystem::FileExists(Path::Combine(EmuFolders::AppRoot, "settings.ini").c_str()));
+}
+
+void QtHost::SetAppRoot()
+{
+  std::string program_path(FileSystem::GetProgramPath());
+  Log_InfoPrintf("Program Path: %s", program_path.c_str());
+
+  EmuFolders::AppRoot = Path::Canonicalize(Path::GetDirectory(program_path));
+}
+
+void QtHost::SetResourcesDirectory()
+{
+#ifndef __APPLE__
+  // On Windows/Linux, these are in the binary directory.
+  EmuFolders::Resources = Path::Combine(EmuFolders::AppRoot, "resources");
+#else
+  // On macOS, this is in the bundle resources directory.
+  EmuFolders::Resources = Path::Canonicalize(Path::Combine(EmuFolders::AppRoot, "../Resources"));
+#endif
+}
+
+void QtHost::SetDataDirectory()
+{
+  if (ShouldUsePortableMode())
+  {
+    EmuFolders::DataRoot = EmuFolders::AppRoot;
+    return;
+  }
+
+#if defined(_WIN32)
+  // On Windows, use My Documents\PCSX2 to match old installs.
+  PWSTR documents_directory;
+  if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Documents, 0, NULL, &documents_directory)))
+  {
+    if (std::wcslen(documents_directory) > 0)
+      EmuFolders::DataRoot = Path::Combine(StringUtil::WideStringToUTF8String(documents_directory), "DuckStation");
+    CoTaskMemFree(documents_directory);
+  }
+#elif defined(__linux__)
+  // Use $XDG_CONFIG_HOME/PCSX2 if it exists.
+  const char* xdg_config_home = getenv("XDG_CONFIG_HOME");
+  if (xdg_config_home && Path::IsAbsolute(xdg_config_home))
+  {
+    EmuFolders::DataRoot = Path::Combine(xdg_config_home, "PCSX2");
+  }
+  else
+  {
+    // Use ~/PCSX2 for non-XDG, and ~/.config/PCSX2 for XDG.
+    // Maybe we should drop the former when Qt goes live.
+    const char* home_dir = getenv("HOME");
+    if (home_dir)
+    {
+      // ~/.local/share should exist, but just in case it doesn't and this is a fresh profile..
+      const std::string local_dir(Path::Combine(home_dir, ".local"));
+      const std::string share_dir(Path::Combine(local_dir, "share"));
+      FileSystem::EnsureDirectoryExists(local_dir.c_str(), false);
+      FileSystem::EnsureDirectoryExists(share_dir.c_str(), false);
+      EmuFolders::DataRoot = Path::Combine(share_dir, "duckstation");
+    }
+  }
+#elif defined(__APPLE__)
+  static constexpr char MAC_DATA_DIR[] = "Library/Application Support/DuckStation";
+  const char* home_dir = getenv("HOME");
+  if (home_dir)
+    EmuFolders::DataRoot = Path::Combine(home_dir, MAC_DATA_DIR);
+#endif
+
+  // make sure it exists
+  if (!EmuFolders::DataRoot.empty() && !FileSystem::DirectoryExists(EmuFolders::DataRoot.c_str()))
+  {
+    // we're in trouble if we fail to create this directory... but try to hobble on with portable
+    if (!FileSystem::EnsureDirectoryExists(EmuFolders::DataRoot.c_str(), false))
+      EmuFolders::DataRoot.clear();
+  }
+
+  // couldn't determine the data directory? fallback to portable.
+  if (EmuFolders::DataRoot.empty())
+    EmuFolders::DataRoot = EmuFolders::AppRoot;
+}
+
+#if 0
+void QtHost::UpdateFolders()
+{
+  // TODO: This should happen with the VM thread paused.
+  auto lock = Host::GetSettingsLock();
+  EmuFolders::LoadConfig(*s_base_settings_interface.get());
+  EmuFolders::EnsureFoldersExist();
+}
+#endif
+
+bool QtHostInterface::initializeOnThread()
+{
+  // input source setup must happen on emu thread
+  if (!CommonHost::Initialize())
     return false;
 
   // imgui setup
@@ -170,7 +328,7 @@ bool QtHostInterface::initializeOnThread()
 void QtHostInterface::shutdownOnThread()
 {
   destroyBackgroundControllerPollTimer();
-  CommonHostInterface::Shutdown();
+  CommonHost::Shutdown();
 }
 
 void QtHostInterface::installTranslator()
@@ -477,7 +635,7 @@ HostDisplay* QtHostInterface::acquireHostDisplay()
   }
 
   if (!s_host_display->MakeRenderContextCurrent() ||
-      !s_host_display->InitializeRenderDevice(GetShaderCacheBasePath(), g_settings.gpu_use_debug_device,
+      !s_host_display->InitializeRenderDevice(EmuFolders::Cache, g_settings.gpu_use_debug_device,
                                               g_settings.gpu_threaded_presentation) ||
       !ImGuiManager::Initialize() || !CommonHost::CreateHostDisplayResources())
   {
@@ -721,27 +879,6 @@ void QtHostInterface::saveInputProfile(const QString& profile_name)
   // std::lock_guard<std::recursive_mutex> lock(m_settings_mutex);
   // SaveInputProfile(profile_name.toUtf8().data());
   Panic("Fixme");
-}
-
-QString QtHostInterface::getUserDirectoryRelativePath(const QString& arg) const
-{
-  QString result = QString::fromStdString(m_user_directory);
-  result += FS_OSPATH_SEPARATOR_CHARACTER;
-  result += arg;
-  return result;
-}
-
-QString QtHostInterface::getProgramDirectoryRelativePath(const QString& arg) const
-{
-  QString result = QString::fromStdString(m_program_directory);
-  result += FS_OSPATH_SEPARATOR_CHARACTER;
-  result += arg;
-  return result;
-}
-
-QString QtHostInterface::getProgramDirectory() const
-{
-  return QString::fromStdString(m_program_directory);
 }
 
 void QtHostInterface::powerOffSystem()
@@ -989,7 +1126,7 @@ void QtHostInterface::populateGameListContextMenu(const GameListEntry* entry, QW
         case MemoryCardType::Shared:
           if (g_settings.memory_card_paths[i].empty())
           {
-            paths[i] = QString::fromStdString(GetSharedMemoryCardPath(i));
+            paths[i] = QString::fromStdString(g_settings.GetSharedMemoryCardPath(i));
           }
           else
           {
@@ -999,16 +1136,16 @@ void QtHostInterface::populateGameListContextMenu(const GameListEntry* entry, QW
           }
           break;
         case MemoryCardType::PerGame:
-          paths[i] = QString::fromStdString(GetGameMemoryCardPath(entry->code.c_str(), i));
+          paths[i] = QString::fromStdString(g_settings.GetGameMemoryCardPath(entry->code.c_str(), i));
           break;
         case MemoryCardType::PerGameTitle:
           paths[i] = QString::fromStdString(
-            GetGameMemoryCardPath(MemoryCard::SanitizeGameTitleForFileName(entry->title).c_str(), i));
+            g_settings.GetGameMemoryCardPath(MemoryCard::SanitizeGameTitleForFileName(entry->title).c_str(), i));
           break;
         case MemoryCardType::PerGameFileTitle:
         {
           const std::string display_name(FileSystem::GetDisplayNameFromPath(entry->path));
-          paths[i] = QString::fromStdString(GetGameMemoryCardPath(
+          paths[i] = QString::fromStdString(g_settings.GetGameMemoryCardPath(
             MemoryCard::SanitizeGameTitleForFileName(Path::GetFileTitle(display_name)).c_str(), i));
         }
         break;
@@ -1629,7 +1766,7 @@ void Host::ReportErrorAsync(const std::string_view& title, const std::string_vie
   }
 
   QMetaObject::invokeMethod(
-    QtHostInterface::GetInstance()->getMainWindow(), "reportError", Qt::QueuedConnection,
+    g_emu_thread->getMainWindow(), "reportError", Qt::QueuedConnection,
     Q_ARG(const QString&, title.empty() ? QString() : QString::fromUtf8(title.data(), title.size())),
     Q_ARG(const QString&, message.empty() ? QString() : QString::fromUtf8(message.data(), message.size())));
 }
@@ -1642,7 +1779,7 @@ bool Host::ConfirmMessage(const std::string_view& title, const std::string_view&
     SetFullscreen(false);
 #endif
 
-  const bool result = emit QtHostInterface::GetInstance()->messageConfirmed(
+  const bool result = emit g_emu_thread->messageConfirmed(
     QString::fromUtf8(title.data(), title.size()), QString::fromUtf8(message.data(), message.size()));
 
 #if 0
@@ -1655,27 +1792,25 @@ bool Host::ConfirmMessage(const std::string_view& title, const std::string_view&
 
 void Host::ReportDebuggerMessage(const std::string_view& message)
 {
-  emit QtHostInterface::GetInstance()->debuggerMessageReported(QString::fromUtf8(message));
+  emit g_emu_thread->debuggerMessageReported(QString::fromUtf8(message));
 }
 
 void Host::OnInputDeviceConnected(const std::string_view& identifier, const std::string_view& device_name)
 {
-  emit QtHostInterface::GetInstance()->onInputDeviceConnected(
+  emit g_emu_thread->onInputDeviceConnected(
     identifier.empty() ? QString() : QString::fromUtf8(identifier.data(), identifier.size()),
     device_name.empty() ? QString() : QString::fromUtf8(device_name.data(), device_name.size()));
 }
 
 void Host::OnInputDeviceDisconnected(const std::string_view& identifier)
 {
-  emit QtHostInterface::GetInstance()->onInputDeviceDisconnected(
+  emit g_emu_thread->onInputDeviceDisconnected(
     identifier.empty() ? QString() : QString::fromUtf8(identifier.data(), identifier.size()));
 }
 
 std::optional<std::vector<u8>> Host::ReadResourceFile(const char* filename)
 {
-  // const std::string path(Path::Combine(EmuFolders::Resources, filename));
-  const std::string path(QtHostInterface::GetInstance()->GetProgramDirectoryRelativePath(
-    "resources" FS_OSPATH_SEPARATOR_STR "%s", filename));
+  const std::string path(Path::Combine(EmuFolders::Resources, filename));
   std::optional<std::vector<u8>> ret(FileSystem::ReadBinaryFile(path.c_str()));
   if (!ret.has_value())
     Log_ErrorPrintf("Failed to read resource file '%s'", filename);
@@ -1684,8 +1819,7 @@ std::optional<std::vector<u8>> Host::ReadResourceFile(const char* filename)
 
 std::optional<std::string> Host::ReadResourceFileToString(const char* filename)
 {
-  const std::string path(QtHostInterface::GetInstance()->GetProgramDirectoryRelativePath(
-    "resources" FS_OSPATH_SEPARATOR_STR "%s", filename));
+  const std::string path(Path::Combine(EmuFolders::Resources, filename));
   std::optional<std::string> ret(FileSystem::ReadFileToString(path.c_str()));
   if (!ret.has_value())
     Log_ErrorPrintf("Failed to read resource file to string '%s'", filename);
@@ -1876,7 +2010,7 @@ void Host::PumpMessagesOnCPUThread()
 
 void QtHost::SaveSettings()
 {
-  AssertMsg(!QtHostInterface::GetInstance()->isOnWorkerThread(), "Saving should happen on the UI thread.");
+  AssertMsg(!g_emu_thread->isOnWorkerThread(), "Saving should happen on the UI thread.");
 
   {
     auto lock = Host::GetSettingsLock();
@@ -1894,7 +2028,7 @@ void QtHost::QueueSettingsSave()
     return;
 
   // TODO: Thread check here
-  Assert(!QtHostInterface::GetInstance()->isOnWorkerThread());
+  Assert(!g_emu_thread->isOnWorkerThread());
 
   s_settings_save_timer = std::make_unique<QTimer>();
   s_settings_save_timer->connect(s_settings_save_timer.get(), &QTimer::timeout, SaveSettings);

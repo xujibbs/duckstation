@@ -4,7 +4,7 @@
 #include "core/settings.h"
 #include "frontend-common/game_list.h"
 #include "gamelistmodel.h"
-#include "qthostinterface.h"
+#include "qthost.h"
 #include "qtutils.h"
 #include <QtCore/QSortFilterProxyModel>
 #include <QtGui/QPixmap>

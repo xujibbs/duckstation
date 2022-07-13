@@ -4,7 +4,7 @@
     <ClCompile Include="icon.cpp" />
     <ClCompile Include="sdl_audio_stream.cpp" />
     <ClCompile Include="sdl_initializer.cpp" />
-    <ClCompile Include="common_host_interface.cpp" />
+    <ClCompile Include="common_host.cpp" />
     <ClCompile Include="save_state_selector_ui.cpp" />
     <ClCompile Include="vulkan_host_display.cpp" />
     <ClCompile Include="d3d11_host_display.cpp" />
@@ -40,7 +40,7 @@
     <ClInclude Include="icon.h" />
     <ClInclude Include="sdl_audio_stream.h" />
     <ClInclude Include="sdl_initializer.h" />
-    <ClInclude Include="common_host_interface.h" />
+    <ClInclude Include="common_host.h" />
     <ClInclude Include="save_state_selector_ui.h" />
     <ClInclude Include="vulkan_host_display.h" />
     <ClInclude Include="d3d11_host_display.h" />

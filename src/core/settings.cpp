@@ -1110,11 +1110,13 @@ std::string EmuFolders::AppRoot;
 std::string EmuFolders::DataRoot;
 std::string EmuFolders::Bios;
 std::string EmuFolders::Cache;
+std::string EmuFolders::Cheats;
 std::string EmuFolders::Covers;
 std::string EmuFolders::Dumps;
 std::string EmuFolders::GameSettings;
 std::string EmuFolders::InputProfiles;
 std::string EmuFolders::MemoryCards;
+std::string EmuFolders::Resources;
 std::string EmuFolders::SaveStates;
 std::string EmuFolders::Screenshots;
 std::string EmuFolders::Shaders;
@@ -1140,6 +1142,8 @@ static std::string LoadPathFromSettings(SettingsInterface& si, const std::string
                                         const char* name, const char* def)
 {
   std::string value = si.GetStringValue(section, name, def);
+  if (value.empty())
+    value = def;
   if (!Path::IsAbsolute(value))
     value = Path::Combine(root, value);
   return value;
@@ -1147,7 +1151,7 @@ static std::string LoadPathFromSettings(SettingsInterface& si, const std::string
 
 void EmuFolders::LoadConfig(SettingsInterface& si)
 {
-  Bios = LoadPathFromSettings(si, DataRoot, "Folders", "Bios", "bios");
+  Bios = LoadPathFromSettings(si, DataRoot, "BIOS", "SearchDirectory", "bios");
   Cache = LoadPathFromSettings(si, DataRoot, "Folders", "Cache", "cache");
   Cheats = LoadPathFromSettings(si, DataRoot, "Folders", "Cheats", "cheats");
   Covers = LoadPathFromSettings(si, DataRoot, "Folders", "Covers", "covers");
@@ -1162,7 +1166,7 @@ void EmuFolders::LoadConfig(SettingsInterface& si)
 
   Log_DevPrintf("BIOS Directory: %s", Bios.c_str());
   Log_DevPrintf("Cache Directory: %s", Cache.c_str());
-  Log_DevPrintf("Cheats Directory: %s", Covers.c_str());
+  Log_DevPrintf("Cheats Directory: %s", Cheats.c_str());
   Log_DevPrintf("Covers Directory: %s", Covers.c_str());
   Log_DevPrintf("Dumps Directory: %s", Dumps.c_str());
   Log_DevPrintf("Game Settings Directory: %s", GameSettings.c_str());
@@ -1177,7 +1181,7 @@ void EmuFolders::LoadConfig(SettingsInterface& si)
 void EmuFolders::Save(SettingsInterface& si)
 {
   // convert back to relative
-  si.SetStringValue("Folders", "Bios", Path::MakeRelative(Bios, DataRoot).c_str());
+  si.SetStringValue("BIOS", "SearchDirectory", Path::MakeRelative(Bios, DataRoot).c_str());
   si.SetStringValue("Folders", "Cache", Path::MakeRelative(Cache, DataRoot).c_str());
   si.SetStringValue("Folders", "Cheats", Path::MakeRelative(Cheats, DataRoot).c_str());
   si.SetStringValue("Folders", "Covers", Path::MakeRelative(Covers, DataRoot).c_str());

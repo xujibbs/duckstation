@@ -1,7 +1,9 @@
 #pragma once
 #include "common/timer.h"
-#include "common_host_interface.h"
+#include "common/types.h"
 #include <memory>
+#include <string>
+#include <vector>
 
 class HostDisplayTexture;
 
@@ -14,7 +16,7 @@ class SaveStateSelectorUI
 public:
   static constexpr float DEFAULT_OPEN_TIME = 5.0f;
 
-  SaveStateSelectorUI(CommonHostInterface* host_interface);
+  SaveStateSelectorUI();
   ~SaveStateSelectorUI();
 
   ALWAYS_INLINE bool IsOpen() const { return m_open; }
@@ -60,7 +62,6 @@ private:
   std::string m_prev_legend;
   std::string m_next_legend;
 
-  CommonHostInterface* m_host_interface;
   std::vector<ListEntry> m_slots;
   u32 m_current_selection = 0;
 

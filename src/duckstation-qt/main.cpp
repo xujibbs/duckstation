@@ -1,6 +1,6 @@
 #include "common/crash_handler.h"
 #include "mainwindow.h"
-#include "qthostinterface.h"
+#include "qthost.h"
 #include "qtutils.h"
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QMessageBox>
@@ -24,7 +24,7 @@ static bool ParseCommandLineParameters(QApplication& app, QtHostInterface* host_
   for (std::string& arg : converted_args)
     converted_argv.push_back(arg.data());
 
-  return host_interface->ParseCommandLineParameters(args.size(), converted_argv.data(), boot_params);
+  return CommonHost::ParseCommandLineParameters(args.size(), converted_argv.data(), boot_params);
 }
 
 static void SignalHandler(int signal)
@@ -35,7 +35,7 @@ static void SignalHandler(int signal)
   {
     std::fprintf(stderr, "Received CTRL+C, attempting graceful shutdown. Press CTRL+C again to force.\n");
     graceful_shutdown_attempted = true;
-    QtHostInterface::GetInstance()->requestExit();
+    g_emu_thread->requestExit();
     return;
   }
 
@@ -63,21 +63,12 @@ int main(int argc, char* argv[])
   qRegisterMetaType<std::optional<bool>>();
   qRegisterMetaType<std::function<void()>>();
 
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-  QGuiApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
-  QGuiApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
-#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
-  QGuiApplication::setHighDpiScaleFactorRoundingPolicy(Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
-#endif
-#endif
 
   QApplication app(argc, argv);
 
-#ifdef _WIN32
-  // Use Segoe UI on Windows rather than MS Shell Dlg 2, courtesy of Dolphin.
-  // Can be removed once switched to Qt 6.
-  QApplication::setFont(QApplication::font("QMenu"));
-#endif
+  // TODO: Remove me
+  Log::SetFilterLevel(LOGLEVEL_DEBUG);
+  Log::SetConsoleOutputParams(true, nullptr, LOGLEVEL_DEBUG);
 
   std::unique_ptr<QtHostInterface> host_interface = std::make_unique<QtHostInterface>();
   std::unique_ptr<SystemBootParameters> boot_params;
@@ -98,7 +89,7 @@ int main(int argc, char* argv[])
   HookSignals();
 
   // if we're in batch mode, don't bother refreshing the game list as it won't be used
-  if (!host_interface->inBatchMode())
+  if (!QtHost::InBatchMode())
     host_interface->refreshGameList();
 
   if (boot_params)

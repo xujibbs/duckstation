@@ -1,7 +1,7 @@
 #include "inputbindingdialog.h"
 #include "common/bitutils.h"
 #include "inputbindingwidgets.h"
-#include "qthostinterface.h"
+#include "qthost.h"
 #include "qtutils.h"
 #include <QtCore/QTimer>
 #include <QtGui/QKeyEvent>
@@ -230,7 +230,7 @@ void InputBindingDialog::saveListToSettings()
     else
       m_sif->DeleteValue(m_section_name.c_str(), m_key_name.c_str());
     m_sif->Save();
-    QtHostInterface::GetInstance()->reloadGameSettings();
+    g_emu_thread->reloadGameSettings();
   }
   else
   {
@@ -238,7 +238,7 @@ void InputBindingDialog::saveListToSettings()
       Host::SetBaseStringListSettingValue(m_section_name.c_str(), m_key_name.c_str(), m_bindings);
     else
       Host::DeleteBaseSettingValue(m_section_name.c_str(), m_key_name.c_str());
-    QtHostInterface::GetInstance()->reloadInputBindings();
+    g_emu_thread->reloadInputBindings();
   }
 }
 

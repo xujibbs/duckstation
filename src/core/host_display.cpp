@@ -5,7 +5,6 @@
 #include "common/log.h"
 #include "common/string_util.h"
 #include "common/timer.h"
-#include "host_interface.h"
 #include "stb_image.h"
 #include "stb_image_resize.h"
 #include "stb_image_write.h"

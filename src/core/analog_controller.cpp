@@ -2,7 +2,6 @@
 #include "common/log.h"
 #include "common/string_util.h"
 #include "host.h"
-#include "host_interface.h"
 #include "settings.h"
 #include "system.h"
 #include "util/state_wrapper.h"

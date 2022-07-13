@@ -3,7 +3,7 @@
   <Import Project="..\..\dep\msvc\vsprops\Configurations.props" />
   <ItemGroup>
     <ClCompile Include="cheevos.cpp" />
-    <ClCompile Include="common_host_interface.cpp" />
+    <ClCompile Include="common_host.cpp" />
     <ClCompile Include="cubeb_audio_stream.cpp">
       <ExcludedFromBuild Condition="'$(BuildingForUWP)'=='true'">true</ExcludedFromBuild>
     </ClCompile>
@@ -45,7 +45,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="cheevos.h" />
-    <ClInclude Include="common_host_interface.h" />
+    <ClInclude Include="common_host.h" />
     <ClInclude Include="cubeb_audio_stream.h">
       <ExcludedFromBuild Condition="'$(BuildingForUWP)'=='true'">true</ExcludedFromBuild>
     </ClInclude>

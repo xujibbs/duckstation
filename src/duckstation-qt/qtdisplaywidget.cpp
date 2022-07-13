@@ -1,6 +1,7 @@
 #include "qtdisplaywidget.h"
+#include "common/assert.h"
 #include "common/bitutils.h"
-#include "qthostinterface.h"
+#include "qthost.h"
 #include "qtutils.h"
 #include <QtCore/QDebug>
 #include <QtGui/QGuiApplication>

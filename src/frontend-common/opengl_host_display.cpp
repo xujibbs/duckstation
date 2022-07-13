@@ -3,7 +3,7 @@
 #include "common/assert.h"
 #include "common/log.h"
 #include "common/string_util.h"
-#include "common_host_interface.h"
+#include "common_host.h"
 #include "imgui.h"
 #include "imgui_impl_opengl3.h"
 #include "postprocessing_shadergen.h"

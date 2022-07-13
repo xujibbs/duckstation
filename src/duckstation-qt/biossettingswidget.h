@@ -16,8 +16,6 @@ public:
 
 private Q_SLOTS:
   void refreshList();
-  void browseSearchDirectory();
-  void openSearchDirectory();
 
 private:
   Ui::BIOSSettingsWidget m_ui;

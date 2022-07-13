@@ -3,9 +3,10 @@
 #include "common/string_util.h"
 #include "controllersettingsdialog.h"
 #include "controllersettingwidgetbinder.h"
+#include "core/controller.h"
 #include "core/host_settings.h"
 #include "frontend-common/input_manager.h"
-#include "qthostinterface.h"
+#include "qthost.h"
 #include "qtutils.h"
 #include "settingsdialog.h"
 #include "settingwidgetbinder.h"
@@ -100,7 +101,7 @@ void ControllerBindingWidget::onTypeChanged()
     Host::SetBaseStringSettingValue(m_config_section.c_str(), "Type", Settings::GetControllerTypeName(m_controller_type));
 
   // TODO: reloadInputProfile() ?
-  QtHostInterface::GetInstance()->applySettings();
+  g_emu_thread->applySettings();
 
   populateBindingWidget();
 }
@@ -173,7 +174,7 @@ void ControllerBindingWidget::doDeviceAutomaticBinding(const QString& device)
   {
     result = InputManager::MapController(*m_dialog->getProfileSettingsInterface(), m_port_number, mapping);
     m_dialog->getProfileSettingsInterface()->Save();
-    QtHostInterface::GetInstance()->reloadInputBindings();
+    g_emu_thread->reloadInputBindings();
   }
 
   // force a refresh after mapping
@@ -185,7 +186,7 @@ void ControllerBindingWidget::saveAndRefresh()
 {
   onTypeChanged();
   QtHost::QueueSettingsSave();
-  QtHostInterface::GetInstance()->applySettings();
+  g_emu_thread->applySettings();
 }
 
 //////////////////////////////////////////////////////////////////////////

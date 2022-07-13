@@ -33,9 +33,6 @@ private:
   void createPortSettingsUi(SettingsDialog* dialog, int index, PortSettingsUI* ui);
   void onBrowseMemoryCardPathClicked(int index);
   void onResetMemoryCardPathClicked(int index);
-  void onOpenMemCardsDirectoryClicked();
-  void onBrowseMemCardsDirectoryClicked();
-  void onResetMemCardsDirectoryClicked();
 
   std::array<PortSettingsUI, 2> m_port_ui = {};
   QLineEdit* m_memory_card_directory = nullptr;

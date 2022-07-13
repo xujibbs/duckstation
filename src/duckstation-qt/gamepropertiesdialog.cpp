@@ -4,7 +4,7 @@
 #include "core/system.h"
 #include "frontend-common/game_database.h"
 #include "frontend-common/game_list.h"
-#include "qthostinterface.h"
+#include "qthost.h"
 #include "qtprogresscallback.h"
 #include "qtutils.h"
 #include "rapidjson/document.h"

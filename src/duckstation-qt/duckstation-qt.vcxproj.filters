@@ -6,14 +6,14 @@
     <ClCompile Include="gamelistwidget.cpp" />
     <ClCompile Include="settingsdialog.cpp" />
     <ClCompile Include="consolesettingswidget.cpp" />
-    <ClCompile Include="qthostinterface.cpp" />
+    <ClCompile Include="qthost.cpp" />
     <ClCompile Include="gamelistsettingswidget.cpp" />
     <ClCompile Include="qtutils.cpp" />
     <ClCompile Include="$(IntDir)moc_consolesettingswidget.cpp" />
     <ClCompile Include="$(IntDir)moc_gamelistsettingswidget.cpp" />
     <ClCompile Include="$(IntDir)moc_gamelistwidget.cpp" />
     <ClCompile Include="$(IntDir)moc_mainwindow.cpp" />
-    <ClCompile Include="$(IntDir)moc_qthostinterface.cpp" />
+    <ClCompile Include="$(IntDir)moc_qthost.cpp" />
     <ClCompile Include="$(IntDir)moc_settingsdialog.cpp" />
     <ClCompile Include="inputbindingwidgets.cpp" />
     <ClCompile Include="hotkeysettingswidget.cpp" />
@@ -107,7 +107,7 @@
     <QtMoc Include="gamelistsettingswidget.h" />
     <QtMoc Include="gamelistwidget.h" />
     <QtMoc Include="mainwindow.h" />
-    <QtMoc Include="qthostinterface.h" />
+    <QtMoc Include="qthost.h" />
     <QtMoc Include="settingsdialog.h" />
     <QtMoc Include="hotkeysettingswidget.h" />
     <QtMoc Include="inputbindingwidgets.h" />
@@ -173,6 +173,7 @@
     <QtUi Include="controllerbindingwidget_analog_controller.ui" />
     <QtUi Include="controllerglobalsettingswidget.ui" />
     <QtUi Include="controllersettingsdialog.ui" />
+    <QtUi Include="controllerbindingwidget_digital_controller.ui" />
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="qt5.natvis" />

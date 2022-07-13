@@ -13,7 +13,7 @@
 #include <QtWidgets/QSpinBox>
 
 #include "core/host_settings.h"
-#include "qthostinterface.h"
+#include "qthost.h"
 #include "settingwidgetbinder.h"
 
 /// This nastyness is required because input profiles aren't overlaid settings like the rest of them, it's
@@ -35,7 +35,7 @@ static void BindWidgetToInputProfileBool(SettingsInterface* sif, WidgetType* wid
       const bool new_value = Accessor::getBoolValue(widget);
       sif->SetBoolValue(section.c_str(), key.c_str(), new_value);
       sif->Save();
-      QtHostInterface::GetInstance()->reloadGameSettings();
+      g_emu_thread->reloadGameSettings();
     });
   }
   else
@@ -46,7 +46,7 @@ static void BindWidgetToInputProfileBool(SettingsInterface* sif, WidgetType* wid
     Accessor::connectValueChanged(widget, [widget, section = std::move(section), key = std::move(key)]() {
       const bool new_value = Accessor::getBoolValue(widget);
       Host::SetBaseBoolSettingValue(section.c_str(), key.c_str(), new_value);
-      QtHostInterface::GetInstance()->applySettings();
+      g_emu_thread->applySettings();
     });
   }
 }
@@ -67,7 +67,7 @@ static void BindWidgetToInputProfileFloat(SettingsInterface* sif, WidgetType* wi
       const float new_value = Accessor::getFloatValue(widget);
       sif->SetFloatValue(section.c_str(), key.c_str(), new_value);
       sif->Save();
-      QtHostInterface::GetInstance()->reloadGameSettings();
+      g_emu_thread->reloadGameSettings();
     });
   }
   else
@@ -78,7 +78,7 @@ static void BindWidgetToInputProfileFloat(SettingsInterface* sif, WidgetType* wi
     Accessor::connectValueChanged(widget, [widget, section = std::move(section), key = std::move(key)]() {
       const float new_value = Accessor::getFloatValue(widget);
       Host::SetBaseFloatSettingValue(section.c_str(), key.c_str(), new_value);
-      QtHostInterface::GetInstance()->applySettings();
+      g_emu_thread->applySettings();
     });
   }
 }
@@ -99,7 +99,7 @@ static void BindWidgetToInputProfileNormalized(SettingsInterface* sif, WidgetTyp
       const int new_value = Accessor::getIntValue(widget);
       sif->SetFloatValue(section.c_str(), key.c_str(), static_cast<float>(new_value) / range);
       sif->Save();
-      QtHostInterface::GetInstance()->reloadGameSettings();
+      g_emu_thread->reloadGameSettings();
     });
   }
   else
@@ -110,7 +110,7 @@ static void BindWidgetToInputProfileNormalized(SettingsInterface* sif, WidgetTyp
     Accessor::connectValueChanged(widget, [widget, section = std::move(section), key = std::move(key), range]() {
       const float new_value = (static_cast<float>(Accessor::getIntValue(widget)) / range);
       Host::SetBaseFloatSettingValue(section.c_str(), key.c_str(), new_value);
-      QtHostInterface::GetInstance()->applySettings();
+      g_emu_thread->applySettings();
     });
   }
 }
@@ -137,7 +137,7 @@ static void BindWidgetToInputProfileString(SettingsInterface* sif, WidgetType* w
         sif->DeleteValue(section.c_str(), key.c_str());
 
       sif->Save();
-      QtHostInterface::GetInstance()->reloadGameSettings();
+      g_emu_thread->reloadGameSettings();
     });
   }
   else
@@ -154,7 +154,7 @@ static void BindWidgetToInputProfileString(SettingsInterface* sif, WidgetType* w
       else
         Host::DeleteBaseSettingValue(section.c_str(), key.c_str());
 
-      QtHostInterface::GetInstance()->applySettings();
+      g_emu_thread->applySettings();
     });
   }
 }

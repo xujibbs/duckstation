@@ -3,7 +3,7 @@
 #include "controllersettingsdialog.h"
 #include "core/host_settings.h"
 #include "inputbindingdialog.h"
-#include "qthostinterface.h"
+#include "qthost.h"
 #include "qtutils.h"
 #include <QtCore/QTimer>
 #include <QtGui/QKeyEvent>
@@ -210,12 +210,12 @@ void InputBindingWidget::setNewBinding()
     {
       m_sif->SetStringValue(m_section_name.c_str(), m_key_name.c_str(), new_binding.c_str());
       m_sif->Save();
-      QtHostInterface::GetInstance()->reloadGameSettings();
+      g_emu_thread->reloadGameSettings();
     }
     else
     {
       Host::SetBaseStringSettingValue(m_section_name.c_str(), m_key_name.c_str(), new_binding.c_str());
-      QtHostInterface::GetInstance()->reloadInputBindings();
+      g_emu_thread->reloadInputBindings();
     }
   }
 
@@ -230,12 +230,12 @@ void InputBindingWidget::clearBinding()
   {
     m_sif->DeleteValue(m_section_name.c_str(), m_key_name.c_str());
     m_sif->Save();
-    QtHostInterface::GetInstance()->reloadGameSettings();
+    g_emu_thread->reloadGameSettings();
   }
   else
   {
     Host::DeleteBaseSettingValue(m_section_name.c_str(), m_key_name.c_str());
-    QtHostInterface::GetInstance()->reloadInputBindings();
+    g_emu_thread->reloadInputBindings();
   }
   reloadBinding();
 }
@@ -391,7 +391,7 @@ void InputVibrationBindingWidget::clearBinding()
 {
   m_binding = {};
   Host::DeleteBaseSettingValue(m_section_name.c_str(), m_key_name.c_str());
-  QtHostInterface::GetInstance()->reloadInputBindings();
+  g_emu_thread->reloadInputBindings();
   setText(QString());
 }
 

@@ -12,7 +12,7 @@
 #include "generalsettingswidget.h"
 #include "memorycardsettingswidget.h"
 #include "postprocessingsettingswidget.h"
-#include "qthostinterface.h"
+#include "qthost.h"
 #include <QtWidgets/QMessageBox>
 #include <QtWidgets/QTextEdit>
 
@@ -182,7 +182,7 @@ void SettingsDialog::onRestoreDefaultsClicked()
     return;
   }
 
-  QtHostInterface::GetInstance()->setDefaultSettings();
+  g_emu_thread->setDefaultSettings();
 }
 
 void SettingsDialog::registerWidgetHelp(QObject* object, QString title, QString recommended_value, QString text)
@@ -347,13 +347,13 @@ void SettingsDialog::setBoolSettingValue(const char* section, const char* key, s
   {
     value.has_value() ? m_sif->SetBoolValue(section, key, value.value()) : m_sif->DeleteValue(section, key);
     m_sif->Save();
-    QtHostInterface::GetInstance()->reloadGameSettings();
+    g_emu_thread->reloadGameSettings();
   }
   else
   {
     value.has_value() ? Host::SetBaseBoolSettingValue(section, key, value.value()) :
                         Host::DeleteBaseSettingValue(section, key);
-    QtHostInterface::GetInstance()->applySettings();
+    g_emu_thread->applySettings();
   }
 }
 
@@ -363,13 +363,13 @@ void SettingsDialog::setIntSettingValue(const char* section, const char* key, st
   {
     value.has_value() ? m_sif->SetIntValue(section, key, value.value()) : m_sif->DeleteValue(section, key);
     m_sif->Save();
-    QtHostInterface::GetInstance()->reloadGameSettings();
+    g_emu_thread->reloadGameSettings();
   }
   else
   {
     value.has_value() ? Host::SetBaseIntSettingValue(section, key, value.value()) :
                         Host::DeleteBaseSettingValue(section, key);
-    QtHostInterface::GetInstance()->applySettings();
+    g_emu_thread->applySettings();
   }
 }
 
@@ -379,13 +379,13 @@ void SettingsDialog::setFloatSettingValue(const char* section, const char* key, 
   {
     value.has_value() ? m_sif->SetFloatValue(section, key, value.value()) : m_sif->DeleteValue(section, key);
     m_sif->Save();
-    QtHostInterface::GetInstance()->reloadGameSettings();
+    g_emu_thread->reloadGameSettings();
   }
   else
   {
     value.has_value() ? Host::SetBaseFloatSettingValue(section, key, value.value()) :
                         Host::DeleteBaseSettingValue(section, key);
-    QtHostInterface::GetInstance()->applySettings();
+    g_emu_thread->applySettings();
   }
 }
 
@@ -395,13 +395,13 @@ void SettingsDialog::setStringSettingValue(const char* section, const char* key,
   {
     value.has_value() ? m_sif->SetStringValue(section, key, value.value()) : m_sif->DeleteValue(section, key);
     m_sif->Save();
-    QtHostInterface::GetInstance()->reloadGameSettings();
+    g_emu_thread->reloadGameSettings();
   }
   else
   {
     value.has_value() ? Host::SetBaseStringSettingValue(section, key, value.value()) :
                         Host::DeleteBaseSettingValue(section, key);
-    QtHostInterface::GetInstance()->applySettings();
+    g_emu_thread->applySettings();
   }
 }
 
@@ -411,11 +411,11 @@ void SettingsDialog::removeSettingValue(const char* section, const char* key)
   {
     m_sif->DeleteValue(section, key);
     m_sif->Save();
-    QtHostInterface::GetInstance()->reloadGameSettings();
+    g_emu_thread->reloadGameSettings();
   }
   else
   {
     Host::DeleteBaseSettingValue(section, key);
-    QtHostInterface::GetInstance()->applySettings();
+    g_emu_thread->applySettings();
   }
 }

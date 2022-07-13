@@ -21,7 +21,6 @@
 #include "gte.h"
 #include "host.h"
 #include "host_display.h"
-#include "host_interface.h"
 #include "host_interface_progress_callback.h"
 #include "host_settings.h"
 #include "interrupt_controller.h"
@@ -51,6 +50,13 @@
 #include <limits>
 #include <thread>
 Log_SetChannel(System);
+
+#ifdef _WIN32
+#include "common/windows_headers.h"
+#ifndef _UWP
+#include <mmsystem.h>
+#endif
+#endif
 
 // #define PROFILE_MEMORY_SAVE_STATES 1
 
@@ -111,6 +117,8 @@ static bool UpdateGameSettingsLayer();
 static void UpdateRunningGame(const char* path, CDImage* image);
 static bool CheckForSBIFile(CDImage* image);
 static std::unique_ptr<MemoryCard> GetMemoryCardForSlot(u32 slot, MemoryCardType type);
+
+static void SetTimerResolutionIncreased(bool enabled);
 } // namespace System
 
 static std::unique_ptr<INISettingsInterface> s_game_settings_interface;
@@ -1000,7 +1008,7 @@ bool System::LoadState(const char* filename)
 
   Host::AddFormattedOSDMessage(5.0f, Host::TranslateString("OSDMessage", "Loading state from '%s'..."), filename);
 
-  if (!IsValid())
+  if (IsValid())
   {
     SaveUndoLoadState();
 
@@ -1324,6 +1332,8 @@ void System::InternalShutdown()
 {
   if (s_state == State::Shutdown)
     return;
+
+  SetTimerResolutionIncreased(false);
 
   s_cpu_thread_usage = {};
 
@@ -2151,11 +2161,8 @@ void System::UpdateSpeedLimiterState()
   display->SetDisplayMaxFPS(max_display_fps);
   display->SetVSync(video_sync_enabled);
 
-#if 0
-  // FIXME
   if (g_settings.increase_timer_resolution)
     SetTimerResolutionIncreased(m_throttler_enabled);
-#endif
 
   // When syncing to host and using vsync, we don't need to sleep.
   if (syncing_to_host && video_sync_enabled && m_display_all_frames)
@@ -4252,4 +4259,20 @@ void System::HostDisplayResized()
     GTE::UpdateAspectRatio();
 
   g_gpu->UpdateResolutionScale();
+}
+
+void System::SetTimerResolutionIncreased(bool enabled)
+{
+#if defined(_WIN32) && !defined(_UWP)
+  static bool current_state = false;
+  if (current_state == enabled)
+    return;
+
+  current_state = enabled;
+
+  if (enabled)
+    timeBeginPeriod(1);
+  else
+    timeEndPeriod(1);
+#endif
 }

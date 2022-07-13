@@ -1,6 +1,6 @@
 #include "biossettingswidget.h"
 #include "core/bios.h"
-#include "qthostinterface.h"
+#include "qthost.h"
 #include "qtutils.h"
 #include "settingsdialog.h"
 #include "settingwidgetbinder.h"
@@ -118,28 +118,16 @@ BIOSSettingsWidget::BIOSSettingsWidget(SettingsDialog* dialog, QWidget* parent)
 
   connect(m_ui.refresh, &QPushButton::clicked, this, &BIOSSettingsWidget::refreshList);
 
-  std::string current_search_directory = g_host_interface->GetBIOSDirectory();
-  m_ui.searchDirectory->setText(QString::fromStdString(current_search_directory));
-  connect(m_ui.searchDirectory, &QLineEdit::textChanged, [this](const QString& text) {
-    if (text.isEmpty())
-    {
-      m_dialog->setStringSettingValue("BIOS", "SearchDirectory", std::nullopt);
-    }
-    else
-    {
-      m_dialog->setStringSettingValue("BIOS", "SearchDirectory", text.toStdString().c_str());
-    }
-    refreshList();
-  });
-  connect(m_ui.browseSearchDirectory, &QPushButton::clicked, this, &BIOSSettingsWidget::browseSearchDirectory);
-  connect(m_ui.openSearchDirectory, &QPushButton::clicked, this, &BIOSSettingsWidget::openSearchDirectory);
+  m_ui.searchDirectory->setText(QString::fromStdString(EmuFolders::Bios));
+  SettingWidgetBinder::BindWidgetToFolderSetting(sif, m_ui.searchDirectory, m_ui.browseSearchDirectory, m_ui.openSearchDirectory, nullptr, "BIOS", "SearchDirectory", Path::Combine(EmuFolders::DataRoot, "bios"));
+  connect(m_ui.searchDirectory, &QLineEdit::textChanged, this, &BIOSSettingsWidget::refreshList);
 }
 
 BIOSSettingsWidget::~BIOSSettingsWidget() = default;
 
 void BIOSSettingsWidget::refreshList()
 {
-  auto images = BIOS::FindBIOSImagesInDirectory(QtHostInterface::GetInstance()->GetBIOSDirectory().c_str());
+  auto images = BIOS::FindBIOSImagesInDirectory(m_ui.searchDirectory->text().toUtf8().constData());
   populateDropDownForRegion(ConsoleRegion::NTSC_J, m_ui.imageNTSCJ, images);
   populateDropDownForRegion(ConsoleRegion::NTSC_U, m_ui.imageNTSCU, images);
   populateDropDownForRegion(ConsoleRegion::PAL, m_ui.imagePAL, images);
@@ -147,20 +135,4 @@ void BIOSSettingsWidget::refreshList()
   setDropDownValue(m_ui.imageNTSCJ, m_dialog->getEffectiveStringValue("BIOS", "PathNTSCJ", ""));
   setDropDownValue(m_ui.imageNTSCU, m_dialog->getEffectiveStringValue("BIOS", "PathNTSCU", ""));
   setDropDownValue(m_ui.imagePAL, m_dialog->getEffectiveStringValue("BIOS", "PathPAL", ""));
-}
-
-void BIOSSettingsWidget::browseSearchDirectory()
-{
-  QString directory = QFileDialog::getExistingDirectory(QtUtils::GetRootWidget(this), tr("Select Directory"),
-                                                        m_ui.searchDirectory->text());
-  if (directory.isEmpty())
-    return;
-
-  m_ui.searchDirectory->setText(directory);
-}
-
-void BIOSSettingsWidget::openSearchDirectory()
-{
-  QString dir = QString::fromStdString(QtHostInterface::GetInstance()->GetBIOSDirectory());
-  QtUtils::OpenURL(this, QUrl::fromLocalFile(dir));
 }
