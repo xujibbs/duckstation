@@ -36,6 +36,7 @@
 #include <QtWidgets/QFileDialog>
 #include <QtWidgets/QInputDialog>
 #include <QtWidgets/QMessageBox>
+#include <QtWidgets/QProgressBar>
 #include <QtWidgets/QStyleFactory>
 #include <cmath>
 
@@ -53,6 +54,8 @@ static constexpr char DISC_IMAGE_FILTER[] = QT_TRANSLATE_NOOP(
   "*.psexe);;Portable Sound Format Files (*.psf *.minipsf);;Playlists (*.m3u)");
 
 static const char* DEFAULT_THEME_NAME = "darkfusion";
+
+MainWindow* g_main_window = nullptr;
 
 ALWAYS_INLINE static QString getWindowTitle(const QString& game_title)
 {
@@ -76,22 +79,20 @@ ALWAYS_INLINE static QString getWindowTitle(const QString& game_title)
 #endif
 }
 
-MainWindow::MainWindow(QtHostInterface* host_interface)
-  : QMainWindow(nullptr), m_unthemed_style_name(QApplication::style()->objectName()), m_host_interface(host_interface)
+MainWindow::MainWindow() : QMainWindow(nullptr), m_unthemed_style_name(QApplication::style()->objectName())
 {
-  m_host_interface->setMainWindow(this);
-
-  // force creation of native window
-  winId();
+  Assert(!g_main_window);
+  g_main_window = this;
 }
 
 MainWindow::~MainWindow()
 {
   Assert(!m_display_widget);
-  if (m_host_interface->getMainWindow() == this)
-    m_host_interface->setMainWindow(nullptr);
-
   Assert(!m_debugger_window);
+
+  // we compare here, since recreate destroys the window later
+  if (g_main_window == this)
+    g_main_window = nullptr;
 }
 
 void MainWindow::initializeAndShow()
@@ -138,7 +139,7 @@ QtDisplayWidget* MainWindow::createDisplay(QThread* worker_thread, bool fullscre
   Assert(!m_host_display && !m_display_widget);
   Assert(!fullscreen || !render_to_main);
 
-  m_host_display = m_host_interface->createHostDisplay();
+  m_host_display = g_emu_thread->createHostDisplay();
   if (!m_host_display)
   {
     reportError(tr("Error"), tr("Failed to create host display."));
@@ -188,7 +189,7 @@ QtDisplayWidget* MainWindow::createDisplay(QThread* worker_thread, bool fullscre
   // we need the surface visible.. this might be able to be replaced with something else
   QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
 
-  m_host_interface->connectDisplaySignals(m_display_widget);
+  g_emu_thread->connectDisplaySignals(m_display_widget);
 
   std::optional<WindowInfo> wi = m_display_widget->getWindowInfo();
   if (!wi.has_value())
@@ -292,7 +293,7 @@ QtDisplayWidget* MainWindow::updateDisplay(QThread* worker_thread, bool fullscre
   // we need the surface visible.. this might be able to be replaced with something else
   QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
 
-  m_host_interface->connectDisplaySignals(m_display_widget);
+  g_emu_thread->connectDisplaySignals(m_display_widget);
 
   std::optional<WindowInfo> wi = m_display_widget->getWindowInfo();
   if (!wi.has_value())
@@ -326,13 +327,11 @@ void MainWindow::setDisplayFullscreen(const std::string& fullscreen_mode)
     result = m_host_display->SetFullscreen(true, width, height, refresh_rate);
     if (result)
     {
-      Host::AddOSDMessage(
-        Host::TranslateStdString("OSDMessage", "Acquired exclusive fullscreen."), 10.0f);
+      Host::AddOSDMessage(Host::TranslateStdString("OSDMessage", "Acquired exclusive fullscreen."), 10.0f);
     }
     else
     {
-      Host::AddOSDMessage(
-        Host::TranslateStdString("OSDMessage", "Failed to acquire exclusive fullscreen."), 10.0f);
+      Host::AddOSDMessage(Host::TranslateStdString("OSDMessage", "Failed to acquire exclusive fullscreen."), 10.0f);
     }
   }
 }
@@ -500,7 +499,7 @@ void MainWindow::onApplicationStateChanged(Qt::ApplicationState state)
   {
     if (!m_was_paused_by_focus_loss && !System::IsPaused())
     {
-      m_host_interface->pauseSystem(true);
+      g_emu_thread->pauseSystem(true);
       m_was_paused_by_focus_loss = true;
       updateMouseMode(true);
     }
@@ -510,7 +509,7 @@ void MainWindow::onApplicationStateChanged(Qt::ApplicationState state)
     if (m_was_paused_by_focus_loss)
     {
       if (System::IsPaused())
-        m_host_interface->pauseSystem(false);
+        g_emu_thread->pauseSystem(false);
       m_was_paused_by_focus_loss = false;
       updateMouseMode(false);
     }
@@ -524,7 +523,7 @@ void MainWindow::onStartFileActionTriggered()
   if (filename.isEmpty())
     return;
 
-  m_host_interface->bootSystem(std::make_shared<SystemBootParameters>(filename.toStdString()));
+  g_emu_thread->bootSystem(std::make_shared<SystemBootParameters>(filename.toStdString()));
 }
 
 std::string MainWindow::getDeviceDiscPath(const QString& title)
@@ -572,13 +571,15 @@ std::string MainWindow::getDeviceDiscPath(const QString& title)
 void MainWindow::recreate()
 {
   if (m_emulation_running)
-    m_host_interface->synchronousPowerOffSystem();
+    g_emu_thread->synchronousPowerOffSystem();
 
   close();
-  m_host_interface->setMainWindow(nullptr);
+  g_main_window = nullptr;
 
-  MainWindow* new_main_window = new MainWindow(m_host_interface);
+  MainWindow* new_main_window = new MainWindow();
   new_main_window->initializeAndShow();
+  new_main_window->refreshGameList(false);
+  new_main_window->show();
   deleteLater();
 }
 
@@ -588,12 +589,12 @@ void MainWindow::onStartDiscActionTriggered()
   if (path.empty())
     return;
 
-  m_host_interface->bootSystem(std::make_shared<SystemBootParameters>(std::move(path)));
+  g_emu_thread->bootSystem(std::make_shared<SystemBootParameters>(std::move(path)));
 }
 
 void MainWindow::onStartBIOSActionTriggered()
 {
-  m_host_interface->bootSystem(std::make_shared<SystemBootParameters>());
+  g_emu_thread->bootSystem(std::make_shared<SystemBootParameters>());
 }
 
 void MainWindow::onChangeDiscFromFileActionTriggered()
@@ -603,12 +604,12 @@ void MainWindow::onChangeDiscFromFileActionTriggered()
   if (filename.isEmpty())
     return;
 
-  m_host_interface->changeDisc(filename);
+  g_emu_thread->changeDisc(filename);
 }
 
 void MainWindow::onChangeDiscFromGameListActionTriggered()
 {
-  m_host_interface->pauseSystem(true);
+  g_emu_thread->pauseSystem(true);
   switchToGameListView();
 }
 
@@ -618,12 +619,12 @@ void MainWindow::onChangeDiscFromDeviceActionTriggered()
   if (path.empty())
     return;
 
-  m_host_interface->changeDisc(QString::fromStdString(path));
+  g_emu_thread->changeDisc(QString::fromStdString(path));
 }
 
 void MainWindow::onChangeDiscMenuAboutToShow()
 {
-  m_host_interface->populateChangeDiscSubImageMenu(m_ui.menuChangeDisc, m_ui.actionGroupChangeDiscSubImages);
+  g_emu_thread->populateChangeDiscSubImageMenu(m_ui.menuChangeDisc, m_ui.actionGroupChangeDiscSubImages);
 }
 
 void MainWindow::onChangeDiscMenuAboutToHide()
@@ -638,12 +639,12 @@ void MainWindow::onChangeDiscMenuAboutToHide()
 
 void MainWindow::onLoadStateMenuAboutToShow()
 {
-  m_host_interface->populateLoadStateMenu(m_running_game_code.c_str(), m_ui.menuLoadState);
+  g_emu_thread->populateLoadStateMenu(m_running_game_code.c_str(), m_ui.menuLoadState);
 }
 
 void MainWindow::onSaveStateMenuAboutToShow()
 {
-  m_host_interface->populateSaveStateMenu(m_running_game_code.c_str(), m_ui.menuSaveState);
+  g_emu_thread->populateSaveStateMenu(m_running_game_code.c_str(), m_ui.menuSaveState);
 }
 
 void MainWindow::onCheatsMenuAboutToShow()
@@ -652,12 +653,12 @@ void MainWindow::onCheatsMenuAboutToShow()
   connect(m_ui.menuCheats->addAction(tr("Cheat Manager")), &QAction::triggered, this,
           &MainWindow::onToolsCheatManagerTriggered);
   m_ui.menuCheats->addSeparator();
-  m_host_interface->populateCheatsMenu(m_ui.menuCheats);
+  g_emu_thread->populateCheatsMenu(m_ui.menuCheats);
 }
 
 void MainWindow::onRemoveDiscActionTriggered()
 {
-  m_host_interface->changeDisc(QString());
+  g_emu_thread->changeDisc(QString());
 }
 
 void MainWindow::onViewToolbarActionToggled(bool checked)
@@ -681,7 +682,7 @@ void MainWindow::onViewStatusBarActionToggled(bool checked)
 void MainWindow::onViewGameListActionTriggered()
 {
   if (m_emulation_running)
-    m_host_interface->pauseSystem(true);
+    g_emu_thread->pauseSystem(true);
   switchToGameListView();
   m_game_list_widget->showGameList();
 }
@@ -689,7 +690,7 @@ void MainWindow::onViewGameListActionTriggered()
 void MainWindow::onViewGameGridActionTriggered()
 {
   if (m_emulation_running)
-    m_host_interface->pauseSystem(true);
+    g_emu_thread->pauseSystem(true);
   switchToGameListView();
   m_game_list_widget->showGameGrid();
 }
@@ -699,7 +700,7 @@ void MainWindow::onViewSystemDisplayTriggered()
   if (m_emulation_running)
   {
     switchToEmulationView();
-    m_host_interface->pauseSystem(false);
+    g_emu_thread->pauseSystem(false);
   }
 }
 
@@ -712,8 +713,7 @@ void MainWindow::onViewGamePropertiesActionTriggered()
   if (path.empty())
     return;
 
-  ensureGameListLoaded();
-
+#if 0
   const GameListEntry* entry = m_host_interface->getGameList()->GetEntryForPath(path.c_str());
   if (!entry)
   {
@@ -724,6 +724,8 @@ void MainWindow::onViewGamePropertiesActionTriggered()
   }
 
   GamePropertiesDialog::showForEntry(m_host_interface, entry, this);
+#endif
+  Panic("FIXME");
 }
 
 void MainWindow::onGitHubRepositoryActionTriggered()
@@ -747,24 +749,75 @@ void MainWindow::onAboutActionTriggered()
   about.exec();
 }
 
-void MainWindow::onGameListEntrySelected(const GameListEntry* entry)
+void MainWindow::onGameListRefreshProgress(const QString& status, int current, int total)
 {
+  m_ui.statusBar->showMessage(status);
+  setProgressBar(current, total);
+}
+
+void MainWindow::onGameListRefreshComplete()
+{
+  clearProgressBar();
+}
+
+void MainWindow::onGameListSelectionChanged()
+{
+  auto lock = GameList::GetLock();
+  const GameList::Entry* entry = m_game_list_widget->getSelectedEntry();
   if (!entry)
-  {
-    m_ui.statusBar->clearMessage();
     return;
-  }
 
   m_ui.statusBar->showMessage(QString::fromStdString(entry->path));
 }
 
-void MainWindow::onGameListEntryDoubleClicked(const GameListEntry* entry)
+void MainWindow::onGameListEntryActivated()
 {
+  auto lock = GameList::GetLock();
+  const GameList::Entry* entry = m_game_list_widget->getSelectedEntry();
+  if (!entry)
+    return;
+
+  // FIXME
+  if (System::IsValid())
+  {
+    Panic("FIXME");
+#if 0
+    // change disc on double click
+    if (!entry->IsDisc())
+    {
+      QMessageBox::critical(this, tr("Error"), tr("You must select a disc to change discs."));
+      return;
+    }
+
+    doDiscChange(CDVD_SourceType::Iso, QString::fromStdString(entry->path));
+    return;
+#endif
+  }
+
+  // we might still be saving a resume state...
+  // VMManager::WaitForSaveStateFlush();
+
+  // FIXME
+#if 0
+  const std::optional<bool> resume = promptForResumeState(
+    QString::fromStdString(VMManager::GetSaveStateFileName(entry->serial.c_str(), entry->crc, -1)));
+  if (!resume.has_value())
+  {
+    // cancelled
+    return;
+  }
+#endif
+
+  // only resume if the option is enabled, and we have one for this game
+  // startGameListEntry(entry, resume.value() ? std::optional<s32>(-1) : std::optional<s32>(), std::nullopt);
   startGameOrChangeDiscs(entry->path);
 }
 
-void MainWindow::onGameListContextMenuRequested(const QPoint& point, const GameListEntry* entry)
+void MainWindow::onGameListEntryContextMenuRequested(const QPoint& point)
 {
+  auto lock = GameList::GetLock();
+  const GameList::Entry* entry = m_game_list_widget->getSelectedEntry();
+
   QMenu menu;
 
   // Hopefully this pointer doesn't disappear... it shouldn't.
@@ -772,7 +825,7 @@ void MainWindow::onGameListContextMenuRequested(const QPoint& point, const GameL
   {
     QAction* action = menu.addAction(tr("Properties..."));
     connect(action, &QAction::triggered,
-            [this, entry]() { GamePropertiesDialog::showForEntry(m_host_interface, entry, this); });
+            [this, entry]() { /*GamePropertiesDialog::showForEntry(m_host_interface, entry, this);*/ });
 
     connect(menu.addAction(tr("Open Containing Directory...")), &QAction::triggered, [this, entry]() {
       const QFileInfo fi(QString::fromStdString(entry->path));
@@ -780,28 +833,28 @@ void MainWindow::onGameListContextMenuRequested(const QPoint& point, const GameL
     });
 
     connect(menu.addAction(tr("Set Cover Image...")), &QAction::triggered,
-            [this, entry]() { onGameListSetCoverImageRequested(entry); });
+            [this, entry]() { setGameListEntryCoverImage(entry); });
 
     menu.addSeparator();
 
     if (!m_emulation_running)
     {
-      m_host_interface->populateGameListContextMenu(entry, this, &menu);
+      g_emu_thread->populateGameListContextMenu(entry, this, &menu);
       menu.addSeparator();
 
       connect(menu.addAction(tr("Default Boot")), &QAction::triggered,
-              [this, entry]() { m_host_interface->bootSystem(std::make_shared<SystemBootParameters>(entry->path)); });
+              [this, entry]() { g_emu_thread->bootSystem(std::make_shared<SystemBootParameters>(entry->path)); });
 
       connect(menu.addAction(tr("Fast Boot")), &QAction::triggered, [this, entry]() {
         auto boot_params = std::make_shared<SystemBootParameters>(entry->path);
         boot_params->override_fast_boot = true;
-        m_host_interface->bootSystem(std::move(boot_params));
+        g_emu_thread->bootSystem(std::move(boot_params));
       });
 
       connect(menu.addAction(tr("Full Boot")), &QAction::triggered, [this, entry]() {
         auto boot_params = std::make_shared<SystemBootParameters>(entry->path);
         boot_params->override_fast_boot = false;
-        m_host_interface->bootSystem(std::move(boot_params));
+        g_emu_thread->bootSystem(std::move(boot_params));
       });
 
       if (m_ui.menuDebug->menuAction()->isVisible() && !Cheevos::IsChallengeModeActive())
@@ -811,15 +864,15 @@ void MainWindow::onGameListContextMenuRequested(const QPoint& point, const GameL
 
           auto boot_params = std::make_shared<SystemBootParameters>(entry->path);
           boot_params->override_start_paused = true;
-          m_host_interface->bootSystem(std::move(boot_params));
+          g_emu_thread->bootSystem(std::move(boot_params));
         });
       }
     }
     else
     {
       connect(menu.addAction(tr("Change Disc")), &QAction::triggered, [this, entry]() {
-        m_host_interface->changeDisc(QString::fromStdString(entry->path));
-        m_host_interface->pauseSystem(false);
+        g_emu_thread->changeDisc(QString::fromStdString(entry->path));
+        g_emu_thread->pauseSystem(false);
         switchToEmulationView();
       });
     }
@@ -836,14 +889,14 @@ void MainWindow::onGameListContextMenuRequested(const QPoint& point, const GameL
   menu.exec(point);
 }
 
-void MainWindow::onGameListSetCoverImageRequested(const GameListEntry* entry)
+void MainWindow::setGameListEntryCoverImage(const GameList::Entry* entry)
 {
   QString filename = QFileDialog::getOpenFileName(this, tr("Select Cover Image"), QString(),
                                                   tr("All Cover Image Types (*.jpg *.jpeg *.png)"));
   if (filename.isEmpty())
     return;
 
-  if (!m_host_interface->getGameList()->GetCoverImagePathForEntry(entry).empty())
+  if (!GameList::GetCoverImagePathForEntry(entry).empty())
   {
     if (QMessageBox::question(this, tr("Cover Already Exists"),
                               tr("A cover image for this game already exists, do you wish to replace it?"),
@@ -853,8 +906,8 @@ void MainWindow::onGameListSetCoverImageRequested(const GameListEntry* entry)
     }
   }
 
-  QString new_filename = QString::fromStdString(
-    m_host_interface->getGameList()->GetNewCoverImagePathForEntry(entry, filename.toStdString().c_str()));
+  QString new_filename =
+    QString::fromStdString(GameList::GetNewCoverImagePathForEntry(entry, filename.toStdString().c_str()));
   if (new_filename.isEmpty())
     return;
 
@@ -886,10 +939,17 @@ void MainWindow::setupAdditionalUi()
   m_ui.toolBar->setMovable(!toolbars_locked);
   m_ui.toolBar->setContextMenuPolicy(Qt::PreventContextMenu);
 
-  m_game_list_widget = new GameListWidget(m_ui.mainContainer);
-  m_game_list_widget->initialize(m_host_interface);
+  m_game_list_widget = new GameListWidget(this);
+  m_game_list_widget->initialize();
   m_ui.mainContainer->insertWidget(0, m_game_list_widget);
   m_ui.mainContainer->setCurrentIndex(0);
+
+  m_status_progress_widget = new QProgressBar(m_ui.statusBar);
+  m_status_progress_widget->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+  m_status_progress_widget->setFixedSize(140, 16);
+  m_status_progress_widget->setMinimum(0);
+  m_status_progress_widget->setMaximum(100);
+  m_status_progress_widget->hide();
 
   m_status_speed_widget = new QLabel(m_ui.statusBar);
   m_status_speed_widget->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
@@ -928,7 +988,7 @@ void MainWindow::setupAdditionalUi()
     action->setCheckable(true);
     connect(action, &QAction::triggered, [this, mode]() {
       Host::SetBaseBoolSettingValue("CPU", "ExecutionMode", Settings::GetCPUExecutionModeName(mode));
-      m_host_interface->applySettings();
+      g_emu_thread->applySettings();
       updateDebugMenuCPUExecutionMode();
     });
   }
@@ -942,7 +1002,7 @@ void MainWindow::setupAdditionalUi()
     action->setCheckable(true);
     connect(action, &QAction::triggered, [this, renderer]() {
       Host::SetBaseStringSettingValue("GPU", "Renderer", Settings::GetRendererName(renderer));
-      m_host_interface->applySettings();
+      g_emu_thread->applySettings();
       updateDebugMenuGPURenderer();
     });
   }
@@ -956,16 +1016,15 @@ void MainWindow::setupAdditionalUi()
     action->setCheckable(true);
     connect(action, &QAction::triggered, [this, crop_mode]() {
       Host::SetBaseStringSettingValue("Display", "CropMode", Settings::GetDisplayCropModeName(crop_mode));
-      m_host_interface->applySettings();
+      g_emu_thread->applySettings();
       updateDebugMenuCropMode();
     });
   }
   updateDebugMenuCropMode();
 
-  const QString current_language(
-    QString::fromStdString(Host::GetBaseStringSettingValue("Main", "Language", "")));
+  const QString current_language(QString::fromStdString(Host::GetBaseStringSettingValue("Main", "Language", "")));
   QActionGroup* language_group = new QActionGroup(m_ui.menuSettingsLanguage);
-  for (const std::pair<QString, QString>& it : m_host_interface->getAvailableLanguageList())
+  for (const std::pair<QString, QString>& it : g_emu_thread->getAvailableLanguageList())
   {
     QAction* action = language_group->addAction(it.first);
     action->setCheckable(true);
@@ -986,7 +1045,7 @@ void MainWindow::setupAdditionalUi()
     connect(action, &QAction::triggered, [this, action]() {
       const QString new_language = action->data().toString();
       Host::SetBaseStringSettingValue("Main", "Language", new_language.toUtf8().constData());
-      m_host_interface->reinstallTranslator();
+      g_emu_thread->reinstallTranslator();
       recreate();
     });
   }
@@ -994,8 +1053,7 @@ void MainWindow::setupAdditionalUi()
   for (u32 scale = 1; scale <= 10; scale++)
   {
     QAction* action = m_ui.menuWindowSize->addAction(tr("%1x Scale").arg(scale));
-    connect(action, &QAction::triggered,
-            [scale]() { g_emu_thread->requestRenderWindowScale(scale); });
+    connect(action, &QAction::triggered, [scale]() { g_emu_thread->requestRenderWindowScale(scale); });
   }
 
 #ifdef WITH_RAINTEGRATION
@@ -1016,8 +1074,7 @@ void MainWindow::setupAdditionalUi()
 
         QAction* raAction = raMenu->addAction(QString::fromUtf8(title));
         connect(raAction, &QAction::triggered, this, [id]() {
-          g_emu_thread->executeOnEmulationThread(
-            [id]() { Cheevos::RAIntegration::ActivateMenuItem(id); });
+          g_emu_thread->executeOnEmulationThread([id]() { Cheevos::RAIntegration::ActivateMenuItem(id); });
         });
       }
     });
@@ -1126,6 +1183,28 @@ void MainWindow::updateEmulationActions(bool starting, bool running, bool cheevo
   m_ui.statusBar->clearMessage();
 }
 
+void MainWindow::setProgressBar(int current, int total)
+{
+  const int value = (current * 100) / total;
+  if (m_status_progress_widget->value() != value)
+    m_status_progress_widget->setValue(value);
+
+  if (m_status_progress_widget->isVisible())
+    return;
+
+  m_status_progress_widget->show();
+  m_ui.statusBar->addPermanentWidget(m_status_progress_widget);
+}
+
+void MainWindow::clearProgressBar()
+{
+  if (!m_status_progress_widget->isVisible())
+    return;
+
+  m_status_progress_widget->hide();
+  m_ui.statusBar->removeWidget(m_status_progress_widget);
+}
+
 bool MainWindow::isShowingGameList() const
 {
   return m_ui.mainContainer->currentIndex() == 0;
@@ -1149,14 +1228,14 @@ void MainWindow::startGameOrChangeDiscs(const std::string& path)
   if (!m_emulation_running)
   {
     if (System::CanResumeSystemFromFile(path.c_str()))
-      m_host_interface->resumeSystemFromState(QString::fromStdString(path), true);
+      g_emu_thread->resumeSystemFromState(QString::fromStdString(path), true);
     else
-      m_host_interface->bootSystem(std::make_shared<SystemBootParameters>(path));
+      g_emu_thread->bootSystem(std::make_shared<SystemBootParameters>(path));
   }
   else
   {
-    m_host_interface->changeDisc(QString::fromStdString(path));
-    m_host_interface->pauseSystem(false);
+    g_emu_thread->changeDisc(QString::fromStdString(path));
+    g_emu_thread->pauseSystem(false);
     switchToEmulationView();
   }
 }
@@ -1171,7 +1250,7 @@ void MainWindow::connectSignals()
   connect(m_ui.actionStartFile, &QAction::triggered, this, &MainWindow::onStartFileActionTriggered);
   connect(m_ui.actionStartDisc, &QAction::triggered, this, &MainWindow::onStartDiscActionTriggered);
   connect(m_ui.actionStartBios, &QAction::triggered, this, &MainWindow::onStartBIOSActionTriggered);
-  connect(m_ui.actionResumeLastState, &QAction::triggered, m_host_interface,
+  connect(m_ui.actionResumeLastState, &QAction::triggered, g_emu_thread,
           &QtHostInterface::resumeSystemFromMostRecentState);
   connect(m_ui.actionChangeDisc, &QAction::triggered, [this] { m_ui.menuChangeDisc->exec(QCursor::pos()); });
   connect(m_ui.actionChangeDiscFromFile, &QAction::triggered, this, &MainWindow::onChangeDiscFromFileActionTriggered);
@@ -1188,20 +1267,18 @@ void MainWindow::connectSignals()
   connect(m_ui.actionRemoveDisc, &QAction::triggered, this, &MainWindow::onRemoveDiscActionTriggered);
   connect(m_ui.actionAddGameDirectory, &QAction::triggered,
           [this]() { getSettingsDialog()->getGameListSettingsWidget()->addSearchDirectory(this); });
-  connect(m_ui.actionPowerOff, &QAction::triggered, m_host_interface, &QtHostInterface::powerOffSystem);
-  connect(m_ui.actionPowerOffWithoutSaving, &QAction::triggered, m_host_interface,
+  connect(m_ui.actionPowerOff, &QAction::triggered, g_emu_thread, &QtHostInterface::powerOffSystem);
+  connect(m_ui.actionPowerOffWithoutSaving, &QAction::triggered, g_emu_thread,
           &QtHostInterface::powerOffSystemWithoutSaving);
-  connect(m_ui.actionReset, &QAction::triggered, m_host_interface, &QtHostInterface::resetSystem);
-  connect(m_ui.actionPause, &QAction::toggled, [this](bool active) { m_host_interface->pauseSystem(active); });
-  connect(m_ui.actionScreenshot, &QAction::triggered, m_host_interface, &QtHostInterface::saveScreenshot);
-  connect(m_ui.actionScanForNewGames, &QAction::triggered, this,
-          [this]() { m_host_interface->refreshGameList(false, false); });
-  connect(m_ui.actionRescanAllGames, &QAction::triggered, this,
-          [this]() { m_host_interface->refreshGameList(true, false); });
+  connect(m_ui.actionReset, &QAction::triggered, g_emu_thread, &QtHostInterface::resetSystem);
+  connect(m_ui.actionPause, &QAction::toggled, [this](bool active) { g_emu_thread->pauseSystem(active); });
+  connect(m_ui.actionScreenshot, &QAction::triggered, g_emu_thread, &QtHostInterface::saveScreenshot);
+  connect(m_ui.actionScanForNewGames, &QAction::triggered, this, [this]() { refreshGameList(false); });
+  connect(m_ui.actionRescanAllGames, &QAction::triggered, this, [this]() { refreshGameList(true); });
   connect(m_ui.actionLoadState, &QAction::triggered, this, [this]() { m_ui.menuLoadState->exec(QCursor::pos()); });
   connect(m_ui.actionSaveState, &QAction::triggered, this, [this]() { m_ui.menuSaveState->exec(QCursor::pos()); });
   connect(m_ui.actionExit, &QAction::triggered, this, &MainWindow::close);
-  connect(m_ui.actionFullscreen, &QAction::triggered, m_host_interface, &QtHostInterface::toggleFullscreen);
+  connect(m_ui.actionFullscreen, &QAction::triggered, g_emu_thread, &QtHostInterface::toggleFullscreen);
   connect(m_ui.actionSettings, &QAction::triggered, [this]() { doSettings(SettingsDialog::Category::Count); });
   connect(m_ui.actionGeneralSettings, &QAction::triggered,
           [this]() { doSettings(SettingsDialog::Category::GeneralSettings); });
@@ -1260,35 +1337,38 @@ void MainWindow::connectSignals()
   connect(m_ui.actionGridViewRefreshCovers, &QAction::triggered, m_game_list_widget,
           &GameListWidget::refreshGridCovers);
 
-  connect(m_host_interface, &QtHostInterface::settingsResetToDefault, this, &MainWindow::onSettingsResetToDefault);
-  connect(m_host_interface, &QtHostInterface::errorReported, this, &MainWindow::reportError,
+  connect(g_emu_thread, &QtHostInterface::settingsResetToDefault, this, &MainWindow::onSettingsResetToDefault);
+  connect(g_emu_thread, &QtHostInterface::errorReported, this, &MainWindow::reportError, Qt::BlockingQueuedConnection);
+  connect(g_emu_thread, &QtHostInterface::messageConfirmed, this, &MainWindow::confirmMessage,
           Qt::BlockingQueuedConnection);
-  connect(m_host_interface, &QtHostInterface::messageConfirmed, this, &MainWindow::confirmMessage,
+  connect(g_emu_thread, &QtHostInterface::createDisplayRequested, this, &MainWindow::createDisplay,
           Qt::BlockingQueuedConnection);
-  connect(m_host_interface, &QtHostInterface::createDisplayRequested, this, &MainWindow::createDisplay,
+  connect(g_emu_thread, &QtHostInterface::destroyDisplayRequested, this, &MainWindow::destroyDisplay);
+  connect(g_emu_thread, &QtHostInterface::updateDisplayRequested, this, &MainWindow::updateDisplay,
           Qt::BlockingQueuedConnection);
-  connect(m_host_interface, &QtHostInterface::destroyDisplayRequested, this, &MainWindow::destroyDisplay);
-  connect(m_host_interface, &QtHostInterface::updateDisplayRequested, this, &MainWindow::updateDisplay,
-          Qt::BlockingQueuedConnection);
-  connect(m_host_interface, &QtHostInterface::displaySizeRequested, this, &MainWindow::displaySizeRequested);
-  connect(m_host_interface, &QtHostInterface::focusDisplayWidgetRequested, this, &MainWindow::focusDisplayWidget);
-  connect(m_host_interface, &QtHostInterface::emulationStarting, this, &MainWindow::onEmulationStarting);
-  connect(m_host_interface, &QtHostInterface::emulationStarted, this, &MainWindow::onEmulationStarted);
-  connect(m_host_interface, &QtHostInterface::emulationStopped, this, &MainWindow::onEmulationStopped);
-  connect(m_host_interface, &QtHostInterface::emulationPaused, this, &MainWindow::onEmulationPaused);
-  connect(m_host_interface, &QtHostInterface::systemPerformanceCountersUpdated, this,
+  connect(g_emu_thread, &QtHostInterface::displaySizeRequested, this, &MainWindow::displaySizeRequested);
+  connect(g_emu_thread, &QtHostInterface::focusDisplayWidgetRequested, this, &MainWindow::focusDisplayWidget);
+  connect(g_emu_thread, &QtHostInterface::emulationStarting, this, &MainWindow::onEmulationStarting);
+  connect(g_emu_thread, &QtHostInterface::emulationStarted, this, &MainWindow::onEmulationStarted);
+  connect(g_emu_thread, &QtHostInterface::emulationStopped, this, &MainWindow::onEmulationStopped);
+  connect(g_emu_thread, &QtHostInterface::emulationPaused, this, &MainWindow::onEmulationPaused);
+  connect(g_emu_thread, &QtHostInterface::systemPerformanceCountersUpdated, this,
           &MainWindow::onSystemPerformanceCountersUpdated);
-  connect(m_host_interface, &QtHostInterface::runningGameChanged, this, &MainWindow::onRunningGameChanged);
-  connect(m_host_interface, &QtHostInterface::exitRequested, this, &MainWindow::close);
-  connect(m_host_interface, &QtHostInterface::mouseModeRequested, this, &MainWindow::onMouseModeRequested);
+  connect(g_emu_thread, &QtHostInterface::runningGameChanged, this, &MainWindow::onRunningGameChanged);
+  connect(g_emu_thread, &QtHostInterface::exitRequested, this, &MainWindow::close);
+  connect(g_emu_thread, &QtHostInterface::mouseModeRequested, this, &MainWindow::onMouseModeRequested);
 
   // These need to be queued connections to stop crashing due to menus opening/closing and switching focus.
-  connect(m_game_list_widget, &GameListWidget::entrySelected, this, &MainWindow::onGameListEntrySelected,
+  connect(m_game_list_widget, &GameListWidget::refreshProgress, this, &MainWindow::onGameListRefreshProgress);
+  connect(m_game_list_widget, &GameListWidget::refreshComplete, this, &MainWindow::onGameListRefreshComplete);
+  connect(m_game_list_widget, &GameListWidget::selectionChanged, this, &MainWindow::onGameListSelectionChanged,
           Qt::QueuedConnection);
-  connect(m_game_list_widget, &GameListWidget::entryDoubleClicked, this, &MainWindow::onGameListEntryDoubleClicked,
+  connect(m_game_list_widget, &GameListWidget::entryActivated, this, &MainWindow::onGameListEntryActivated,
           Qt::QueuedConnection);
   connect(m_game_list_widget, &GameListWidget::entryContextMenuRequested, this,
-          &MainWindow::onGameListContextMenuRequested);
+          &MainWindow::onGameListEntryContextMenuRequested, Qt::QueuedConnection);
+  connect(m_game_list_widget, &GameListWidget::addGameDirectoryRequested, this,
+          [this]() { getSettingsDialog()->getGameListSettingsWidget()->addSearchDirectory(this); });
 
   SettingWidgetBinder::BindWidgetToBoolSetting(nullptr, m_ui.actionDisableAllEnhancements, "Main",
                                                "DisableAllEnhancements", false);
@@ -1301,9 +1381,9 @@ void MainWindow::connectSignals()
                                                "DumpVRAMToCPUCopies", false);
   connect(m_ui.actionDumpAudio, &QAction::toggled, [this](bool checked) {
     if (checked)
-      m_host_interface->startDumpingAudio();
+      g_emu_thread->startDumpingAudio();
     else
-      m_host_interface->stopDumpingAudio();
+      g_emu_thread->stopDumpingAudio();
   });
   connect(m_ui.actionDumpRAM, &QAction::triggered, [this]() {
     const QString filename =
@@ -1311,7 +1391,7 @@ void MainWindow::connectSignals()
     if (filename.isEmpty())
       return;
 
-    m_host_interface->dumpRAM(filename);
+    g_emu_thread->dumpRAM(filename);
   });
   connect(m_ui.actionDumpVRAM, &QAction::triggered, [this]() {
     const QString filename = QFileDialog::getSaveFileName(this, tr("Destination File"), QString(),
@@ -1319,7 +1399,7 @@ void MainWindow::connectSignals()
     if (filename.isEmpty())
       return;
 
-    m_host_interface->dumpVRAM(filename);
+    g_emu_thread->dumpVRAM(filename);
   });
   connect(m_ui.actionDumpSPURAM, &QAction::triggered, [this]() {
     const QString filename =
@@ -1327,7 +1407,7 @@ void MainWindow::connectSignals()
     if (filename.isEmpty())
       return;
 
-    m_host_interface->dumpSPURAM(filename);
+    g_emu_thread->dumpSPURAM(filename);
   });
   SettingWidgetBinder::BindWidgetToBoolSetting(nullptr, m_ui.actionDebugShowVRAM, "Debug", "ShowVRAM", false);
   SettingWidgetBinder::BindWidgetToBoolSetting(nullptr, m_ui.actionDebugShowGPUState, "Debug", "ShowGPUState", false);
@@ -1677,24 +1757,9 @@ void MainWindow::updateMenuSelectedTheme()
   }
 }
 
-void MainWindow::ensureGameListLoaded()
-{
-  if (m_host_interface->getGameList()->IsGameListLoaded())
-    return;
-
-  const bool was_running = System::IsRunning();
-  if (m_emulation_running)
-    m_host_interface->pauseSystem(true, true);
-
-  m_host_interface->refreshGameList();
-
-  if (!was_running)
-    m_host_interface->pauseSystem(false, false);
-}
-
 void MainWindow::closeEvent(QCloseEvent* event)
 {
-  m_host_interface->synchronousPowerOffSystem();
+  g_emu_thread->synchronousPowerOffSystem();
   saveStateToConfig();
   QMainWindow::closeEvent(event);
 }
@@ -1705,7 +1770,7 @@ void MainWindow::changeEvent(QEvent* event)
   {
     // TODO: This should check the render-to-main option.
     if (m_display_widget)
-      m_host_interface->redrawDisplayWindow();
+      g_emu_thread->redrawDisplayWindow();
   }
 
   QMainWindow::changeEvent(event);
@@ -1756,6 +1821,11 @@ void MainWindow::updateDebugMenuVisibility()
 {
   const bool visible = Host::GetBaseBoolSettingValue("Main", "ShowDebugMenu", false);
   m_ui.menuDebug->menuAction()->setVisible(visible);
+}
+
+void MainWindow::refreshGameList(bool invalidate_cache)
+{
+  m_game_list_widget->refresh(invalidate_cache);
 }
 
 void MainWindow::onCheckForUpdatesActionTriggered()
@@ -1877,7 +1947,7 @@ void MainWindow::onToolsCheatManagerTriggered()
 
 void MainWindow::openCPUDebugger()
 {
-  m_host_interface->pauseSystem(true, true);
+  g_emu_thread->pauseSystem(true, true);
   if (!System::IsValid())
     return;
 
@@ -1937,7 +2007,7 @@ void MainWindow::checkForUpdates(bool display_message)
   if (m_auto_updater_dialog)
     return;
 
-  m_auto_updater_dialog = new AutoUpdaterDialog(m_host_interface, this);
+  m_auto_updater_dialog = new AutoUpdaterDialog(g_emu_thread, this);
   connect(m_auto_updater_dialog, &AutoUpdaterDialog::updateCheckCompleted, this, &MainWindow::onUpdateCheckComplete);
   m_auto_updater_dialog->queueUpdateCheck(display_message);
 }

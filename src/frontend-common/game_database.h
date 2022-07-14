@@ -1,4 +1,5 @@
 #pragma once
+#if 0
 #include "core/types.h"
 #include "util/cd_image_hasher.h"
 #include <map>
@@ -61,3 +62,5 @@ public:
 private:
   void* m_json = nullptr;
 };
+
+#endif

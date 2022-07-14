@@ -1,3 +1,5 @@
+#if 0
+
 #include "game_database.h"
 #include "common/byte_stream.h"
 #include "common/file_system.h"
@@ -318,3 +320,5 @@ bool GameDatabase::GetEntryForDisc(CDImage* image, GameDatabaseEntry* entry) con
                     exe_hash_code.c_str());
   return false;
 }
+
+#endif

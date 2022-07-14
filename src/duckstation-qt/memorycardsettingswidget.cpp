@@ -89,8 +89,7 @@ void MemoryCardSettingsWidget::createUi(SettingsDialog* dialog)
       hbox->addWidget(label, 1);
 
       QPushButton* button = new QPushButton(tr("Memory Card Editor..."), box);
-      connect(button, &QPushButton::clicked,
-              []() { g_emu_thread->getMainWindow()->openMemoryCardEditor(QString(), QString()); });
+      connect(button, &QPushButton::clicked, []() { g_main_window->openMemoryCardEditor(QString(), QString()); });
       hbox->addWidget(button);
       box_layout->addLayout(hbox);
     }

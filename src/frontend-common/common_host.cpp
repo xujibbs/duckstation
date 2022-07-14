@@ -92,7 +92,6 @@ static void UpdateCheevosActive(SettingsInterface& si);
 static std::string s_settings_filename;
 static std::unique_ptr<FrontendCommon::InputOverlayUI> s_input_overlay_ui;
 static std::unique_ptr<HostDisplayTexture> m_logo_texture;
-static std::unique_ptr<GameList> m_game_list;
 
 #ifdef WITH_DISCORD_PRESENCE
 // discord rich presence
@@ -105,8 +104,6 @@ std::string m_discord_presence_cheevos_string;
 
 bool CommonHost::Initialize()
 {
-  m_game_list = std::make_unique<GameList>();
-
   // This will call back to Host::LoadSettings() -> ReloadSources().
   System::LoadSettings(false);
   UpdateLogSettings();
@@ -136,11 +133,6 @@ void CommonHost::Shutdown()
 #endif
 
   InputManager::CloseSources();
-}
-
-GameList* CommonHost::GetGameList()
-{
-  return m_game_list.get();
 }
 
 static void PrintCommandLineVersion(const char* frontend_name)
@@ -650,33 +642,6 @@ void Host::DisplayLoadingScreen(const char* message, int progress_min /*= -1*/, 
 
   ImGui::EndFrame();
   Host::GetHostDisplay()->Render();
-}
-
-void Host::GetGameInfo(const char* path, CDImage* image, std::string* code, std::string* title)
-{
-  const GameListEntry* list_entry = m_game_list->GetEntryForPath(path);
-  if (list_entry && list_entry->type != GameListEntryType::Playlist)
-  {
-    *code = list_entry->code;
-    *title = list_entry->title;
-    return;
-  }
-
-  if (image)
-  {
-    GameDatabaseEntry database_entry;
-    if (m_game_list->GetDatabaseEntryForDisc(image, &database_entry))
-    {
-      *code = std::move(database_entry.serial);
-      *title = std::move(database_entry.title);
-      return;
-    }
-
-    *code = System::GetGameCodeForImage(image, true);
-  }
-
-  const std::string display_name(FileSystem::GetDisplayNameFromPath(path));
-  *title = Path::GetFileTitle(display_name);
 }
 
 #if 0

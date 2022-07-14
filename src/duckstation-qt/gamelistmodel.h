@@ -1,4 +1,6 @@
 #pragma once
+#include "common/heterogeneous_containers.h"
+#include "core/game_database.h"
 #include "core/types.h"
 #include "frontend-common/game_list.h"
 #include <QtCore/QAbstractTableModel>
@@ -6,7 +8,6 @@
 #include <algorithm>
 #include <array>
 #include <optional>
-#include <unordered_map>
 
 class GameListModel final : public QAbstractTableModel
 {
@@ -16,7 +17,7 @@ public:
   enum Column : int
   {
     Column_Type,
-    Column_Code,
+    Column_Serial,
     Column_Title,
     Column_FileTitle,
     Column_Developer,
@@ -35,7 +36,7 @@ public:
   static std::optional<Column> getColumnIdForName(std::string_view name);
   static const char* getColumnName(Column col);
 
-  GameListModel(GameList* game_list, QObject* parent = nullptr);
+  GameListModel(QObject* parent = nullptr);
   ~GameListModel();
 
   int rowCount(const QModelIndex& parent = QModelIndex()) const override;
@@ -65,7 +66,6 @@ private:
   void loadCommonImages();
   void setColumnDisplayNames();
 
-  GameList* m_game_list;
   float m_cover_scale = 1.0f;
   bool m_show_titles_for_covers = false;
 
@@ -82,6 +82,6 @@ private:
   QPixmap m_region_us_pixmap;
   QPixmap m_region_other_pixmap;
 
-  std::array<QPixmap, static_cast<int>(GameListCompatibilityRating::Count)> m_compatibiliy_pixmaps;
-  mutable std::unordered_map<std::string, QPixmap> m_cover_pixmap_cache;
+  std::array<QPixmap, static_cast<int>(GameDatabase::CompatibilityRating::Count)> m_compatibiliy_pixmaps;
+  mutable UnorderedStringMap<QPixmap> m_cover_pixmap_cache;
 };

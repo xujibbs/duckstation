@@ -1,3 +1,4 @@
+#if 0
 #include "game_settings.h"
 #include "common/assert.h"
 #include "common/byte_stream.h"
@@ -1442,3 +1443,5 @@ void Entry::ApplySettings(bool display_osd_messages) const
 }
 
 } // namespace GameSettings
+
+#endif

@@ -8,7 +8,9 @@
 
 class SettingsInterface;
 
-struct GameListEntry;
+namespace GameList {
+struct Entry;
+}
 
 class GeneralSettingsWidget;
 class BIOSSettingsWidget;
@@ -46,7 +48,8 @@ public:
   };
 
   explicit SettingsDialog(QWidget* parent);
-  SettingsDialog(QWidget* parent, std::unique_ptr<SettingsInterface> sif, const GameListEntry* game, std::string serial);
+  SettingsDialog(QWidget* parent, std::unique_ptr<SettingsInterface> sif, const GameList::Entry* game,
+                 std::string serial);
   ~SettingsDialog();
 
   ALWAYS_INLINE bool isPerGameSettings() const { return static_cast<bool>(m_sif); }
@@ -97,7 +100,7 @@ private Q_SLOTS:
   void onRestoreDefaultsClicked();
 
 private:
-  void setupUi(const GameListEntry* game);
+  void setupUi(const GameList::Entry* game);
   void setCategoryHelpTexts();
 
   Ui::SettingsDialog m_ui;

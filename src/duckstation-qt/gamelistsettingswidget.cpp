@@ -4,6 +4,7 @@
 #include "common/string_util.h"
 #include "frontend-common/game_list.h"
 #include "gamelistsearchdirectoriesmodel.h"
+#include "mainwindow.h"
 #include "qthost.h"
 #include "qtutils.h"
 #include <QtCore/QAbstractTableModel>
@@ -16,8 +17,7 @@
 #include <QtWidgets/QMessageBox>
 #include <algorithm>
 
-GameListSettingsWidget::GameListSettingsWidget(SettingsDialog* dialog, QWidget* parent)
-  : QWidget(parent)
+GameListSettingsWidget::GameListSettingsWidget(SettingsDialog* dialog, QWidget* parent) : QWidget(parent)
 {
   m_ui.setupUi(this);
 
@@ -56,7 +56,7 @@ bool GameListSettingsWidget::addExcludedPath(const std::string& path)
     return false;
 
   m_ui.excludedPaths->addItem(QString::fromStdString(path));
-  g_emu_thread->refreshGameList();
+  g_main_window->refreshGameList(false);
   return true;
 }
 
@@ -161,15 +161,15 @@ void GameListSettingsWidget::onRemoveExcludedPathButtonClicked()
   Host::RemoveValueFromBaseStringListSetting("GameList", "ExcludedPaths", item->text().toUtf8().constData());
   delete item;
 
-  g_emu_thread->refreshGameList();
+  g_main_window->refreshGameList(false);
 }
 
 void GameListSettingsWidget::onRescanAllGamesClicked()
 {
-  g_emu_thread->refreshGameList(true, false);
+  g_main_window->refreshGameList(true);
 }
 
 void GameListSettingsWidget::onScanForNewGamesClicked()
 {
-  g_emu_thread->refreshGameList(false, false);
+  g_main_window->refreshGameList(false);
 }

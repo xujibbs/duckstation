@@ -30,7 +30,7 @@ SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent)
   setupUi(nullptr);
 }
 
-SettingsDialog::SettingsDialog(QWidget* parent, std::unique_ptr<SettingsInterface> sif, const GameListEntry* game,
+SettingsDialog::SettingsDialog(QWidget* parent, std::unique_ptr<SettingsInterface> sif, const GameList::Entry* game,
                                std::string serial)
   : QDialog(parent), m_sif(std::move(sif))
 {
@@ -39,7 +39,7 @@ SettingsDialog::SettingsDialog(QWidget* parent, std::unique_ptr<SettingsInterfac
   s_open_game_properties_dialogs.push_back(this);
 }
 
-void SettingsDialog::setupUi(const GameListEntry* game)
+void SettingsDialog::setupUi(const GameList::Entry* game)
 {
   m_ui.setupUi(this);
   setCategoryHelpTexts();

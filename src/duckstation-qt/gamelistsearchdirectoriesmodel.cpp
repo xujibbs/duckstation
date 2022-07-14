@@ -1,4 +1,5 @@
 #include "gamelistsearchdirectoriesmodel.h"
+#include "mainwindow.h"
 #include "qthost.h"
 #include "qtutils.h"
 #include <QtCore/QUrl>
@@ -80,7 +81,7 @@ bool GameListSearchDirectoriesModel::setData(const QModelIndex& index, const QVa
   Entry& entry = m_entries[row];
   entry.recursive = value == Qt::Checked;
   saveToSettings();
-  m_host_interface->refreshGameList(false);
+  g_main_window->refreshGameList(false);
   return true;
 }
 
@@ -101,7 +102,7 @@ void GameListSearchDirectoriesModel::addEntry(const QString& path, bool recursiv
   }
 
   saveToSettings();
-  m_host_interface->refreshGameList(false);
+  g_main_window->refreshGameList(false);
 }
 
 void GameListSearchDirectoriesModel::removeEntry(int row)
@@ -114,7 +115,7 @@ void GameListSearchDirectoriesModel::removeEntry(int row)
   endRemoveRows();
 
   saveToSettings();
-  m_host_interface->refreshGameList(false);
+  g_main_window->refreshGameList(false);
 }
 
 bool GameListSearchDirectoriesModel::isEntryRecursive(int row) const
@@ -131,7 +132,7 @@ void GameListSearchDirectoriesModel::setEntryRecursive(int row, bool recursive)
   emit dataChanged(index(row, 1), index(row, 1), {Qt::CheckStateRole});
 
   saveToSettings();
-  m_host_interface->refreshGameList(false);
+  g_main_window->refreshGameList(false);
 }
 
 void GameListSearchDirectoriesModel::openEntryInExplorer(QWidget* parent, int row) const

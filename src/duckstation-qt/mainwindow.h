@@ -13,6 +13,7 @@
 
 class QLabel;
 class QThread;
+class QProgressBar;
 
 class GameListWidget;
 class QtHostInterface;
@@ -22,7 +23,9 @@ class CheatManagerDialog;
 class DebuggerWindow;
 
 class HostDisplay;
+namespace GameList {
 struct GameListEntry;
+}
 
 class GDBServer;
 
@@ -31,7 +34,7 @@ class MainWindow final : public QMainWindow
   Q_OBJECT
 
 public:
-  explicit MainWindow(QtHostInterface* host_interface);
+  explicit MainWindow();
   ~MainWindow();
 
   /// Initializes the window. Call once at startup.
@@ -50,6 +53,7 @@ public Q_SLOTS:
   /// Updates debug menu visibility (hides if disabled).
   void updateDebugMenuVisibility();
 
+  void refreshGameList(bool invalidate_cache);
   void checkForUpdates(bool display_message);
 
 private Q_SLOTS:
@@ -102,10 +106,11 @@ private Q_SLOTS:
   void onToolsCheatManagerTriggered();
   void onToolsOpenDataDirectoryTriggered();
 
-  void onGameListEntrySelected(const GameListEntry* entry);
-  void onGameListEntryDoubleClicked(const GameListEntry* entry);
-  void onGameListContextMenuRequested(const QPoint& point, const GameListEntry* entry);
-  void onGameListSetCoverImageRequested(const GameListEntry* entry);
+  void onGameListRefreshComplete();
+  void onGameListRefreshProgress(const QString& status, int current, int total);
+  void onGameListSelectionChanged();
+  void onGameListEntryActivated();
+  void onGameListEntryContextMenuRequested(const QPoint& point);
 
   void onUpdateCheckComplete();
 
@@ -131,6 +136,10 @@ private:
   void connectSignals();
   void addThemeToMenu(const QString& name, const QString& key);
   void updateEmulationActions(bool starting, bool running, bool cheevos_challenge_mode);
+
+  void setProgressBar(int current, int total);
+  void clearProgressBar();
+
   bool isShowingGameList() const;
   void switchToGameListView();
   void switchToEmulationView();
@@ -153,15 +162,13 @@ private:
   void updateDebugMenuGPURenderer();
   void updateDebugMenuCropMode();
   void updateMenuSelectedTheme();
-  void ensureGameListLoaded();
   std::string getDeviceDiscPath(const QString& title);
+  void setGameListEntryCoverImage(const GameList::Entry* entry);
   void recreate();
 
   Ui::MainWindow m_ui;
 
   QString m_unthemed_style_name;
-
-  QtHostInterface* m_host_interface = nullptr;
 
   GameListWidget* m_game_list_widget = nullptr;
 
@@ -169,6 +176,7 @@ private:
   QtDisplayWidget* m_display_widget = nullptr;
   QtDisplayContainer* m_display_container = nullptr;
 
+  QProgressBar* m_status_progress_widget = nullptr;
   QLabel* m_status_speed_widget = nullptr;
   QLabel* m_status_fps_widget = nullptr;
   QLabel* m_status_frame_time_widget = nullptr;
@@ -193,3 +201,5 @@ private:
 
   GDBServer* m_gdb_server = nullptr;
 };
+
+extern MainWindow* g_main_window;

@@ -9,6 +9,7 @@
 #include "common/string_util.h"
 #include "core/bios.h"
 #include "core/host.h"
+#include "core/host_settings.h"
 #include "core/psf_loader.h"
 #include "core/settings.h"
 #include "core/system.h"
@@ -22,54 +23,56 @@
 #include <utility>
 Log_SetChannel(GameList);
 
-static std::string GetCacheFilename()
+enum : u32
 {
-  return Path::Combine(EmuFolders::Cache, "gamelist.cache");
+  GAME_LIST_CACHE_SIGNATURE = 0x45434C47,
+  GAME_LIST_CACHE_VERSION = 32
+};
+
+namespace GameList {
+using CacheMap = std::unordered_map<std::string, Entry>;
+
+static bool GetExeListEntry(const std::string& path, Entry* entry);
+static bool GetPsfListEntry(const std::string& path, Entry* entry);
+static bool GetDiscListEntry(const std::string& path, Entry* entry);
+
+static bool GetGameListEntryFromCache(const std::string& path, Entry* entry);
+static void ScanDirectory(const char* path, bool recursive, bool only_cache,
+                          const std::vector<std::string>& excluded_paths, ProgressCallback* progress);
+static bool AddFileFromCache(const std::string& path, std::time_t timestamp);
+static bool ScanFile(std::string path, std::time_t timestamp);
+
+static std::string GetCacheFilename();
+static void LoadCache();
+static bool LoadEntriesFromCache(ByteStream* stream);
+static bool OpenCacheForWriting();
+static bool WriteEntryToCache(const Entry* entry);
+static void CloseCacheFileStream();
+static void DeleteCacheFile();
+} // namespace GameList
+
+static std::vector<GameList::Entry> m_entries;
+static std::recursive_mutex s_mutex;
+static GameList::CacheMap m_cache_map;
+static std::unique_ptr<ByteStream> m_cache_write_stream;
+
+static bool m_game_list_loaded = false;
+
+bool GameList::IsGameListLoaded()
+{
+  return m_game_list_loaded;
 }
 
-GameList::GameList() = default;
-
-GameList::~GameList() = default;
-
-const char* GameList::EntryTypeToString(GameListEntryType type)
-{
-  static std::array<const char*, static_cast<int>(GameListEntryType::Count)> names = {
-    {"Disc", "PSExe", "Playlist", "PSF"}};
-  return names[static_cast<int>(type)];
-}
-
-const char* GameList::EntryCompatibilityRatingToString(GameListCompatibilityRating rating)
-{
-  static std::array<const char*, static_cast<int>(GameListCompatibilityRating::Count)> names = {
-    {"Unknown", "DoesntBoot", "CrashesInIntro", "CrashesInGame", "GraphicalAudioIssues", "NoIssues"}};
-  return names[static_cast<int>(rating)];
-}
-
-const char* GameList::GetGameListCompatibilityRatingString(GameListCompatibilityRating rating)
-{
-  static constexpr std::array<const char*, static_cast<size_t>(GameListCompatibilityRating::Count)> names = {
-    {TRANSLATABLE("GameListCompatibilityRating", "Unknown"),
-     TRANSLATABLE("GameListCompatibilityRating", "Doesn't Boot"),
-     TRANSLATABLE("GameListCompatibilityRating", "Crashes In Intro"),
-     TRANSLATABLE("GameListCompatibilityRating", "Crashes In-Game"),
-     TRANSLATABLE("GameListCompatibilityRating", "Graphical/Audio Issues"),
-     TRANSLATABLE("GameListCompatibilityRating", "No Issues")}};
-  return (rating >= GameListCompatibilityRating::Unknown && rating < GameListCompatibilityRating::Count) ?
-           names[static_cast<int>(rating)] :
-           "";
-}
-
-bool GameList::IsScannableFilename(const std::string& path)
+bool GameList::IsScannableFilename(const std::string_view& path)
 {
   // we don't scan bin files because they'll duplicate
-  std::string::size_type pos = path.rfind('.');
-  if (pos != std::string::npos && StringUtil::Strcasecmp(path.c_str() + pos, ".bin") == 0)
+  if (StringUtil::EndsWithNoCase(path, ".bin"))
     return false;
 
-  return System::IsLoadableFilename(path.c_str());
+  return System::IsLoadableFilename(path);
 }
 
-bool GameList::GetExeListEntry(const std::string& path, GameListEntry* entry)
+bool GameList::GetExeListEntry(const std::string& path, GameList::Entry* entry)
 {
   std::FILE* fp = FileSystem::OpenCFile(path.c_str(), "rb");
   if (!fp)
@@ -95,28 +98,28 @@ bool GameList::GetExeListEntry(const std::string& path, GameListEntry* entry)
   }
 
   const std::string display_name(FileSystem::GetDisplayNameFromPath(path));
-  entry->code.clear();
+  entry->serial.clear();
   entry->title = Path::StripExtension(display_name);
   entry->region = BIOS::GetPSExeDiscRegion(header);
   entry->total_size = ZeroExtend64(file_size);
-  entry->type = GameListEntryType::PSExe;
-  entry->compatibility_rating = GameListCompatibilityRating::Unknown;
+  entry->type = EntryType::PSExe;
+  entry->compatibility = GameDatabase::CompatibilityRating::Unknown;
 
   return true;
 }
 
-bool GameList::GetPsfListEntry(const std::string& path, GameListEntry* entry)
+bool GameList::GetPsfListEntry(const std::string& path, Entry* entry)
 {
   // we don't need to walk the library chain here - the top file is enough
   PSFLoader::File file;
   if (!file.Load(path.c_str()))
     return false;
 
-  entry->code.clear();
+  entry->serial.clear();
   entry->region = file.GetRegion();
   entry->total_size = static_cast<u32>(file.GetProgramData().size());
-  entry->type = GameListEntryType::PSF;
-  entry->compatibility_rating = GameListCompatibilityRating::Unknown;
+  entry->type = EntryType::PSF;
+  entry->compatibility = GameDatabase::CompatibilityRating::Unknown;
 
   // Game - Title
   std::optional<std::string> game(file.GetTagString("game"));
@@ -144,33 +147,43 @@ bool GameList::GetPsfListEntry(const std::string& path, GameListEntry* entry)
   return true;
 }
 
-bool GameList::GetGameListEntry(const std::string& path, GameListEntry* entry)
+bool GameList::GetDiscListEntry(const std::string& path, Entry* entry)
 {
-  if (System::IsExeFileName(path.c_str()))
-    return GetExeListEntry(path.c_str(), entry);
-  if (System::IsPsfFileName(path.c_str()))
-    return GetPsfListEntry(path.c_str(), entry);
-
   std::unique_ptr<CDImage> cdi = CDImage::Open(path.c_str(), nullptr);
   if (!cdi)
     return false;
 
   entry->path = path;
   entry->total_size = static_cast<u64>(CDImage::RAW_SECTOR_SIZE) * static_cast<u64>(cdi->GetLBACount());
-  entry->type = GameListEntryType::Disc;
-  entry->compatibility_rating = GameListCompatibilityRating::Unknown;
+  entry->type = EntryType::Disc;
+  entry->compatibility = GameDatabase::CompatibilityRating::Unknown;
 
   // try the database first
-  LoadDatabase();
-  GameDatabaseEntry dbentry;
-  if (!m_database.GetEntryForDisc(cdi.get(), &dbentry))
+  const GameDatabase::Entry* dentry = GameDatabase::GetEntryForDisc(cdi.get());
+  if (dentry)
+  {
+    // pull from database
+    entry->serial = dentry->serial;
+    entry->title = dentry->title;
+    entry->genre = dentry->genre;
+    entry->publisher = dentry->publisher;
+    entry->developer = dentry->developer;
+    entry->release_date = dentry->release_date;
+    entry->min_players = dentry->min_players;
+    entry->max_players = dentry->max_players;
+    entry->min_blocks = dentry->min_blocks;
+    entry->max_blocks = dentry->max_blocks;
+    entry->supported_controllers = dentry->supported_controllers;
+    entry->compatibility = dentry->compatibility;
+  }
+  else
   {
     const std::string display_name(FileSystem::GetDisplayNameFromPath(path));
 
     // no game code, so use the filename title
-    entry->code = System::GetGameCodeForImage(cdi.get(), true);
+    entry->serial = System::GetGameCodeForImage(cdi.get(), true);
     entry->title = Path::GetFileTitle(display_name);
-    entry->compatibility_rating = GameListCompatibilityRating::Unknown;
+    entry->compatibility = GameDatabase::CompatibilityRating::Unknown;
     entry->release_date = 0;
     entry->min_players = 0;
     entry->max_players = 0;
@@ -178,45 +191,15 @@ bool GameList::GetGameListEntry(const std::string& path, GameListEntry* entry)
     entry->max_blocks = 0;
     entry->supported_controllers = ~0u;
   }
-  else
-  {
-    // pull from database
-    entry->code = std::move(dbentry.serial);
-    entry->title = std::move(dbentry.title);
-    entry->genre = std::move(dbentry.genre);
-    entry->publisher = std::move(dbentry.publisher);
-    entry->developer = std::move(dbentry.developer);
-    entry->release_date = dbentry.release_date;
-    entry->min_players = static_cast<u8>(dbentry.min_players);
-    entry->max_players = static_cast<u8>(dbentry.max_players);
-    entry->min_blocks = static_cast<u8>(dbentry.min_blocks);
-    entry->max_blocks = static_cast<u8>(dbentry.max_blocks);
-    entry->supported_controllers = dbentry.supported_controllers_mask;
-  }
 
   // region detection
   entry->region = System::GetRegionFromSystemArea(cdi.get());
   if (entry->region == DiscRegion::Other)
-    entry->region = System::GetRegionForCode(entry->code);
-
-  if (!entry->code.empty())
-  {
-    const GameListCompatibilityEntry* compatibility_entry = GetCompatibilityEntryForCode(entry->code);
-    if (compatibility_entry)
-      entry->compatibility_rating = compatibility_entry->compatibility_rating;
-    else
-      Log_WarningPrintf("'%s' (%s) not found in compatibility list", entry->code.c_str(), entry->title.c_str());
-
-    if (!m_game_settings_load_tried)
-      LoadGameSettings();
-    const GameSettings::Entry* settings = m_game_settings.GetEntry(entry->code);
-    if (settings)
-      entry->settings = *settings;
-  }
+    entry->region = System::GetRegionForCode(entry->serial);
 
   if (cdi->HasSubImages())
   {
-    entry->type = GameListEntryType::Playlist;
+    entry->type = EntryType::Playlist;
 
     std::string image_title(cdi->GetMetadata("title"));
     if (!image_title.empty())
@@ -239,7 +222,16 @@ bool GameList::GetGameListEntry(const std::string& path, GameListEntry* entry)
   return true;
 }
 
-bool GameList::GetGameListEntryFromCache(const std::string& path, GameListEntry* entry)
+bool GameList::PopulateEntryFromPath(const std::string& path, Entry* entry)
+{
+  if (System::IsExeFileName(path))
+    return GetExeListEntry(path, entry);
+  if (System::IsPsfFileName(path.c_str()))
+    return GetPsfListEntry(path, entry);
+  return GetDiscListEntry(path, entry);
+}
+
+bool GameList::GetGameListEntryFromCache(const std::string& path, Entry* entry)
 {
   auto iter = m_cache_map.find(path);
   if (iter == m_cache_map.end())
@@ -248,24 +240,6 @@ bool GameList::GetGameListEntryFromCache(const std::string& path, GameListEntry*
   *entry = std::move(iter->second);
   m_cache_map.erase(iter);
   return true;
-}
-
-void GameList::LoadCache()
-{
-  std::string filename(GetCacheFilename());
-  std::unique_ptr<ByteStream> stream =
-    ByteStream::OpenFile(filename.c_str(), BYTESTREAM_OPEN_READ | BYTESTREAM_OPEN_STREAMED);
-  if (!stream)
-    return;
-
-  if (!LoadEntriesFromCache(stream.get()))
-  {
-    Log_WarningPrintf("Deleting corrupted cache file '%s'", filename.c_str());
-    stream.reset();
-    m_cache_map.clear();
-    DeleteCacheFile();
-    return;
-  }
 }
 
 static bool ReadString(ByteStream* stream, std::string* dest)
@@ -330,21 +304,21 @@ bool GameList::LoadEntriesFromCache(ByteStream* stream)
   while (stream->GetPosition() != stream->GetSize())
   {
     std::string path;
-    GameListEntry ge;
+    Entry ge;
 
     u8 type;
     u8 region;
     u8 compatibility_rating;
 
     if (!ReadU8(stream, &type) || !ReadU8(stream, &region) || !ReadString(stream, &path) ||
-        !ReadString(stream, &ge.code) || !ReadString(stream, &ge.title) || !ReadString(stream, &ge.genre) ||
+        !ReadString(stream, &ge.serial) || !ReadString(stream, &ge.title) || !ReadString(stream, &ge.genre) ||
         !ReadString(stream, &ge.publisher) || !ReadString(stream, &ge.developer) || !ReadU64(stream, &ge.total_size) ||
-        !ReadU64(stream, &ge.last_modified_time) || !ReadU64(stream, &ge.release_date) ||
+        !ReadU64(stream, reinterpret_cast<u64*>(&ge.last_modified_time)) || !ReadU64(stream, &ge.release_date) ||
         !ReadU32(stream, &ge.supported_controllers) || !ReadU8(stream, &ge.min_players) ||
         !ReadU8(stream, &ge.max_players) || !ReadU8(stream, &ge.min_blocks) || !ReadU8(stream, &ge.max_blocks) ||
         !ReadU8(stream, &compatibility_rating) || region >= static_cast<u8>(DiscRegion::Count) ||
-        type >= static_cast<u8>(GameListEntryType::Count) ||
-        compatibility_rating >= static_cast<u8>(GameListCompatibilityRating::Count))
+        type >= static_cast<u8>(EntryType::Count) ||
+        compatibility_rating >= static_cast<u8>(GameDatabase::CompatibilityRating::Count))
     {
       Log_WarningPrintf("Game list cache entry is corrupted");
       return false;
@@ -352,14 +326,8 @@ bool GameList::LoadEntriesFromCache(ByteStream* stream)
 
     ge.path = path;
     ge.region = static_cast<DiscRegion>(region);
-    ge.type = static_cast<GameListEntryType>(type);
-    ge.compatibility_rating = static_cast<GameListCompatibilityRating>(compatibility_rating);
-
-    if (!ge.settings.LoadFromStream(stream))
-    {
-      Log_WarningPrintf("Game list cache entry is corrupted (settings)");
-      return false;
-    }
+    ge.type = static_cast<EntryType>(type);
+    ge.compatibility = static_cast<GameDatabase::CompatibilityRating>(compatibility_rating);
 
     auto iter = m_cache_map.find(ge.path);
     if (iter != m_cache_map.end())
@@ -371,64 +339,91 @@ bool GameList::LoadEntriesFromCache(ByteStream* stream)
   return true;
 }
 
-bool GameList::OpenCacheForWriting()
-{
-  const std::string filename(GetCacheFilename());
-  Assert(!m_cache_write_stream);
-  m_cache_write_stream = ByteStream::OpenFile(filename.c_str(), BYTESTREAM_OPEN_CREATE | BYTESTREAM_OPEN_WRITE |
-                                                                  BYTESTREAM_OPEN_APPEND | BYTESTREAM_OPEN_STREAMED);
-  if (!m_cache_write_stream || !m_cache_write_stream->SeekToEnd())
-  {
-    m_cache_write_stream.reset();
-    return false;
-  }
-
-  if (m_cache_write_stream->GetPosition() == 0)
-  {
-    // new cache file, write header
-    if (!WriteU32(m_cache_write_stream.get(), GAME_LIST_CACHE_SIGNATURE) ||
-        !WriteU32(m_cache_write_stream.get(), GAME_LIST_CACHE_VERSION))
-    {
-      Log_ErrorPrintf("Failed to write game list cache header");
-      m_cache_write_stream.reset();
-      FileSystem::DeleteFile(filename.c_str());
-      return false;
-    }
-  }
-
-  return true;
-}
-
-bool GameList::WriteEntryToCache(const GameListEntry* entry, ByteStream* stream)
+bool GameList::WriteEntryToCache(const Entry* entry)
 {
   bool result = true;
-  result &= WriteU8(stream, static_cast<u8>(entry->type));
-  result &= WriteU8(stream, static_cast<u8>(entry->region));
-  result &= WriteString(stream, entry->path);
-  result &= WriteString(stream, entry->code);
-  result &= WriteString(stream, entry->title);
-  result &= WriteString(stream, entry->genre);
-  result &= WriteString(stream, entry->publisher);
-  result &= WriteString(stream, entry->developer);
-  result &= WriteU64(stream, entry->total_size);
-  result &= WriteU64(stream, entry->last_modified_time);
-  result &= WriteU64(stream, entry->release_date);
-  result &= WriteU32(stream, entry->supported_controllers);
-  result &= WriteU8(stream, entry->min_players);
-  result &= WriteU8(stream, entry->max_players);
-  result &= WriteU8(stream, entry->min_blocks);
-  result &= WriteU8(stream, entry->max_blocks);
-  result &= WriteU8(stream, static_cast<u8>(entry->compatibility_rating));
-  result &= entry->settings.SaveToStream(stream);
+  result &= WriteU8(m_cache_write_stream.get(), static_cast<u8>(entry->type));
+  result &= WriteU8(m_cache_write_stream.get(), static_cast<u8>(entry->region));
+  result &= WriteString(m_cache_write_stream.get(), entry->path);
+  result &= WriteString(m_cache_write_stream.get(), entry->serial);
+  result &= WriteString(m_cache_write_stream.get(), entry->title);
+  result &= WriteString(m_cache_write_stream.get(), entry->genre);
+  result &= WriteString(m_cache_write_stream.get(), entry->publisher);
+  result &= WriteString(m_cache_write_stream.get(), entry->developer);
+  result &= WriteU64(m_cache_write_stream.get(), entry->total_size);
+  result &= WriteU64(m_cache_write_stream.get(), entry->last_modified_time);
+  result &= WriteU64(m_cache_write_stream.get(), entry->release_date);
+  result &= WriteU32(m_cache_write_stream.get(), entry->supported_controllers);
+  result &= WriteU8(m_cache_write_stream.get(), entry->min_players);
+  result &= WriteU8(m_cache_write_stream.get(), entry->max_players);
+  result &= WriteU8(m_cache_write_stream.get(), entry->min_blocks);
+  result &= WriteU8(m_cache_write_stream.get(), entry->max_blocks);
+  result &= WriteU8(m_cache_write_stream.get(), static_cast<u8>(entry->compatibility));
   return result;
 }
 
-void GameList::FlushCacheFileStream()
+static std::string GameList::GetCacheFilename()
 {
-  if (!m_cache_write_stream)
+  return Path::Combine(EmuFolders::Cache, "gamelist.cache");
+}
+
+void GameList::LoadCache()
+{
+  std::string filename(GetCacheFilename());
+  std::unique_ptr<ByteStream> stream =
+    ByteStream::OpenFile(filename.c_str(), BYTESTREAM_OPEN_READ | BYTESTREAM_OPEN_STREAMED);
+  if (!stream)
     return;
 
-  m_cache_write_stream->Flush();
+  if (!LoadEntriesFromCache(stream.get()))
+  {
+    Log_WarningPrintf("Deleting corrupted cache file '%s'", filename.c_str());
+    stream.reset();
+    m_cache_map.clear();
+    DeleteCacheFile();
+    return;
+  }
+}
+
+bool GameList::OpenCacheForWriting()
+{
+  const std::string cache_filename(GetCacheFilename());
+  Assert(!m_cache_write_stream);
+
+  m_cache_write_stream = ByteStream::OpenFile(cache_filename.c_str(),
+                                              BYTESTREAM_OPEN_READ | BYTESTREAM_OPEN_WRITE | BYTESTREAM_OPEN_SEEKABLE);
+  if (m_cache_write_stream)
+  {
+    // check the header
+    u32 signature, version;
+    if (ReadU32(m_cache_write_stream.get(), &signature) && signature == GAME_LIST_CACHE_SIGNATURE &&
+        ReadU32(m_cache_write_stream.get(), &version) && version == GAME_LIST_CACHE_VERSION &&
+        m_cache_write_stream->SeekToEnd())
+    {
+      return true;
+    }
+
+    m_cache_write_stream.reset();
+  }
+
+  Log_InfoPrintf("Creating new game list cache file: '%s'", cache_filename.c_str());
+
+  m_cache_write_stream = ByteStream::OpenFile(
+    cache_filename.c_str(), BYTESTREAM_OPEN_CREATE | BYTESTREAM_OPEN_TRUNCATE | BYTESTREAM_OPEN_WRITE);
+  if (!m_cache_write_stream)
+    return false;
+
+  // new cache file, write header
+  if (!WriteU32(m_cache_write_stream.get(), GAME_LIST_CACHE_SIGNATURE) ||
+      !WriteU32(m_cache_write_stream.get(), GAME_LIST_CACHE_VERSION))
+  {
+    Log_ErrorPrintf("Failed to write game list cache header");
+    m_cache_write_stream.reset();
+    FileSystem::DeleteFile(cache_filename.c_str());
+    return false;
+  }
+
+  return true;
 }
 
 void GameList::CloseCacheFileStream()
@@ -440,29 +435,11 @@ void GameList::CloseCacheFileStream()
   m_cache_write_stream.reset();
 }
 
-void GameList::RewriteCacheFile()
-{
-  CloseCacheFileStream();
-  DeleteCacheFile();
-  if (OpenCacheForWriting())
-  {
-    for (const auto& it : m_entries)
-    {
-      if (!WriteEntryToCache(&it, m_cache_write_stream.get()))
-      {
-        Log_ErrorPrintf("Failed to write '%s' to new cache file", it.title.c_str());
-        break;
-      }
-    }
-
-    CloseCacheFileStream();
-  }
-}
-
 void GameList::DeleteCacheFile()
 {
-  const std::string filename(GetCacheFilename());
   Assert(!m_cache_write_stream);
+
+  const std::string filename(GetCacheFilename());
   if (!FileSystem::FileExists(filename.c_str()))
     return;
 
@@ -472,9 +449,15 @@ void GameList::DeleteCacheFile()
     Log_WarningPrintf("Failed to delete game list cache '%s'", filename.c_str());
 }
 
-void GameList::ScanDirectory(const char* path, bool recursive, ProgressCallback* progress)
+static bool IsPathExcluded(const std::vector<std::string>& excluded_paths, const std::string& path)
 {
-  Log_DevPrintf("Scanning %s%s", path, recursive ? " (recursively)" : "");
+  return (std::find(excluded_paths.begin(), excluded_paths.end(), path) != excluded_paths.end());
+}
+
+void GameList::ScanDirectory(const char* path, bool recursive, bool only_cache,
+                             const std::vector<std::string>& excluded_paths, ProgressCallback* progress)
+{
+  Log_InfoPrintf("Scanning %s%s", path, recursive ? " (recursively)" : "");
 
   progress->PushState();
   progress->SetFormattedStatusText("Scanning directory '%s'%s...", path, recursive ? " (recursively)" : "");
@@ -485,39 +468,48 @@ void GameList::ScanDirectory(const char* path, bool recursive, ProgressCallback*
                                     (FILESYSTEM_FIND_FILES | FILESYSTEM_FIND_HIDDEN_FILES),
                         &files);
 
+  u32 files_scanned = 0;
   progress->SetProgressRange(static_cast<u32>(files.size()));
   progress->SetProgressValue(0);
 
   for (FILESYSTEM_FIND_DATA& ffd : files)
   {
-    progress->IncrementProgressValue();
+    files_scanned++;
 
-    if (!IsScannableFilename(ffd.FileName) || IsPathExcluded(ffd.FileName) || GetEntryForPath(ffd.FileName.c_str()))
+    if (progress->IsCancelled() || !GameList::IsScannableFilename(ffd.FileName) ||
+        IsPathExcluded(excluded_paths, ffd.FileName))
+    {
       continue;
+    }
 
-    if (AddFileFromCache(ffd.FileName, ffd.ModificationTime))
-      continue;
+    {
+      std::unique_lock lock(s_mutex);
+      if (GetEntryForPath(ffd.FileName.c_str()) || AddFileFromCache(ffd.FileName, ffd.ModificationTime) || only_cache)
+      {
+        continue;
+      }
+    }
 
     // ownership of fp is transferred
     progress->SetFormattedStatusText("Scanning '%s'...", FileSystem::GetDisplayNameFromPath(ffd.FileName).c_str());
     ScanFile(std::move(ffd.FileName), ffd.ModificationTime);
+    progress->SetProgressValue(files_scanned);
   }
 
-  progress->SetProgressValue(static_cast<u32>(files.size()));
+  progress->SetProgressValue(files_scanned);
   progress->PopState();
 }
 
 bool GameList::AddFileFromCache(const std::string& path, std::time_t timestamp)
 {
-  if (std::any_of(m_entries.begin(), m_entries.end(),
-                  [&path](const GameListEntry& other) { return other.path == path; }))
+  if (std::any_of(m_entries.begin(), m_entries.end(), [&path](const Entry& other) { return other.path == path; }))
   {
     // already exists
     return true;
   }
 
-  GameListEntry entry;
-  if (!GetGameListEntryFromCache(path, &entry) || entry.last_modified_time != static_cast<u64>(timestamp))
+  Entry entry;
+  if (!GetGameListEntryFromCache(path, &entry) || entry.last_modified_time != timestamp)
     return false;
 
   m_entries.push_back(std::move(entry));
@@ -528,40 +520,38 @@ bool GameList::ScanFile(std::string path, std::time_t timestamp)
 {
   Log_DevPrintf("Scanning '%s'...", path.c_str());
 
-  GameListEntry entry;
-  if (!GetGameListEntry(path, &entry))
+  Entry entry;
+  if (!PopulateEntryFromPath(path, &entry))
     return false;
 
   entry.path = std::move(path);
-  entry.last_modified_time = static_cast<u64>(timestamp);
+  entry.last_modified_time = timestamp;
 
   if (m_cache_write_stream || OpenCacheForWriting())
   {
-    if (!WriteEntryToCache(&entry, m_cache_write_stream.get()))
+    if (!WriteEntryToCache(&entry))
       Log_WarningPrintf("Failed to write entry '%s' to cache", entry.path.c_str());
   }
 
+  std::unique_lock lock(s_mutex);
   m_entries.push_back(std::move(entry));
   return true;
 }
 
-void GameList::AddDirectory(std::string path, bool recursive)
+std::unique_lock<std::recursive_mutex> GameList::GetLock()
 {
-  auto iter = std::find_if(m_search_directories.begin(), m_search_directories.end(),
-                           [&path](const DirectoryEntry& de) { return de.path == path; });
-  if (iter != m_search_directories.end())
-  {
-    iter->recursive = recursive;
-    return;
-  }
-
-  m_search_directories.push_back({path, recursive});
+  return std::unique_lock<std::recursive_mutex>(s_mutex);
 }
 
-const GameListEntry* GameList::GetEntryForPath(const char* path) const
+const GameList::Entry* GameList::GetEntryByIndex(u32 index)
+{
+  return (index < m_entries.size()) ? &m_entries[index] : nullptr;
+}
+
+const GameList::Entry* GameList::GetEntryForPath(const char* path)
 {
   const size_t path_length = std::strlen(path);
-  for (const GameListEntry& entry : m_entries)
+  for (const Entry& entry : m_entries)
   {
     if (entry.path.size() == path_length && StringUtil::Strcasecmp(entry.path.c_str(), path) == 0)
       return &entry;
@@ -570,59 +560,26 @@ const GameListEntry* GameList::GetEntryForPath(const char* path) const
   return nullptr;
 }
 
-GameListEntry* GameList::GetMutableEntryForPath(const char* path)
+const GameList::Entry* GameList::GetEntryBySerial(const std::string_view& serial)
 {
-  const size_t path_length = std::strlen(path);
-  for (GameListEntry& entry : m_entries)
+  for (const Entry& entry : m_entries)
   {
-    if (entry.path.size() == path_length && StringUtil::Strcasecmp(entry.path.c_str(), path) == 0)
+    if (entry.serial.length() == serial.length() &&
+        StringUtil::Strncasecmp(entry.serial.c_str(), serial.data(), serial.length()) == 0)
+    {
       return &entry;
+    }
   }
 
   return nullptr;
 }
 
-const GameListCompatibilityEntry* GameList::GetCompatibilityEntryForCode(const std::string& code) const
+u32 GameList::GetEntryCount()
 {
-  if (!m_compatibility_list_load_tried)
-    const_cast<GameList*>(this)->LoadCompatibilityList();
-
-  auto iter = m_compatibility_list.find(code);
-  return (iter != m_compatibility_list.end()) ? &iter->second : nullptr;
+  return static_cast<u32>(m_entries.size());
 }
 
-bool GameList::GetDatabaseEntryForCode(const std::string_view& code, GameDatabaseEntry* entry)
-{
-  LoadDatabase();
-  return m_database.GetEntryForCode(code, entry);
-}
-
-bool GameList::GetDatabaseEntryForDisc(CDImage* image, GameDatabaseEntry* entry)
-{
-  LoadDatabase();
-  return m_database.GetEntryForDisc(image, entry);
-}
-
-bool GameList::IsPathExcluded(const std::string& path) const
-{
-  return (std::find(m_excluded_paths.begin(), m_excluded_paths.end(), path) != m_excluded_paths.end());
-}
-
-void GameList::SetSearchDirectoriesFromSettings(SettingsInterface& si)
-{
-  m_search_directories.clear();
-  m_excluded_paths = si.GetStringList("GameList", "ExcludedPaths");
-
-  std::vector<std::string> dirs = si.GetStringList("GameList", "Paths");
-  for (std::string& dir : dirs)
-    m_search_directories.push_back({std::move(dir), false});
-
-  dirs = si.GetStringList("GameList", "RecursivePaths");
-  for (std::string& dir : dirs)
-    m_search_directories.push_back({std::move(dir), true});
-}
-
-void GameList::Refresh(bool invalidate_cache, bool invalidate_database, ProgressCallback* progress /* = nullptr */)
+void GameList::Refresh(bool invalidate_cache, bool only_cache, ProgressCallback* progress /* = nullptr */)
 {
   m_game_list_loaded = true;
 
@@ -634,424 +591,53 @@ void GameList::Refresh(bool invalidate_cache, bool invalidate_database, Progress
   else
     LoadCache();
 
-  if (invalidate_database)
-    ClearDatabase();
-
-  m_entries.clear();
-
-  if (!m_search_directories.empty())
+  // don't delete the old entries, since the frontend might still access them
+  std::vector<Entry> old_entries;
   {
-    progress->SetProgressRange(static_cast<u32>(m_search_directories.size()));
+    std::unique_lock lock(s_mutex);
+    old_entries.swap(m_entries);
+  }
+
+  const std::vector<std::string> excluded_paths(Host::GetStringListSetting("GameList", "ExcludedPaths"));
+  const std::vector<std::string> dirs(Host::GetStringListSetting("GameList", "Paths"));
+  const std::vector<std::string> recursive_dirs(Host::GetStringListSetting("GameList", "RecursivePaths"));
+
+  if (!dirs.empty() || !recursive_dirs.empty())
+  {
+    progress->SetProgressRange(static_cast<u32>(dirs.size() + recursive_dirs.size()));
     progress->SetProgressValue(0);
 
-    for (u32 i = 0; i < static_cast<u32>(m_search_directories.size()); i++)
+    // we manually count it here, because otherwise pop state updates it itself
+    int directory_counter = 0;
+    for (const std::string& dir : dirs)
     {
-      const DirectoryEntry& de = m_search_directories[i];
-      ScanDirectory(de.path.c_str(), de.recursive, progress);
-      progress->SetProgressValue(i + 1);
+      if (progress->IsCancelled())
+        break;
+
+      ScanDirectory(dir.c_str(), false, only_cache, excluded_paths, progress);
+      progress->SetProgressValue(++directory_counter);
+    }
+    for (const std::string& dir : recursive_dirs)
+    {
+      if (progress->IsCancelled())
+        break;
+
+      ScanDirectory(dir.c_str(), true, only_cache, excluded_paths, progress);
+      progress->SetProgressValue(++directory_counter);
     }
   }
 
   // don't need unused cache entries
   CloseCacheFileStream();
   m_cache_map.clear();
-
-  // we don't need to keep the db around anymore, it's quick enough to re-parse if needed anyway
-  ClearDatabase();
 }
 
-void GameList::UpdateCompatibilityEntry(GameListCompatibilityEntry new_entry, bool save_to_list /*= true*/)
+std::string GameList::GetCoverImagePathForEntry(const Entry* entry)
 {
-  auto iter = m_compatibility_list.find(new_entry.code.c_str());
-  if (iter != m_compatibility_list.end())
-  {
-    iter->second = std::move(new_entry);
-  }
-  else
-  {
-    std::string key(new_entry.code);
-    iter = m_compatibility_list.emplace(std::move(key), std::move(new_entry)).first;
-  }
-
-  auto game_list_it = std::find_if(m_entries.begin(), m_entries.end(),
-                                   [&iter](const GameListEntry& ge) { return (ge.code == iter->second.code); });
-  if (game_list_it != m_entries.end() && game_list_it->compatibility_rating != iter->second.compatibility_rating)
-  {
-    game_list_it->compatibility_rating = iter->second.compatibility_rating;
-    RewriteCacheFile();
-  }
-
-  if (save_to_list)
-    SaveCompatibilityDatabaseForEntry(&iter->second);
+  return GetCoverImagePath(entry->path, entry->serial, entry->title);
 }
 
-void GameList::LoadDatabase()
-{
-  if (m_database_load_tried)
-    return;
-
-  m_database_load_tried = true;
-  m_database.Load();
-}
-
-void GameList::ClearDatabase()
-{
-  m_database.Unload();
-  m_database_load_tried = false;
-}
-
-class GameList::CompatibilityListVisitor final : public tinyxml2::XMLVisitor
-{
-public:
-  CompatibilityListVisitor(CompatibilityMap& database) : m_database(database) {}
-
-  static std::string FixupSerial(const std::string_view str)
-  {
-    std::string ret;
-    ret.reserve(str.length());
-    for (size_t i = 0; i < str.length(); i++)
-    {
-      if (str[i] == '.' || str[i] == '#')
-        continue;
-      else if (str[i] == ',')
-        break;
-      else if (str[i] == '_' || str[i] == ' ')
-        ret.push_back('-');
-      else
-        ret.push_back(static_cast<char>(std::toupper(str[i])));
-    }
-
-    return ret;
-  }
-
-  bool VisitEnter(const tinyxml2::XMLElement& element, const tinyxml2::XMLAttribute* firstAttribute) override
-  {
-    // recurse into gamelist
-    if (StringUtil::Strcasecmp(element.Name(), "compatibility-list") == 0)
-      return true;
-
-    if (StringUtil::Strcasecmp(element.Name(), "entry") != 0)
-      return false;
-
-    const char* attr = element.Attribute("code");
-    std::string code(attr ? attr : "");
-    attr = element.Attribute("title");
-    std::string title(attr ? attr : "");
-    attr = element.Attribute("region");
-    std::optional<DiscRegion> region = Settings::ParseDiscRegionName(attr ? attr : "");
-    const int compatibility = element.IntAttribute("compatibility");
-
-    const tinyxml2::XMLElement* upscaling_elem = element.FirstChildElement("upscaling-issues");
-    const tinyxml2::XMLElement* version_tested_elm = element.FirstChildElement("version-tested");
-    const tinyxml2::XMLElement* comments_elem = element.FirstChildElement("comments");
-    const char* upscaling = upscaling_elem ? upscaling_elem->GetText() : nullptr;
-    const char* version_tested = version_tested_elm ? version_tested_elm->GetText() : nullptr;
-    const char* comments = comments_elem ? comments_elem->GetText() : nullptr;
-    if (code.empty() || !region.has_value() || compatibility < 0 ||
-        compatibility >= static_cast<int>(GameListCompatibilityRating::Count))
-    {
-      Log_ErrorPrintf("Missing child node at line %d", element.GetLineNum());
-      return false;
-    }
-
-    auto iter = m_database.find(code);
-    if (iter != m_database.end())
-    {
-      Log_WarningPrintf("Duplicate game code in compatibility list: '%s'", code.c_str());
-      m_database.erase(iter);
-    }
-
-    GameListCompatibilityEntry entry;
-    entry.code = code;
-    entry.title = title;
-    entry.region = region.value();
-    entry.compatibility_rating = static_cast<GameListCompatibilityRating>(compatibility);
-
-    if (upscaling)
-      entry.upscaling_issues = upscaling;
-    if (version_tested)
-      entry.version_tested = version_tested;
-    if (comments)
-      entry.comments = comments;
-
-    m_database.emplace(std::move(code), std::move(entry));
-    return false;
-  }
-
-private:
-  CompatibilityMap& m_database;
-};
-
-void GameList::LoadCompatibilityList()
-{
-  if (m_compatibility_list_load_tried)
-    return;
-
-  m_compatibility_list_load_tried = true;
-
-  std::optional<std::string> compat(Host::ReadResourceFileToString("compatibility.xml"));
-  if (!compat.has_value())
-  {
-    Log_ErrorPrintf("Failed to load compatibility.xml from package");
-    return;
-  }
-
-  LoadCompatibilityListFromXML(compat.value());
-}
-
-bool GameList::LoadCompatibilityListFromXML(const std::string& xml)
-{
-  tinyxml2::XMLDocument doc;
-  tinyxml2::XMLError error = doc.Parse(xml.c_str(), xml.size());
-  if (error != tinyxml2::XML_SUCCESS)
-  {
-    Log_ErrorPrintf("Failed to parse compatibility list: %s", tinyxml2::XMLDocument::ErrorIDToName(error));
-    return false;
-  }
-
-  const tinyxml2::XMLElement* datafile_elem = doc.FirstChildElement("compatibility-list");
-  if (!datafile_elem)
-  {
-    Log_ErrorPrintf("Failed to get compatibility-list element");
-    return false;
-  }
-
-  CompatibilityListVisitor visitor(m_compatibility_list);
-  datafile_elem->Accept(&visitor);
-  Log_InfoPrintf("Loaded %zu entries from compatibility list", m_compatibility_list.size());
-  return true;
-}
-
-static void InitElementForCompatibilityEntry(tinyxml2::XMLDocument* doc, tinyxml2::XMLElement* entry_elem,
-                                             const GameListCompatibilityEntry* entry)
-{
-  entry_elem->SetAttribute("code", entry->code.c_str());
-  entry_elem->SetAttribute("title", entry->title.c_str());
-  entry_elem->SetAttribute("region", Settings::GetDiscRegionName(entry->region));
-  entry_elem->SetAttribute("compatibility", static_cast<int>(entry->compatibility_rating));
-
-  tinyxml2::XMLElement* elem = entry_elem->FirstChildElement("compatibility");
-  if (!elem)
-  {
-    elem = doc->NewElement("compatibility");
-    entry_elem->InsertEndChild(elem);
-  }
-  elem->SetText(GameList::GetGameListCompatibilityRatingString(entry->compatibility_rating));
-
-  if (!entry->upscaling_issues.empty())
-  {
-    elem = entry_elem->FirstChildElement("upscaling-issues");
-    if (!entry->upscaling_issues.empty())
-    {
-      if (!elem)
-      {
-        elem = doc->NewElement("upscaling-issues");
-        entry_elem->InsertEndChild(elem);
-      }
-      elem->SetText(entry->upscaling_issues.c_str());
-    }
-    else
-    {
-      if (elem)
-        entry_elem->DeleteChild(elem);
-    }
-  }
-
-  if (!entry->version_tested.empty())
-  {
-    elem = entry_elem->FirstChildElement("version-tested");
-    if (!entry->version_tested.empty())
-    {
-      if (!elem)
-      {
-        elem = doc->NewElement("version-tested");
-        entry_elem->InsertEndChild(elem);
-      }
-      elem->SetText(entry->version_tested.c_str());
-    }
-    else
-    {
-      if (elem)
-        entry_elem->DeleteChild(elem);
-    }
-  }
-
-  if (!entry->comments.empty())
-  {
-    elem = entry_elem->FirstChildElement("comments");
-    if (!entry->comments.empty())
-    {
-      if (!elem)
-      {
-        elem = doc->NewElement("comments");
-        entry_elem->InsertEndChild(elem);
-      }
-      elem->SetText(entry->comments.c_str());
-    }
-    else
-    {
-      if (elem)
-        entry_elem->DeleteChild(elem);
-    }
-  }
-}
-
-bool GameList::SaveCompatibilityDatabaseForEntry(const GameListCompatibilityEntry* entry)
-{
-  Panic("Fixme");
-  return false;
-#if 0
-  if (m_user_compatibility_list_filename.empty())
-    return false;
-
-  tinyxml2::XMLDocument doc;
-  tinyxml2::XMLError error;
-  tinyxml2::XMLElement* root_elem;
-  auto fp = FileSystem::OpenManagedCFile(m_user_compatibility_list_filename.c_str(), "rb");
-  if (fp)
-  {
-    error = doc.LoadFile(fp.get());
-    if (error != tinyxml2::XML_SUCCESS)
-    {
-      Log_ErrorPrintf("Failed to parse compatibility list '%s': %s", m_user_compatibility_list_filename.c_str(),
-                      tinyxml2::XMLDocument::ErrorIDToName(error));
-      return false;
-    }
-
-    root_elem = doc.FirstChildElement("compatibility-list");
-    if (!root_elem)
-    {
-      Log_ErrorPrintf("Failed to get compatibility-list element in '%s'", m_user_compatibility_list_filename.c_str());
-      return false;
-    }
-  }
-  else
-  {
-    root_elem = doc.NewElement("compatibility-list");
-    doc.InsertEndChild(root_elem);
-  }
-
-  tinyxml2::XMLElement* current_entry_elem = root_elem->FirstChildElement();
-  while (current_entry_elem)
-  {
-    const char* existing_code = current_entry_elem->Attribute("code");
-    if (existing_code && StringUtil::Strcasecmp(entry->code.c_str(), existing_code) == 0)
-    {
-      // update the existing element
-      InitElementForCompatibilityEntry(&doc, current_entry_elem, entry);
-      break;
-    }
-
-    current_entry_elem = current_entry_elem->NextSiblingElement();
-  }
-
-  if (!current_entry_elem)
-  {
-    // not found, insert
-    tinyxml2::XMLElement* entry_elem = doc.NewElement("entry");
-    root_elem->InsertEndChild(entry_elem);
-    InitElementForCompatibilityEntry(&doc, entry_elem, entry);
-  }
-
-  fp.reset();
-  fp = FileSystem::OpenManagedCFile(m_user_compatibility_list_filename.c_str(), "wb");
-  if (!fp)
-  {
-    Log_ErrorPrintf("Failed to open file '%s'", m_user_compatibility_list_filename.c_str());
-    return false;
-  }
-
-  error = doc.SaveFile(fp.get());
-  if (error != tinyxml2::XML_SUCCESS)
-  {
-    Log_ErrorPrintf("Failed to update compatibility list '%s': %s", m_user_compatibility_list_filename.c_str(),
-                    tinyxml2::XMLDocument::ErrorIDToName(error));
-    return false;
-  }
-
-  Log_InfoPrintf("Updated compatibility list '%s'", m_user_compatibility_list_filename.c_str());
-  return true;
-#endif
-}
-
-std::string GameList::ExportCompatibilityEntry(const GameListCompatibilityEntry* entry)
-{
-  tinyxml2::XMLDocument doc;
-  tinyxml2::XMLElement* root_elem = doc.NewElement("compatibility-list");
-  doc.InsertEndChild(root_elem);
-
-  tinyxml2::XMLElement* entry_elem = doc.NewElement("entry");
-  root_elem->InsertEndChild(entry_elem);
-  InitElementForCompatibilityEntry(&doc, entry_elem, entry);
-
-  tinyxml2::XMLPrinter printer;
-  // doc.Print(&printer);
-  entry_elem->Accept(&printer);
-  return std::string(printer.CStr(), printer.CStrSize());
-}
-
-void GameList::LoadGameSettings()
-{
-  if (m_game_settings_load_tried)
-    return;
-
-  m_game_settings_load_tried = true;
-
-  std::optional<std::string> gsettings(Host::ReadResourceFileToString("gamesettings.ini"));
-  if (!gsettings.has_value())
-  {
-    Log_ErrorPrintf("Failed to load gamesettings.ini from package");
-    return;
-  }
-
-  m_game_settings.Load(gsettings.value());
-}
-
-const GameSettings::Entry* GameList::GetGameSettings(const std::string& filename, const std::string& game_code)
-{
-  const GameListEntry* entry = GetMutableEntryForPath(filename.c_str());
-  if (entry)
-    return &entry->settings;
-
-  if (!m_game_settings_load_tried)
-    LoadGameSettings();
-
-  return m_game_settings.GetEntry(game_code);
-}
-
-const GameSettings::Entry* GameList::GetGameSettingsForCode(const std::string& game_code)
-{
-  if (!m_game_settings_load_tried)
-    LoadGameSettings();
-
-  return m_game_settings.GetEntry(game_code);
-}
-
-void GameList::UpdateGameSettings(const std::string& filename, const std::string& game_code,
-                                  const std::string& game_title, const GameSettings::Entry& new_entry,
-                                  bool save_to_list /* = true */)
-{
-  GameListEntry* entry = GetMutableEntryForPath(filename.c_str());
-  if (entry)
-  {
-    entry->settings = new_entry;
-    RewriteCacheFile();
-  }
-
-  if (save_to_list)
-  {
-    Panic("Fixme");
-    // m_game_settings.SetEntry(game_code, game_title, new_entry, m_user_game_settings_filename.c_str());
-  }
-}
-
-std::string GameList::GetCoverImagePathForEntry(const GameListEntry* entry) const
-{
-  return GetCoverImagePath(entry->path, entry->code, entry->title);
-}
-
-std::string GameList::GetCoverImagePath(const std::string& path, const std::string& serial,
-                                        const std::string& title) const
+std::string GameList::GetCoverImagePath(const std::string& path, const std::string& serial, const std::string& title)
 {
   static constexpr auto extensions = make_array("jpg", "jpeg", "png", "webp");
 
@@ -1094,7 +680,7 @@ std::string GameList::GetCoverImagePath(const std::string& path, const std::stri
   return cover_path;
 }
 
-std::string GameList::GetNewCoverImagePathForEntry(const GameListEntry* entry, const char* new_filename) const
+std::string GameList::GetNewCoverImagePathForEntry(const Entry* entry, const char* new_filename)
 {
   const char* extension = std::strrchr(new_filename, '.');
   if (!extension)
@@ -1114,14 +700,14 @@ std::string GameList::GetNewCoverImagePathForEntry(const GameListEntry* entry, c
 
   std::string name;
   if (sanitized_name != entry->title)
-    name = fmt::format("{}{}", entry->code, extension);
+    name = fmt::format("{}{}", entry->serial, extension);
   else
     name = fmt::format("{}{}", entry->title, extension);
 
   return Path::Combine(EmuFolders::Cache, name);
 }
 
-size_t GameListEntry::GetReleaseDateString(char* buffer, size_t buffer_size) const
+size_t GameList::Entry::GetReleaseDateString(char* buffer, size_t buffer_size) const
 {
   if (release_date == 0)
     return StringUtil::Strlcpy(buffer, "Unknown", buffer_size);

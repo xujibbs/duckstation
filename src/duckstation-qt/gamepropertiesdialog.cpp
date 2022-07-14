@@ -23,8 +23,8 @@ Log_SetChannel(GamePropertiesDialog);
 static constexpr char MEMORY_CARD_IMAGE_FILTER[] =
   QT_TRANSLATE_NOOP("MemoryCardSettingsWidget", "All Memory Card Types (*.mcd *.mcr *.mc)");
 
-GamePropertiesDialog::GamePropertiesDialog(QtHostInterface* host_interface, QWidget* parent /* = nullptr */)
-  : QDialog(parent), m_host_interface(host_interface)
+GamePropertiesDialog::GamePropertiesDialog(QWidget* parent /* = nullptr */)
+  : QDialog(parent)
 {
   m_ui.setupUi(this);
   setupAdditionalUi();
@@ -57,7 +57,7 @@ void GamePropertiesDialog::clear()
   m_ui.tracks->clearContents();
 }
 
-void GamePropertiesDialog::populate(const GameListEntry* ge)
+void GamePropertiesDialog::populate(const GameList::Entry* ge)
 {
   const QString title_qstring(QString::fromStdString(ge->title));
 
@@ -73,15 +73,15 @@ void GamePropertiesDialog::populate(const GameListEntry* ge)
   m_ui.imagePath->setText(QString::fromStdString(ge->path));
   m_ui.title->setText(title_qstring);
 
-  if (!hash_code.empty() && ge->code != hash_code)
-    m_ui.gameCode->setText(QStringLiteral("%1 / %2").arg(ge->code.c_str()).arg(hash_code.c_str()));
+  if (!hash_code.empty() && ge->serial != hash_code)
+    m_ui.gameCode->setText(QStringLiteral("%1 / %2").arg(ge->serial.c_str()).arg(hash_code.c_str()));
   else
-    m_ui.gameCode->setText(QString::fromStdString(ge->code));
+    m_ui.gameCode->setText(QString::fromStdString(ge->serial));
   m_ui.revision->setText(tr("<not verified>"));
 
   m_ui.region->setCurrentIndex(static_cast<int>(ge->region));
 
-  if (ge->code.empty())
+  if (ge->serial.empty())
   {
     // can't fill in info without a code
     m_ui.gameCode->setDisabled(true);
@@ -94,19 +94,20 @@ void GamePropertiesDialog::populate(const GameListEntry* ge)
   }
   else
   {
-    populateCompatibilityInfo(ge->code);
+    populateCompatibilityInfo(ge->serial);
   }
 
   populateTracksInfo(ge->path);
 
-  m_game_code = ge->code;
+  m_game_code = ge->serial;
   m_game_title = ge->title;
-  m_game_settings = ge->settings;
+  //m_game_settings = ge->settings;
   populateGameSettings();
 }
 
 void GamePropertiesDialog::populateCompatibilityInfo(const std::string& game_code)
 {
+#if 0
   const GameListCompatibilityEntry* entry = m_host_interface->getGameList()->GetCompatibilityEntryForCode(game_code);
 
   {
@@ -123,6 +124,7 @@ void GamePropertiesDialog::populateCompatibilityInfo(const std::string& game_cod
     QSignalBlocker blocker(m_ui.comments);
     m_ui.comments->setText(entry ? QString::fromStdString(entry->comments) : QString());
   }
+#endif
 }
 
 void GamePropertiesDialog::setupAdditionalUi()
@@ -133,12 +135,14 @@ void GamePropertiesDialog::setupAdditionalUi()
   for (u8 i = 0; i < static_cast<u8>(DiscRegion::Count); i++)
     m_ui.region->addItem(qApp->translate("DiscRegion", Settings::GetDiscRegionDisplayName(static_cast<DiscRegion>(i))));
 
+#if 0
   for (int i = 0; i < static_cast<int>(GameListCompatibilityRating::Count); i++)
   {
     m_ui.compatibility->addItem(
       qApp->translate("GameListCompatibilityRating",
                       GameList::GetGameListCompatibilityRatingString(static_cast<GameListCompatibilityRating>(i))));
   }
+#endif
 
   m_ui.userRenderer->addItem(tr("(unchanged)"));
   for (u32 i = 0; i < static_cast<u32>(GPURenderer::Count); i++)
@@ -218,6 +222,7 @@ void GamePropertiesDialog::setupAdditionalUi()
       qApp->translate("MemoryCardType", Settings::GetMemoryCardTypeDisplayName(static_cast<MemoryCardType>(i))));
   }
 
+#if 0
   QGridLayout* traits_layout = new QGridLayout(m_ui.compatibilityTraits);
   for (u32 i = 0; i < static_cast<u32>(GameSettings::Trait::Count); i++)
   {
@@ -226,13 +231,14 @@ void GamePropertiesDialog::setupAdditionalUi()
       m_ui.compatibilityTraits);
     traits_layout->addWidget(m_trait_checkboxes[i], i / 2, i % 2);
   }
+#endif
 
   setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
 }
 
-void GamePropertiesDialog::showForEntry(QtHostInterface* host_interface, const GameListEntry* ge, QWidget* parent)
+void GamePropertiesDialog::showForEntry(const GameList::Entry* ge, QWidget* parent)
 {
-  GamePropertiesDialog* gpd = new GamePropertiesDialog(host_interface, parent);
+  GamePropertiesDialog* gpd = new GamePropertiesDialog(parent);
   gpd->populate(ge);
   gpd->show();
   gpd->onResize();
@@ -301,6 +307,7 @@ void GamePropertiesDialog::connectBooleanUserSetting(QCheckBox* cb, std::optiona
 
 void GamePropertiesDialog::populateGameSettings()
 {
+#if 0
   const GameSettings::Entry& gs = m_game_settings;
 
   for (u32 i = 0; i < static_cast<u32>(GameSettings::Trait::Count); i++)
@@ -526,12 +533,15 @@ void GamePropertiesDialog::populateGameSettings()
     QSignalBlocker sb(m_ui.userMemoryCard2SharedPath);
     m_ui.userMemoryCard2SharedPath->setText(QString::fromStdString(gs.memory_card_2_shared_path));
   }
+#endif
 }
 
 void GamePropertiesDialog::saveGameSettings()
 {
+#if 0
   m_host_interface->getGameList()->UpdateGameSettings(m_path, m_game_code, m_game_title, m_game_settings, true);
   m_host_interface->applySettings(true);
+#endif
 }
 
 void GamePropertiesDialog::closeEvent(QCloseEvent* ev)
@@ -552,6 +562,7 @@ void GamePropertiesDialog::onResize()
 
 void GamePropertiesDialog::connectUi()
 {
+#if 0
   connect(m_ui.compatibility, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged), this,
           &GamePropertiesDialog::saveCompatibilityInfo);
   connect(m_ui.comments, &QLineEdit::textChanged, this, &GamePropertiesDialog::setCompatibilityInfoChanged);
@@ -866,6 +877,7 @@ void GamePropertiesDialog::connectUi()
       m_game_settings.gpu_pgxp_depth_threshold = static_cast<float>(value);
     saveGameSettings();
   });
+#endif
 }
 
 void GamePropertiesDialog::updateCPUClockSpeedLabel()
@@ -892,8 +904,9 @@ void GamePropertiesDialog::onUserAspectRatioChanged()
   m_ui.userCustomAspectRatioSeparator->setVisible(is_custom);
 }
 
-void GamePropertiesDialog::fillEntryFromUi(GameListCompatibilityEntry* entry)
+void GamePropertiesDialog::fillEntryFromUi()
 {
+#if 0
   entry->code = m_game_code;
   entry->title = m_game_title;
   entry->version_tested = m_ui.versionTested->text().toStdString();
@@ -901,6 +914,7 @@ void GamePropertiesDialog::fillEntryFromUi(GameListCompatibilityEntry* entry)
   entry->comments = m_ui.comments->text().toStdString();
   entry->compatibility_rating = static_cast<GameListCompatibilityRating>(m_ui.compatibility->currentIndex());
   entry->region = static_cast<DiscRegion>(m_ui.region->currentIndex());
+#endif
 }
 
 void GamePropertiesDialog::saveCompatibilityInfo()
@@ -908,12 +922,14 @@ void GamePropertiesDialog::saveCompatibilityInfo()
   if (m_game_code.empty())
     return;
 
+#if 0
   GameListCompatibilityEntry new_entry;
   fillEntryFromUi(&new_entry);
 
   m_host_interface->getGameList()->UpdateCompatibilityEntry(std::move(new_entry), true);
   emit m_host_interface->gameListRefreshed();
   m_compatibility_info_changed = false;
+#endif
 }
 
 void GamePropertiesDialog::saveCompatibilityInfoIfChanged()
@@ -957,6 +973,7 @@ void GamePropertiesDialog::onExportCompatibilityInfoClicked()
   if (m_ui.gameCode->text().isEmpty())
     return;
 
+#if 0
   GameListCompatibilityEntry new_entry;
   fillEntryFromUi(&new_entry);
 
@@ -967,10 +984,12 @@ void GamePropertiesDialog::onExportCompatibilityInfoClicked()
                                        &copy_to_clipboard);
   if (copy_to_clipboard)
     QGuiApplication::clipboard()->setText(xml);
+#endif
 }
 
 void GamePropertiesDialog::computeTrackHashes(std::string& redump_keyword)
 {
+#if 0
   if (m_path.empty())
     return;
 
@@ -1100,4 +1119,5 @@ void GamePropertiesDialog::computeTrackHashes(std::string& redump_keyword)
     status_text->setForeground(brush);
     hash_text->setForeground(brush);
   }
+#endif
 }

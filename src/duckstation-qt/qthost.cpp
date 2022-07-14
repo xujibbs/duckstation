@@ -88,7 +88,7 @@ QtHostInterface* g_emu_thread;
 QtHostInterface::QtHostInterface(QObject* parent) : QObject(parent)
 {
   qRegisterMetaType<std::shared_ptr<SystemBootParameters>>();
-  qRegisterMetaType<const GameListEntry*>();
+  qRegisterMetaType<const GameList::Entry*>();
   qRegisterMetaType<GPURenderer>();
   g_emu_thread = this;
 }
@@ -134,8 +134,6 @@ bool QtHostInterface::Initialize()
 void QtHostInterface::Shutdown()
 {
   stopThread();
-
-  delete m_main_window;
 }
 
 bool QtHost::InBatchMode()
@@ -450,24 +448,6 @@ void QtHostInterface::checkRenderToMainState()
       renderDisplay();
     }
   }
-}
-
-void QtHostInterface::refreshGameList(bool invalidate_cache /* = false */, bool invalidate_database /* = false */)
-{
-  Assert(!isOnWorkerThread());
-
-  auto lock = Host::GetSettingsLock();
-  getGameList()->SetSearchDirectoriesFromSettings(*s_base_settings_interface.get());
-
-  QtProgressCallback progress(m_main_window, invalidate_cache ? 0.0f : 1.0f);
-  getGameList()->Refresh(invalidate_cache, invalidate_database, &progress);
-  emit gameListRefreshed();
-}
-
-void QtHostInterface::setMainWindow(MainWindow* window)
-{
-  DebugAssert((!m_main_window && window) || (m_main_window && !window));
-  m_main_window = window;
 }
 
 void QtHostInterface::bootSystem(std::shared_ptr<SystemBootParameters> params)
@@ -1007,7 +987,7 @@ void QtHostInterface::populateLoadStateMenu(const char* game_code, QMenu* menu)
 
   connect(menu->addAction(tr("Load From File...")), &QAction::triggered, [this]() {
     const QString path(
-      QFileDialog::getOpenFileName(m_main_window, tr("Select Save State File"), QString(), tr("Save States (*.sav)")));
+      QFileDialog::getOpenFileName(g_main_window, tr("Select Save State File"), QString(), tr("Save States (*.sav)")));
     if (path.isEmpty())
       return;
 
@@ -1049,7 +1029,7 @@ void QtHostInterface::populateSaveStateMenu(const char* game_code, QMenu* menu)
       return;
 
     const QString path(
-      QFileDialog::getSaveFileName(m_main_window, tr("Select Save State File"), QString(), tr("Save States (*.sav)")));
+      QFileDialog::getSaveFileName(g_main_window, tr("Select Save State File"), QString(), tr("Save States (*.sav)")));
     if (path.isEmpty())
       return;
 
@@ -1069,7 +1049,7 @@ void QtHostInterface::populateSaveStateMenu(const char* game_code, QMenu* menu)
     add_slot(tr("Global Save %1 (%2)"), tr("Global Save %1 (Empty)"), true, static_cast<s32>(slot));
 }
 
-void QtHostInterface::populateGameListContextMenu(const GameListEntry* entry, QWidget* parent_window, QMenu* menu)
+void QtHostInterface::populateGameListContextMenu(const GameList::Entry* entry, QWidget* parent_window, QMenu* menu)
 {
   QAction* resume_action = menu->addAction(tr("Resume"));
   resume_action->setEnabled(false);
@@ -1077,9 +1057,9 @@ void QtHostInterface::populateGameListContextMenu(const GameListEntry* entry, QW
   QMenu* load_state_menu = menu->addMenu(tr("Load State"));
   load_state_menu->setEnabled(false);
 
-  if (!entry->code.empty())
+  if (!entry->serial.empty())
   {
-    const std::vector<SaveStateInfo> available_states(System::GetAvailableSaveStates(entry->code.c_str()));
+    const std::vector<SaveStateInfo> available_states(System::GetAvailableSaveStates(entry->serial.c_str()));
     const QString timestamp_format = QLocale::system().dateTimeFormat(QLocale::ShortFormat);
     const bool challenge_mode = Cheevos::IsChallengeModeActive();
     for (const SaveStateInfo& ssi : available_states)
@@ -1116,7 +1096,7 @@ void QtHostInterface::populateGameListContextMenu(const GameListEntry* entry, QW
     for (u32 i = 0; i < 2; i++)
     {
       MemoryCardType type = g_settings.memory_card_types[i];
-      if (entry->code.empty() && type == MemoryCardType::PerGame)
+      if (entry->serial.empty() && type == MemoryCardType::PerGame)
         type = MemoryCardType::Shared;
 
       switch (type)
@@ -1136,7 +1116,7 @@ void QtHostInterface::populateGameListContextMenu(const GameListEntry* entry, QW
           }
           break;
         case MemoryCardType::PerGame:
-          paths[i] = QString::fromStdString(g_settings.GetGameMemoryCardPath(entry->code.c_str(), i));
+          paths[i] = QString::fromStdString(g_settings.GetGameMemoryCardPath(entry->serial.c_str(), i));
           break;
         case MemoryCardType::PerGameTitle:
           paths[i] = QString::fromStdString(
@@ -1154,7 +1134,7 @@ void QtHostInterface::populateGameListContextMenu(const GameListEntry* entry, QW
       }
     }
 
-    m_main_window->openMemoryCardEditor(paths[0], paths[1]);
+    g_main_window->openMemoryCardEditor(paths[0], paths[1]);
   });
 
   const bool has_any_states = resume_action->isEnabled() || load_state_menu->isEnabled();
@@ -1166,13 +1146,13 @@ void QtHostInterface::populateGameListContextMenu(const GameListEntry* entry, QW
       if (QMessageBox::warning(
             parent_window, tr("Confirm Save State Deletion"),
             tr("Are you sure you want to delete all save states for %1?\n\nThe saves will not be recoverable.")
-              .arg(QString::fromStdString(entry->code)),
+              .arg(QString::fromStdString(entry->serial)),
             QMessageBox::Yes, QMessageBox::No) != QMessageBox::Yes)
       {
         return;
       }
 
-      System::DeleteSaveStates(entry->code.c_str(), true);
+      System::DeleteSaveStates(entry->serial.c_str(), true);
     });
   }
 }
@@ -1766,7 +1746,7 @@ void Host::ReportErrorAsync(const std::string_view& title, const std::string_vie
   }
 
   QMetaObject::invokeMethod(
-    g_emu_thread->getMainWindow(), "reportError", Qt::QueuedConnection,
+    g_main_window, "reportError", Qt::QueuedConnection,
     Q_ARG(const QString&, title.empty() ? QString() : QString::fromUtf8(title.data(), title.size())),
     Q_ARG(const QString&, message.empty() ? QString() : QString::fromUtf8(message.data(), message.size())));
 }
@@ -1779,8 +1759,8 @@ bool Host::ConfirmMessage(const std::string_view& title, const std::string_view&
     SetFullscreen(false);
 #endif
 
-  const bool result = emit g_emu_thread->messageConfirmed(
-    QString::fromUtf8(title.data(), title.size()), QString::fromUtf8(message.data(), message.size()));
+  const bool result = emit g_emu_thread->messageConfirmed(QString::fromUtf8(title.data(), title.size()),
+                                                          QString::fromUtf8(message.data(), message.size()));
 
 #if 0
   if (was_fullscreen)

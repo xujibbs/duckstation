@@ -4,8 +4,6 @@
 
 class SettingsInterface;
 
-class GameList;
-
 namespace CommonHost {
 /// Parses command line parameters for all frontends.
 bool ParseCommandLineParameters(int argc, char* argv[], std::unique_ptr<SystemBootParameters>* out_boot_params);
@@ -28,7 +26,4 @@ void OnGameChanged(const std::string& disc_path, const std::string& game_serial,
 void PumpMessagesOnCPUThread();
 bool CreateHostDisplayResources();
 void ReleaseHostDisplayResources();
-
-/// TEMP: Returns the game list.
-GameList* GetGameList();
 } // namespace CommonHost

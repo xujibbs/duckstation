@@ -1,4 +1,5 @@
 #pragma once
+#if 0
 #include "core/types.h"
 #include <bitset>
 #include <optional>
@@ -120,3 +121,4 @@ private:
 };
 
 }; // namespace GameSettings
+#endif

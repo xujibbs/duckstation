@@ -10,7 +10,7 @@
 #include <QtGui/QPainter>
 
 static constexpr std::array<const char*, GameListModel::Column_Count> s_column_names = {
-  {"Type", "Code", "Title", "File Title", "Developer", "Publisher", "Genre", "Year", "Players", "Size", "Region",
+  {"Type", "Serial", "Title", "File Title", "Developer", "Publisher", "Genre", "Year", "Players", "Size", "Region",
    "Compatibility", "Cover"}};
 
 static constexpr int COVER_ART_WIDTH = 512;
@@ -104,8 +104,7 @@ const char* GameListModel::getColumnName(Column col)
   return s_column_names[static_cast<int>(col)];
 }
 
-GameListModel::GameListModel(GameList* game_list, QObject* parent /* = nullptr */)
-  : QAbstractTableModel(parent), m_game_list(game_list)
+GameListModel::GameListModel(QObject* parent /* = nullptr */) : QAbstractTableModel(parent)
 {
   loadCommonImages();
   setColumnDisplayNames();
@@ -147,7 +146,7 @@ int GameListModel::rowCount(const QModelIndex& parent) const
   if (parent.isValid())
     return 0;
 
-  return static_cast<int>(m_game_list->GetEntryCount());
+  return static_cast<int>(GameList::GetEntryCount());
 }
 
 int GameListModel::columnCount(const QModelIndex& parent) const
@@ -164,10 +163,13 @@ QVariant GameListModel::data(const QModelIndex& index, int role) const
     return {};
 
   const int row = index.row();
-  if (row < 0 || row >= static_cast<int>(m_game_list->GetEntryCount()))
+  if (row < 0 || row >= static_cast<int>(GameList::GetEntryCount()))
     return {};
 
-  const GameListEntry& ge = m_game_list->GetEntries()[row];
+  const auto lock = GameList::GetLock();
+  const GameList::Entry* ge = GameList::GetEntryByIndex(row);
+  if (!ge)
+    return {};
 
   switch (role)
   {
@@ -175,33 +177,33 @@ QVariant GameListModel::data(const QModelIndex& index, int role) const
     {
       switch (index.column())
       {
-        case Column_Code:
-          return QString::fromStdString(ge.code);
+        case Column_Serial:
+          return QString::fromStdString(ge->serial);
 
         case Column_Title:
-          return QString::fromStdString(ge.title);
+          return QString::fromStdString(ge->title);
 
         case Column_FileTitle:
         {
-          const std::string_view file_title(Path::GetFileTitle(ge.path));
+          const std::string_view file_title(Path::GetFileTitle(ge->path));
           return QString::fromUtf8(file_title.data(), static_cast<int>(file_title.length()));
         }
 
         case Column_Developer:
-          return QString::fromStdString(ge.developer);
+          return QString::fromStdString(ge->developer);
 
         case Column_Publisher:
-          return QString::fromStdString(ge.publisher);
+          return QString::fromStdString(ge->publisher);
 
         case Column_Genre:
-          return QString::fromStdString(ge.genre);
+          return QString::fromStdString(ge->genre);
 
         case Column_Year:
         {
-          if (ge.release_date != 0)
+          if (ge->release_date != 0)
           {
             return QStringLiteral("%1").arg(
-              QDateTime::fromSecsSinceEpoch(static_cast<qint64>(ge.release_date), Qt::UTC).date().year());
+              QDateTime::fromSecsSinceEpoch(static_cast<qint64>(ge->release_date), Qt::UTC).date().year());
           }
           else
           {
@@ -211,19 +213,19 @@ QVariant GameListModel::data(const QModelIndex& index, int role) const
 
         case Column_Players:
         {
-          if (ge.min_players == ge.max_players)
-            return QStringLiteral("%1").arg(ge.min_players);
+          if (ge->min_players == ge->max_players)
+            return QStringLiteral("%1").arg(ge->min_players);
           else
-            return QStringLiteral("%1-%2").arg(ge.min_players).arg(ge.max_players);
+            return QStringLiteral("%1-%2").arg(ge->min_players).arg(ge->max_players);
         }
 
         case Column_Size:
-          return QString("%1 MB").arg(static_cast<double>(ge.total_size) / 1048576.0, 0, 'f', 2);
+          return QString("%1 MB").arg(static_cast<double>(ge->total_size) / 1048576.0, 0, 'f', 2);
 
         case Column_Cover:
         {
           if (m_show_titles_for_covers)
-            return QString::fromStdString(ge.title);
+            return QString::fromStdString(ge->title);
           else
             return {};
         }
@@ -238,44 +240,44 @@ QVariant GameListModel::data(const QModelIndex& index, int role) const
       switch (index.column())
       {
         case Column_Type:
-          return static_cast<int>(ge.type);
+          return static_cast<int>(ge->type);
 
-        case Column_Code:
-          return QString::fromStdString(ge.code);
+        case Column_Serial:
+          return QString::fromStdString(ge->serial);
 
         case Column_Title:
         case Column_Cover:
-          return QString::fromStdString(ge.title);
+          return QString::fromStdString(ge->title);
 
         case Column_FileTitle:
         {
-          const std::string_view file_title(Path::GetFileTitle(ge.path));
+          const std::string_view file_title(Path::GetFileTitle(ge->path));
           return QString::fromUtf8(file_title.data(), static_cast<int>(file_title.length()));
         }
 
         case Column_Developer:
-          return QString::fromStdString(ge.developer);
+          return QString::fromStdString(ge->developer);
 
         case Column_Publisher:
-          return QString::fromStdString(ge.publisher);
+          return QString::fromStdString(ge->publisher);
 
         case Column_Genre:
-          return QString::fromStdString(ge.genre);
+          return QString::fromStdString(ge->genre);
 
         case Column_Year:
-          return QDateTime::fromSecsSinceEpoch(static_cast<qint64>(ge.release_date), Qt::UTC).date().year();
+          return QDateTime::fromSecsSinceEpoch(static_cast<qint64>(ge->release_date), Qt::UTC).date().year();
 
         case Column_Players:
-          return static_cast<int>(ge.max_players);
+          return static_cast<int>(ge->max_players);
 
         case Column_Region:
-          return static_cast<int>(ge.region);
+          return static_cast<int>(ge->region);
 
         case Column_Compatibility:
-          return static_cast<int>(ge.compatibility_rating);
+          return static_cast<int>(ge->compatibility);
 
         case Column_Size:
-          return static_cast<qulonglong>(ge.total_size);
+          return static_cast<qulonglong>(ge->total_size);
 
         default:
           return {};
@@ -288,15 +290,16 @@ QVariant GameListModel::data(const QModelIndex& index, int role) const
       {
         case Column_Type:
         {
-          switch (ge.type)
+          switch (ge->type)
           {
-            case GameListEntryType::Disc:
-              return ((ge.settings.GetUserSettingsCount() > 0) ? m_type_disc_with_settings_pixmap : m_type_disc_pixmap);
-            case GameListEntryType::Playlist:
+            case GameList::EntryType::Disc:
+              return (/*(ge.settings.GetUserSettingsCount() > 0)*/ false ? m_type_disc_with_settings_pixmap :
+                                                                           m_type_disc_pixmap);
+            case GameList::EntryType::Playlist:
               return m_type_playlist_pixmap;
-            case GameListEntryType::PSF:
+            case GameList::EntryType::PSF:
               return m_type_psf_pixmap;
-            case GameListEntryType::PSExe:
+            case GameList::EntryType::PSExe:
             default:
               return m_type_exe_pixmap;
           }
@@ -304,7 +307,7 @@ QVariant GameListModel::data(const QModelIndex& index, int role) const
 
         case Column_Region:
         {
-          switch (ge.region)
+          switch (ge->region)
           {
             case DiscRegion::NTSC_J:
               return m_region_jp_pixmap;
@@ -321,18 +324,19 @@ QVariant GameListModel::data(const QModelIndex& index, int role) const
         case Column_Compatibility:
         {
           return m_compatibiliy_pixmaps[static_cast<int>(
-            (ge.compatibility_rating >= GameListCompatibilityRating::Count) ? GameListCompatibilityRating::Unknown :
-                                                                              ge.compatibility_rating)];
+            (ge->compatibility >= GameDatabase::CompatibilityRating::Count) ?
+              GameDatabase::CompatibilityRating::Unknown :
+              ge->compatibility)];
         }
 
         case Column_Cover:
         {
-          auto it = m_cover_pixmap_cache.find(ge.path);
+          auto it = m_cover_pixmap_cache.find(ge->path);
           if (it != m_cover_pixmap_cache.end())
             return it->second;
 
           QPixmap image;
-          std::string path = m_game_list->GetCoverImagePathForEntry(&ge);
+          const std::string path(GameList::GetCoverImagePathForEntry(ge));
           if (!path.empty())
           {
             const float dpr = qApp->devicePixelRatio();
@@ -345,9 +349,9 @@ QVariant GameListModel::data(const QModelIndex& index, int role) const
           }
 
           if (image.isNull())
-            image = createPlaceholderImage(getCoverArtWidth(), getCoverArtHeight(), m_cover_scale, ge.title);
+            image = createPlaceholderImage(getCoverArtWidth(), getCoverArtHeight(), m_cover_scale, ge->title);
 
-          m_cover_pixmap_cache.emplace(ge.path, image);
+          m_cover_pixmap_cache.emplace(ge->path, image);
           return image;
         }
         break;
@@ -378,15 +382,15 @@ void GameListModel::refresh()
 
 bool GameListModel::titlesLessThan(int left_row, int right_row) const
 {
-  if (left_row < 0 || left_row >= static_cast<int>(m_game_list->GetEntryCount()) || right_row < 0 ||
-      right_row >= static_cast<int>(m_game_list->GetEntryCount()))
+  if (left_row < 0 || left_row >= static_cast<int>(GameList::GetEntryCount()) || right_row < 0 ||
+      right_row >= static_cast<int>(GameList::GetEntryCount()))
   {
     return false;
   }
 
-  const GameListEntry& left = m_game_list->GetEntries().at(left_row);
-  const GameListEntry& right = m_game_list->GetEntries().at(right_row);
-  return (StringUtil::Strcasecmp(left.title.c_str(), right.title.c_str()) < 0);
+  const GameList::Entry* left = GameList::GetEntryByIndex(left_row);
+  const GameList::Entry* right = GameList::GetEntryByIndex(right_row);
+  return (StringUtil::Strcasecmp(left->title.c_str(), right->title.c_str()) < 0);
 }
 
 bool GameListModel::lessThan(const QModelIndex& left_index, const QModelIndex& right_index, int column) const
@@ -396,29 +400,33 @@ bool GameListModel::lessThan(const QModelIndex& left_index, const QModelIndex& r
 
   const int left_row = left_index.row();
   const int right_row = right_index.row();
-  if (left_row < 0 || left_row >= static_cast<int>(m_game_list->GetEntryCount()) || right_row < 0 ||
-      right_row >= static_cast<int>(m_game_list->GetEntryCount()))
+  if (left_row < 0 || left_row >= static_cast<int>(GameList::GetEntryCount()) || right_row < 0 ||
+      right_row >= static_cast<int>(GameList::GetEntryCount()))
   {
     return false;
   }
 
-  const GameListEntry& left = m_game_list->GetEntries()[left_row];
-  const GameListEntry& right = m_game_list->GetEntries()[right_row];
+  const auto lock = GameList::GetLock();
+  const GameList::Entry* left = GameList::GetEntryByIndex(left_row);
+  const GameList::Entry* right = GameList::GetEntryByIndex(right_row);
+  if (!left || !right)
+    return false;
+
   switch (column)
   {
     case Column_Type:
     {
-      if (left.type == right.type)
+      if (left->type == right->type)
         return titlesLessThan(left_row, right_row);
 
-      return (static_cast<int>(left.type) < static_cast<int>(right.type));
+      return (static_cast<int>(left->type) < static_cast<int>(right->type));
     }
 
-    case Column_Code:
+    case Column_Serial:
     {
-      if (left.code == right.code)
+      if (left->serial == right->serial)
         return titlesLessThan(left_row, right_row);
-      return (StringUtil::Strcasecmp(left.code.c_str(), right.code.c_str()) < 0);
+      return (StringUtil::Strcasecmp(left->serial.c_str(), right->serial.c_str()) < 0);
     }
 
     case Column_Title:
@@ -428,8 +436,8 @@ bool GameListModel::lessThan(const QModelIndex& left_index, const QModelIndex& r
 
     case Column_FileTitle:
     {
-      const std::string_view file_title_left(Path::GetFileTitle(left.path));
-      const std::string_view file_title_right(Path::GetFileTitle(right.path));
+      const std::string_view file_title_left(Path::GetFileTitle(left->path));
+      const std::string_view file_title_right(Path::GetFileTitle(right->path));
       if (file_title_left == file_title_right)
         return titlesLessThan(left_row, right_row);
 
@@ -439,60 +447,60 @@ bool GameListModel::lessThan(const QModelIndex& left_index, const QModelIndex& r
 
     case Column_Region:
     {
-      if (left.region == right.region)
+      if (left->region == right->region)
         return titlesLessThan(left_row, right_row);
-      return (static_cast<int>(left.region) < static_cast<int>(right.region));
+      return (static_cast<int>(left->region) < static_cast<int>(right->region));
     }
 
     case Column_Compatibility:
     {
-      if (left.compatibility_rating == right.compatibility_rating)
+      if (left->compatibility == right->compatibility)
         return titlesLessThan(left_row, right_row);
 
-      return (static_cast<int>(left.compatibility_rating) < static_cast<int>(right.compatibility_rating));
+      return (static_cast<int>(left->compatibility) < static_cast<int>(right->compatibility));
     }
 
     case Column_Size:
     {
-      if (left.total_size == right.total_size)
+      if (left->total_size == right->total_size)
         return titlesLessThan(left_row, right_row);
 
-      return (left.total_size < right.total_size);
+      return (left->total_size < right->total_size);
     }
 
     case Column_Genre:
     {
-      if (left.genre == right.genre)
+      if (left->genre == right->genre)
         return titlesLessThan(left_row, right_row);
-      return (StringUtil::Strcasecmp(left.genre.c_str(), right.genre.c_str()) < 0);
+      return (StringUtil::Strcasecmp(left->genre.c_str(), right->genre.c_str()) < 0);
     }
 
     case Column_Developer:
     {
-      if (left.developer == right.developer)
+      if (left->developer == right->developer)
         return titlesLessThan(left_row, right_row);
-      return (StringUtil::Strcasecmp(left.developer.c_str(), right.developer.c_str()) < 0);
+      return (StringUtil::Strcasecmp(left->developer.c_str(), right->developer.c_str()) < 0);
     }
 
     case Column_Publisher:
     {
-      if (left.publisher == right.publisher)
+      if (left->publisher == right->publisher)
         return titlesLessThan(left_row, right_row);
-      return (StringUtil::Strcasecmp(left.publisher.c_str(), right.publisher.c_str()) < 0);
+      return (StringUtil::Strcasecmp(left->publisher.c_str(), right->publisher.c_str()) < 0);
     }
 
     case Column_Year:
     {
-      if (left.release_date == right.release_date)
+      if (left->release_date == right->release_date)
         return titlesLessThan(left_row, right_row);
 
-      return (left.release_date < right.release_date);
+      return (left->release_date < right->release_date);
     }
 
     case Column_Players:
     {
-      u8 left_players = (left.min_players << 4) + left.max_players;
-      u8 right_players = (right.min_players << 4) + right.max_players;
+      u8 left_players = (left->min_players << 4) + left->max_players;
+      u8 right_players = (right->min_players << 4) + right->max_players;
       if (left_players == right_players)
         return titlesLessThan(left_row, right_row);
 
@@ -517,14 +525,14 @@ void GameListModel::loadCommonImages()
   m_region_us_pixmap = QIcon(QStringLiteral(":/icons/flag-uc.png")).pixmap(QSize(42, 30));
   m_region_other_pixmap = QIcon(QStringLiteral(":/icons/flag-other.png")).pixmap(QSize(42, 30));
 
-  for (int i = 0; i < static_cast<int>(GameListCompatibilityRating::Count); i++)
+  for (int i = 0; i < static_cast<int>(GameDatabase::CompatibilityRating::Count); i++)
     m_compatibiliy_pixmaps[i].load(QStringLiteral(":/icons/star-%1.png").arg(i));
 }
 
 void GameListModel::setColumnDisplayNames()
 {
   m_column_display_names[Column_Type] = tr("Type");
-  m_column_display_names[Column_Code] = tr("Code");
+  m_column_display_names[Column_Serial] = tr("Code");
   m_column_display_names[Column_Title] = tr("Title");
   m_column_display_names[Column_FileTitle] = tr("File Title");
   m_column_display_names[Column_Developer] = tr("Developer");

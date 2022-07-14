@@ -541,13 +541,12 @@ void InputManager::AddHotkeyBindings(SettingsInterface& si)
 
 void InputManager::AddPadBindings(SettingsInterface& si, u32 pad_index, const char* default_type)
 {
-  const std::string section(Controller::GetSettingsSection(pad_index));
-  const std::string type(si.GetStringValue(section.c_str(), "Type", default_type));
-  std::optional<ControllerType> ctype = Settings::ParseControllerTypeName(type.c_str());
-  if (!ctype.has_value() || ctype == ControllerType::None)
+  ControllerType ctype = g_settings.controller_types[pad_index];
+  if (ctype == ControllerType::None)
     return;
 
-  const Controller::ControllerInfo* cinfo = Controller::GetControllerInfo(ctype.value());
+  const std::string section(Controller::GetSettingsSection(pad_index));
+  const Controller::ControllerInfo* cinfo = Controller::GetControllerInfo(ctype);
   if (!cinfo)
     return;
 
@@ -579,14 +578,13 @@ void InputManager::AddPadBindings(SettingsInterface& si, u32 pad_index, const ch
   }
 #endif
 
-  const Controller::VibrationCapabilities vibcaps = Controller::GetControllerVibrationCapabilities(type);
-  if (vibcaps != Controller::VibrationCapabilities::NoVibration)
+  if (cinfo->vibration_caps != Controller::VibrationCapabilities::NoVibration)
   {
     PadVibrationBinding vib;
     vib.pad_index = pad_index;
 
     bool has_any_bindings = false;
-    switch (vibcaps)
+    switch (cinfo->vibration_caps)
     {
       case Controller::VibrationCapabilities::LargeSmallMotors:
       {

@@ -83,13 +83,13 @@ enum class State
 extern TickCount g_ticks_per_second;
 
 /// Returns true if the filename is a PlayStation executable we can inject.
-bool IsExeFileName(const char* path);
+bool IsExeFileName(const std::string_view& path);
 
 /// Returns true if the filename is a Portable Sound Format file we can uncompress/load.
-bool IsPsfFileName(const char* path);
+bool IsPsfFileName(const std::string_view& path);
 
 /// Returns true if the filename is one we can load.
-bool IsLoadableFilename(const char* path);
+bool IsLoadableFilename(const std::string_view& path);
 
 /// Returns the preferred console type for a disc.
 ConsoleRegion GetConsoleRegionForDiscRegion(DiscRegion region);

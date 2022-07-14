@@ -75,7 +75,7 @@ int main(int argc, char* argv[])
   if (!ParseCommandLineParameters(app, host_interface.get(), &boot_params))
     return EXIT_FAILURE;
 
-  MainWindow* window = new MainWindow(host_interface.get());
+  MainWindow* window = new MainWindow();
 
   if (!host_interface->Initialize())
   {
@@ -88,9 +88,11 @@ int main(int argc, char* argv[])
   window->initializeAndShow();
   HookSignals();
 
-  // if we're in batch mode, don't bother refreshing the game list as it won't be used
+  // When running in batch mode, ensure game list is loaded, but don't scan for any new files.
   if (!QtHost::InBatchMode())
-    host_interface->refreshGameList();
+    window->refreshGameList(false);
+  else
+    GameList::Refresh(false, true);
 
   if (boot_params)
   {

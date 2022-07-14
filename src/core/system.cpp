@@ -18,6 +18,7 @@
 #include "fmt/chrono.h"
 #include "fmt/format.h"
 #include "gpu.h"
+#include "game_database.h"
 #include "gte.h"
 #include "host.h"
 #include "host_display.h"
@@ -114,7 +115,7 @@ static void DoMemorySaveStates();
 static bool Initialize(bool force_software_renderer);
 
 static bool UpdateGameSettingsLayer();
-static void UpdateRunningGame(const char* path, CDImage* image);
+static void UpdateRunningGame(const char* path, CDImage* image, bool force);
 static bool CheckForSBIFile(CDImage* image);
 static std::unique_ptr<MemoryCard> GetMemoryCardForSlot(u32 slot, MemoryCardType type);
 
@@ -334,34 +335,27 @@ float System::GetCPUThreadAverageTime()
   return s_cpu_thread_time;
 }
 
-bool System::IsExeFileName(const char* path)
+bool System::IsExeFileName(const std::string_view& path)
 {
-  const char* extension = std::strrchr(path, '.');
-  return (extension &&
-          (StringUtil::Strcasecmp(extension, ".exe") == 0 || StringUtil::Strcasecmp(extension, ".psexe") == 0));
+  return (StringUtil::EndsWithNoCase(path, ".exe") || StringUtil::EndsWithNoCase(path, ".psexe"));
 }
 
-bool System::IsPsfFileName(const char* path)
+bool System::IsPsfFileName(const std::string_view& path)
 {
-  const char* extension = std::strrchr(path, '.');
-  return (extension &&
-          (StringUtil::Strcasecmp(extension, ".psf") == 0 || StringUtil::Strcasecmp(extension, ".minipsf") == 0));
+  return (StringUtil::EndsWithNoCase(path, ".psf") || StringUtil::EndsWithNoCase(path, ".minipsf"));
 }
 
-bool System::IsLoadableFilename(const char* path)
+bool System::IsLoadableFilename(const std::string_view& path)
 {
   static constexpr auto extensions = make_array(".bin", ".cue", ".img", ".iso", ".chd", ".ecm", ".mds", // discs
                                                 ".exe", ".psexe",                                       // exes
                                                 ".psf", ".minipsf",                                     // psf
                                                 ".m3u",                                                 // playlists
                                                 ".pbp");
-  const char* extension = std::strrchr(path, '.');
-  if (!extension)
-    return false;
 
   for (const char* test_extension : extensions)
   {
-    if (StringUtil::Strcasecmp(extension, test_extension) == 0)
+    if (StringUtil::EndsWithNoCase(path, test_extension))
       return true;
   }
 
@@ -687,12 +681,7 @@ std::string System::GetGameSettingsPath(const std::string_view& game_serial)
   std::string sanitized_serial(game_serial);
   Path::SanitizeFileName(sanitized_serial);
 
-#if 0
-  // FIXME
   return Path::Combine(EmuFolders::GameSettings, fmt::format("{}.ini", sanitized_serial));
-#else
-  return {};
-#endif
 }
 
 bool System::RecreateGPU(GPURenderer renderer, bool update_display /* = true*/)
@@ -800,6 +789,14 @@ void System::LoadSettings(bool display_osd_messages)
   SettingsInterface& si = *Host::GetSettingsInterface();
   g_settings.Load(si);
   Host::LoadSettings(si, lock);
+
+  // apply compatibility settings
+  if (g_settings.apply_game_settings && !s_running_game_code.empty())
+  {
+    const GameDatabase::Entry* entry = GameDatabase::GetEntryForSerial(s_running_game_code);
+    if (entry)
+      entry->ApplySettings(g_settings, display_osd_messages);
+  }
 
   g_settings.FixIncompatibleSettings(display_osd_messages);
 }
@@ -1156,7 +1153,7 @@ bool System::InternalBoot(const SystemBootParameters& params)
   }
 
   // Notify change of disc.
-  UpdateRunningGame(media ? media->GetFileName().c_str() : params.filename.c_str(), media.get());
+  UpdateRunningGame(media ? media->GetFileName().c_str() : params.filename.c_str(), media.get(), true);
 
   // Check for SBI.
   if (!CheckForSBIFile(media.get()))
@@ -1694,7 +1691,7 @@ bool System::DoLoadState(ByteStream* state, bool force_software_renderer, bool u
     }
   }
 
-  UpdateRunningGame(media_filename.c_str(), media.get());
+  UpdateRunningGame(media_filename.c_str(), media.get(), false);
 
   if (media && header.version >= 51)
   {
@@ -2703,7 +2700,7 @@ bool System::InsertMedia(const char* path)
     return false;
   }
 
-  UpdateRunningGame(path, image.get());
+  UpdateRunningGame(path, image.get(), false);
   g_cdrom.InsertMedia(std::move(image));
   Log_InfoPrintf("Inserted media from %s (%s, %s)", s_running_game_path.c_str(), s_running_game_code.c_str(),
                  s_running_game_title.c_str());
@@ -2726,9 +2723,9 @@ void System::RemoveMedia()
   ClearMemorySaveStates();
 }
 
-void System::UpdateRunningGame(const char* path, CDImage* image)
+void System::UpdateRunningGame(const char* path, CDImage* image, bool force)
 {
-  if (s_running_game_path == path)
+  if (!force && s_running_game_path == path)
     return;
 
   s_running_game_path.clear();
@@ -2738,8 +2735,14 @@ void System::UpdateRunningGame(const char* path, CDImage* image)
   if (path && std::strlen(path) > 0)
   {
     s_running_game_path = path;
-    Host::GetGameInfo(path, image, &s_running_game_code, &s_running_game_title);
 
+    const GameDatabase::Entry* entry = GameDatabase::GetEntryForDisc(image);
+    if (entry)
+    {
+      s_running_game_code = entry->serial;
+      s_running_game_title = entry->title;
+    }
+    
     if (image && image->HasSubImages() && g_settings.memory_card_use_playlist_title)
     {
       std::string image_title(image->GetMetadata("title"));
@@ -2754,8 +2757,8 @@ void System::UpdateRunningGame(const char* path, CDImage* image)
   if (g_settings.auto_load_cheats && !Cheevos::IsChallengeModeActive())
     LoadCheatListFromGameTitle();
 
-  if (UpdateGameSettingsLayer())
-    ApplySettings(false);
+  UpdateGameSettingsLayer();
+  ApplySettings(true);
 
   Host::OnGameChanged(s_running_game_path, s_running_game_code, s_running_game_title);
 }

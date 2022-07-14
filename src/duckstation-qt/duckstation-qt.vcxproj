@@ -30,6 +30,7 @@
     <ClCompile Include="memoryviewwidget.cpp" />
     <ClCompile Include="qtdisplaywidget.cpp" />
     <ClCompile Include="gamelistsettingswidget.cpp" />
+    <ClCompile Include="gamelistrefreshthread.cpp" />
     <ClCompile Include="gamelistwidget.cpp" />
     <ClCompile Include="gamepropertiesdialog.cpp" />
     <ClCompile Include="gdbconnection.cpp" />
@@ -82,6 +83,7 @@
     <QtMoc Include="consolesettingswidget.h" />
     <QtMoc Include="emulationsettingswidget.h" />
     <QtMoc Include="gamelistsettingswidget.h" />
+    <QtMoc Include="gamelistrefreshthread.h" />
     <QtMoc Include="gamelistwidget.h" />
     <QtMoc Include="gamepropertiesdialog.h" />
     <QtMoc Include="gdbconnection.h" />
@@ -179,6 +181,12 @@
     <QtUi Include="controllersettingsdialog.ui">
       <FileType>Document</FileType>
     </QtUi>
+    <QtUi Include="emptygamelistwidget.ui">
+      <FileType>Document</FileType>
+    </QtUi>
+    <QtUi Include="gamelistwidget.ui">
+      <FileType>Document</FileType>
+    </QtUi>
   </ItemGroup>
   <ItemGroup>
     <QtResource Include="resources\resources.qrc">
@@ -203,6 +211,7 @@
     <ClCompile Include="$(IntDir)moc_emulationsettingswidget.cpp" />
     <ClCompile Include="$(IntDir)moc_enhancementsettingswidget.cpp" />
     <ClCompile Include="$(IntDir)moc_gamelistmodel.cpp" />
+    <ClCompile Include="$(IntDir)moc_gamelistrefreshthread.cpp" />
     <ClCompile Include="$(IntDir)moc_gamelistsearchdirectoriesmodel.cpp" />
     <ClCompile Include="$(IntDir)moc_gamelistsettingswidget.cpp" />
     <ClCompile Include="$(IntDir)moc_gamelistwidget.cpp" />

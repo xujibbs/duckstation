@@ -6,6 +6,7 @@
 #include "common/make_array.h"
 #include "common/path.h"
 #include "common/string_util.h"
+#include "controller.h"
 #include "host.h"
 #include "host_display.h"
 #include <algorithm>
@@ -284,18 +285,17 @@ void Settings::Load(SettingsInterface& si)
   bios_patch_tty_enable = si.GetBoolValue("BIOS", "PatchTTYEnable", false);
   bios_patch_fast_boot = si.GetBoolValue("BIOS", "PatchFastBoot", DEFAULT_FAST_BOOT_VALUE);
 
-  controller_types[0] =
-    ParseControllerTypeName(
-      si.GetStringValue("Controller1", "Type", GetControllerTypeName(DEFAULT_CONTROLLER_1_TYPE)).c_str())
-      .value_or(DEFAULT_CONTROLLER_1_TYPE);
+  controller_types[0] = ParseControllerTypeName(si.GetStringValue(Controller::GetSettingsSection(0).c_str(), "Type",
+                                                                  GetControllerTypeName(DEFAULT_CONTROLLER_1_TYPE))
+                                                  .c_str())
+                          .value_or(DEFAULT_CONTROLLER_1_TYPE);
 
   for (u32 i = 1; i < NUM_CONTROLLER_AND_CARD_PORTS; i++)
   {
-    controller_types[i] =
-      ParseControllerTypeName(si.GetStringValue(TinyString::FromFormat("Controller%u", i + 1u), "Type",
-                                                GetControllerTypeName(DEFAULT_CONTROLLER_2_TYPE))
-                                .c_str())
-        .value_or(DEFAULT_CONTROLLER_2_TYPE);
+    controller_types[i] = ParseControllerTypeName(si.GetStringValue(Controller::GetSettingsSection(i).c_str(), "Type",
+                                                                    GetControllerTypeName(DEFAULT_CONTROLLER_2_TYPE))
+                                                    .c_str())
+                            .value_or(DEFAULT_CONTROLLER_2_TYPE);
   }
 
   memory_card_types[0] =

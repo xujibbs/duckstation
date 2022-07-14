@@ -154,9 +154,9 @@ static void addMSAATweakOption(SettingsDialog* dialog, QTableWidget* table, cons
 
   QComboBox* msaa = new QComboBox(table);
   QtUtils::FillComboBoxWithMSAAModes(msaa);
-  const QVariant current_msaa_mode(QtUtils::GetMSAAModeValue(
-    static_cast<uint>(dialog->getEffectiveIntValue("GPU", "Multisamples", 1)),
-    dialog->getEffectiveBoolValue("GPU", "PerSampleShading", false)));
+  const QVariant current_msaa_mode(
+    QtUtils::GetMSAAModeValue(static_cast<uint>(dialog->getEffectiveIntValue("GPU", "Multisamples", 1)),
+                              dialog->getEffectiveBoolValue("GPU", "PerSampleShading", false)));
   const int current_msaa_index = msaa->findData(current_msaa_mode);
   if (current_msaa_index >= 0)
     msaa->setCurrentIndex(current_msaa_index);
@@ -193,8 +193,8 @@ AdvancedSettingsWidget::AdvancedSettingsWidget(SettingsDialog* dialog, QWidget* 
   SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.showDebugMenu, "Main", "ShowDebugMenu", false);
 
   connect(m_ui.resetToDefaultButton, &QPushButton::clicked, this, &AdvancedSettingsWidget::onResetToDefaultClicked);
-  connect(m_ui.showDebugMenu, &QCheckBox::toggled, g_emu_thread->getMainWindow(),
-          &MainWindow::updateDebugMenuVisibility, Qt::QueuedConnection);
+  connect(m_ui.showDebugMenu, &QCheckBox::toggled, g_main_window, &MainWindow::updateDebugMenuVisibility,
+          Qt::QueuedConnection);
 
   m_ui.tweakOptionTable->setColumnWidth(0, 380);
 

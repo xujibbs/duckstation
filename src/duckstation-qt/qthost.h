@@ -37,8 +37,8 @@ class MainWindow;
 class QtDisplayWidget;
 
 Q_DECLARE_METATYPE(std::shared_ptr<SystemBootParameters>);
-Q_DECLARE_METATYPE(const GameListEntry*);
 Q_DECLARE_METATYPE(GPURenderer);
+Q_DECLARE_METATYPE(InputBindingKey);
 
 class QtHostInterface final : public QObject
 {
@@ -54,17 +54,9 @@ public:
   void RunLater(std::function<void()> func);
 
 public:
-  ALWAYS_INLINE const GameList* getGameList() const { return CommonHost::GetGameList(); }
-  ALWAYS_INLINE GameList* getGameList() { return CommonHost::GetGameList(); }
-  void refreshGameList(bool invalidate_cache = false, bool invalidate_database = false);
-
   ALWAYS_INLINE void requestExit() { RequestExit(); }
 
   ALWAYS_INLINE bool isOnWorkerThread() const { return QThread::currentThread() == m_worker_thread; }
-
-  ALWAYS_INLINE MainWindow* getMainWindow() const { return m_main_window; }
-  void setMainWindow(MainWindow* window);
-
 
   ALWAYS_INLINE QEventLoop* getEventLoop() const { return m_worker_thread_event_loop; }
 
@@ -74,7 +66,7 @@ public:
   void populateSaveStateMenu(const char* game_code, QMenu* menu);
 
   /// Fills menu with save state info and handlers.
-  void populateGameListContextMenu(const GameListEntry* entry, QWidget* parent_window, QMenu* menu);
+  void populateGameListContextMenu(const GameList::Entry* entry, QWidget* parent_window, QMenu* menu);
 
   /// Fills menu with the current playlist entries. The disc index is marked as checked.
   void populateChangeDiscSubImageMenu(QMenu* menu, QActionGroup* action_group);
@@ -233,7 +225,6 @@ private:
   void queueSettingsSave();
   void wakeThread();
 
-  MainWindow* m_main_window = nullptr;
   QThread* m_original_thread = nullptr;
   Thread* m_worker_thread = nullptr;
   QEventLoop* m_worker_thread_event_loop = nullptr;
