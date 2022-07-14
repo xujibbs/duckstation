@@ -12,6 +12,7 @@
 #include <QtWidgets/QMainWindow>
 #include <QtWidgets/QMessageBox>
 #include <QtWidgets/QScrollBar>
+#include <QtWidgets/QStatusBar>
 #include <QtWidgets/QStyle>
 #include <QtWidgets/QTableView>
 #include <QtWidgets/QTreeView>
@@ -772,4 +773,54 @@ std::optional<unsigned> PromptForAddress(QWidget* parent, const QString& title, 
   return address;
 }
 
+QString StringViewToQString(const std::string_view& str)
+{
+  return str.empty() ? QString() : QString::fromUtf8(str.data(), str.size());
+}
+
+void SetWidgetFontForInheritedSetting(QWidget* widget, bool inherited)
+{
+  if (widget->font().italic() != inherited)
+  {
+    QFont new_font(widget->font());
+    new_font.setItalic(inherited);
+    widget->setFont(new_font);
+  }
+}
+
+void SetWindowResizeable(QWidget* widget, bool resizeable)
+{
+  if (QMainWindow* window = qobject_cast<QMainWindow*>(widget); window)
+  {
+    // update status bar grip if present
+    if (QStatusBar* sb = window->statusBar(); sb)
+      sb->setSizeGripEnabled(resizeable);
+  }
+
+  if ((widget->sizePolicy().horizontalPolicy() == QSizePolicy::Preferred) != resizeable)
+  {
+    if (resizeable)
+    {
+      // Min/max numbers come from uic.
+      widget->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
+      widget->setMinimumSize(1, 1);
+      widget->setMaximumSize(16777215, 16777215);
+    }
+    else
+    {
+      widget->setFixedSize(widget->size());
+      widget->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    }
+  }
+}
+
+void ResizePotentiallyFixedSizeWindow(QWidget* widget, int width, int height)
+{
+  width = std::max(width, 1);
+  height = std::max(height, 1);
+  if (widget->sizePolicy().horizontalPolicy() == QSizePolicy::Fixed)
+    widget->setFixedSize(width, height);
+
+  widget->resize(width, height);
+}
 } // namespace QtUtils

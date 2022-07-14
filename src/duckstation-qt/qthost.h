@@ -34,7 +34,7 @@ class INISettingsInterface;
 class HostDisplay;
 
 class MainWindow;
-class QtDisplayWidget;
+class DisplayWidget;
 
 Q_DECLARE_METATYPE(std::shared_ptr<SystemBootParameters>);
 Q_DECLARE_METATYPE(GPURenderer);
@@ -60,6 +60,11 @@ public:
 
   ALWAYS_INLINE QEventLoop* getEventLoop() const { return m_worker_thread_event_loop; }
 
+  ALWAYS_INLINE bool isFullscreen() const { return m_is_fullscreen; }
+  ALWAYS_INLINE bool isRenderingToMain() const { return m_is_rendering_to_main; }
+  ALWAYS_INLINE bool isSurfaceless() const { return m_is_surfaceless; }
+  ALWAYS_INLINE bool isRunningFullscreenUI() const { return m_run_fullscreen_ui; }
+
   void reinstallTranslator();
 
   void populateLoadStateMenu(const char* game_code, QMenu* menu);
@@ -80,17 +85,14 @@ public:
   static std::vector<std::pair<QString, QString>> getAvailableLanguageList();
 
   /// Called back from the GS thread when the display state changes (e.g. fullscreen, render to main).
-  static HostDisplay* createHostDisplay();
   HostDisplay* acquireHostDisplay();
-  void connectDisplaySignals(QtDisplayWidget* widget);
+  void connectDisplaySignals(DisplayWidget* widget);
   void releaseHostDisplay();
-  void updateDisplay();
   void renderDisplay();
 
-  void onSystemStarted();
-  void onSystemPaused();
-  void onSystemResumed();
-  void onSystemDestroyed();
+  void startBackgroundControllerPollTimer();
+  void stopBackgroundControllerPollTimer();
+  void wakeThread();
 
 Q_SIGNALS:
   void errorReported(const QString& title, const QString& message);
@@ -101,13 +103,14 @@ Q_SIGNALS:
   void onInputDeviceConnected(const QString& identifier, const QString& device_name);
   void onInputDeviceDisconnected(const QString& identifier);
   void onVibrationMotorsEnumerated(const QList<InputBindingKey>& motors);
-  void emulationStarting();
-  void emulationStarted();
-  void emulationStopped();
-  void emulationPaused(bool paused);
+  void systemStarting();
+  void systemStarted();
+  void systemDestroyed();
+  void systemPaused();
+  void systemResumed();
   void gameListRefreshed();
-  QtDisplayWidget* createDisplayRequested(QThread* worker_thread, bool fullscreen, bool render_to_main);
-  QtDisplayWidget* updateDisplayRequested(QThread* worker_thread, bool fullscreen, bool render_to_main);
+  DisplayWidget* createDisplayRequested(bool fullscreen, bool render_to_main);
+  DisplayWidget* updateDisplayRequested(bool fullscreen, bool render_to_main, bool surfaceless);
   void displaySizeRequested(qint32 width, qint32 height);
   void focusDisplayWidgetRequested();
   void destroyDisplayRequested();
@@ -156,6 +159,8 @@ public Q_SLOTS:
   void saveScreenshot();
   void redrawDisplayWindow();
   void toggleFullscreen();
+  void setFullscreen(bool fullscreen);
+  void setSurfaceless(bool surfaceless);
   void loadCheatList(const QString& filename);
   void setCheatEnabled(quint32 index, bool enabled);
   void applyCheat(quint32 index);
@@ -165,11 +170,10 @@ public Q_SLOTS:
 
 private Q_SLOTS:
   void doStopThread();
-  void onDisplayWindowMouseMoveEvent(float x, float y);
+  void onDisplayWindowMouseMoveEvent(bool relative, float x, float y);
   void onDisplayWindowMouseButtonEvent(int button, bool pressed);
   void onDisplayWindowMouseWheelEvent(const QPoint& delta_angle);
   void onDisplayWindowResized(int width, int height);
-  void onDisplayWindowFocused();
   void onDisplayWindowKeyEvent(int key, bool pressed);
   void doBackgroundControllerPoll();
 
@@ -209,8 +213,6 @@ private:
 
   void createBackgroundControllerPollTimer();
   void destroyBackgroundControllerPollTimer();
-  void startBackgroundControllerPollTimer();
-  void stopBackgroundControllerPollTimer();
 
   void setImGuiFont();
 
@@ -223,7 +225,6 @@ private:
   void checkRenderToMainState();
   void updateDisplayState();
   void queueSettingsSave();
-  void wakeThread();
 
   QThread* m_original_thread = nullptr;
   Thread* m_worker_thread = nullptr;
@@ -235,10 +236,16 @@ private:
   QTimer* m_background_controller_polling_timer = nullptr;
   std::vector<QTranslator*> m_translators;
 
+  bool m_run_fullscreen_ui = false;
   bool m_is_rendering_to_main = false;
   bool m_is_fullscreen = false;
   bool m_is_exclusive_fullscreen = false;
   bool m_lost_exclusive_fullscreen = false;
+  bool m_is_surfaceless = false;
+  bool m_save_state_on_shutdown = false;
+  bool m_pause_on_focus_loss = false;
+
+  bool m_was_paused_by_focus_loss = false;
 };
 
 extern QtHostInterface* g_emu_thread;
@@ -254,14 +261,18 @@ bool InNoGUIMode();
 void RunOnUIThread(const std::function<void()>& func, bool block = false);
 
 /// Returns the application name and version, optionally including debug/devel config indicator.
-// QString GetAppNameAndVersion();
+QString GetAppNameAndVersion();
 
 /// Returns the debug/devel config indicator.
-// QString GetAppConfigSuffix();
+QString GetAppConfigSuffix();
 
 /// Returns the base path for resources. This may be : prefixed, if we're using embedded resources.
-// QString GetResourcesBasePath();
+QString GetResourcesBasePath();
 
 /// Thread-safe settings access.
 void QueueSettingsSave();
+
+/// VM state, safe to access on UI thread.
+bool IsSystemValid();
+bool IsSystemPaused();
 } // namespace QtHost

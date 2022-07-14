@@ -22,22 +22,25 @@ DebuggerWindow::DebuggerWindow(QWidget* parent /* = nullptr */)
 
 DebuggerWindow::~DebuggerWindow() = default;
 
-void DebuggerWindow::onEmulationPaused(bool paused)
+void DebuggerWindow::onEmulationPaused()
 {
-  if (paused)
-  {
-    setUIEnabled(true);
-    refreshAll();
-    refreshBreakpointList();
-  }
-  else
-  {
-    setUIEnabled(false);
-  }
+  setUIEnabled(true);
+  refreshAll();
+  refreshBreakpointList();
 
   {
     QSignalBlocker sb(m_ui.actionPause);
-    m_ui.actionPause->setChecked(paused);
+    m_ui.actionPause->setChecked(true);
+  }
+}
+
+void DebuggerWindow::onEmulationResumed()
+{
+  setUIEnabled(false);
+
+  {
+    QSignalBlocker sb(m_ui.actionPause);
+    m_ui.actionPause->setChecked(false);
   }
 }
 
@@ -381,7 +384,8 @@ void DebuggerWindow::setupAdditionalUi()
 void DebuggerWindow::connectSignals()
 {
   QtHostInterface* hi = g_emu_thread;
-  connect(hi, &QtHostInterface::emulationPaused, this, &DebuggerWindow::onEmulationPaused);
+  connect(hi, &QtHostInterface::systemPaused, this, &DebuggerWindow::onEmulationPaused);
+  connect(hi, &QtHostInterface::systemResumed, this, &DebuggerWindow::onEmulationResumed);
   connect(hi, &QtHostInterface::debuggerMessageReported, this, &DebuggerWindow::onDebuggerMessageReported);
 
   connect(m_ui.actionPause, &QAction::toggled, this, &DebuggerWindow::onPauseActionToggled);

@@ -28,7 +28,7 @@
     <ClCompile Include="inputbindingdialog.cpp" />
     <ClCompile Include="inputbindingwidgets.cpp" />
     <ClCompile Include="memoryviewwidget.cpp" />
-    <ClCompile Include="qtdisplaywidget.cpp" />
+    <ClCompile Include="displaywidget.cpp" />
     <ClCompile Include="gamelistsettingswidget.cpp" />
     <ClCompile Include="gamelistrefreshthread.cpp" />
     <ClCompile Include="gamelistwidget.cpp" />
@@ -57,7 +57,7 @@
     <QtMoc Include="enhancementsettingswidget.h" />
     <QtMoc Include="memorycardsettingswidget.h" />
     <QtMoc Include="memorycardeditordialog.h" />
-    <QtMoc Include="qtdisplaywidget.h" />
+    <QtMoc Include="displaywidget.h" />
     <QtMoc Include="generalsettingswidget.h" />
     <QtMoc Include="displaysettingswidget.h" />
     <QtMoc Include="hotkeysettingswidget.h" />
@@ -208,6 +208,7 @@
     <ClCompile Include="$(IntDir)moc_controllerbindingwidgets.cpp" />
     <ClCompile Include="$(IntDir)moc_controllerglobalsettingswidget.cpp" />
     <ClCompile Include="$(IntDir)moc_controllersettingsdialog.cpp" />
+    <ClCompile Include="$(IntDir)moc_displaywidget.cpp" />
     <ClCompile Include="$(IntDir)moc_emulationsettingswidget.cpp" />
     <ClCompile Include="$(IntDir)moc_enhancementsettingswidget.cpp" />
     <ClCompile Include="$(IntDir)moc_gamelistmodel.cpp" />
@@ -232,7 +233,6 @@
     <ClCompile Include="$(IntDir)moc_postprocessingchainconfigwidget.cpp" />
     <ClCompile Include="$(IntDir)moc_postprocessingshaderconfigwidget.cpp" />
     <ClCompile Include="$(IntDir)moc_postprocessingsettingswidget.cpp" />
-    <ClCompile Include="$(IntDir)moc_qtdisplaywidget.cpp" />
     <ClCompile Include="$(IntDir)moc_qthost.cpp" />
     <ClCompile Include="$(IntDir)moc_qtprogresscallback.cpp" />
     <ClCompile Include="$(IntDir)moc_settingsdialog.cpp" />

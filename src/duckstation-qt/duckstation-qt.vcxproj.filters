@@ -22,7 +22,7 @@
     <ClCompile Include="audiosettingswidget.cpp" />
     <ClCompile Include="$(IntDir)moc_audiosettingswidget.cpp" />
     <ClCompile Include="$(IntDir)moc_qtdisplaywidget.cpp" />
-    <ClCompile Include="qtdisplaywidget.cpp" />
+    <ClCompile Include="displaywidget.cpp" />
     <ClCompile Include="qtprogresscallback.cpp" />
     <ClCompile Include="$(IntDir)moc_qtprogresscallback.cpp" />
     <ClCompile Include="generalsettingswidget.cpp" />
@@ -87,6 +87,8 @@
     <ClCompile Include="$(IntDir)moc_controllerbindingwidgets.cpp" />
     <ClCompile Include="$(IntDir)moc_controllerglobalsettingswidget.cpp" />
     <ClCompile Include="$(IntDir)moc_controllersettingsdialog.cpp" />
+    <ClCompile Include="gamelistrefreshthread.cpp" />
+    <ClCompile Include="$(IntDir)moc_gamelistrefreshthread.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="qtutils.h" />
@@ -112,7 +114,7 @@
     <QtMoc Include="hotkeysettingswidget.h" />
     <QtMoc Include="inputbindingwidgets.h" />
     <QtMoc Include="audiosettingswidget.h" />
-    <QtMoc Include="qtdisplaywidget.h" />
+    <QtMoc Include="displaywidget.h" />
     <QtMoc Include="generalsettingswidget.h" />
     <QtMoc Include="qtprogresscallback.h" />
     <QtMoc Include="advancedsettingswidget.h" />
@@ -144,6 +146,7 @@
     <QtMoc Include="controllerbindingwidgets.h" />
     <QtMoc Include="controllerglobalsettingswidget.h" />
     <QtMoc Include="controllersettingsdialog.h" />
+    <QtMoc Include="gamelistrefreshthread.h" />
   </ItemGroup>
   <ItemGroup>
     <QtUi Include="consolesettingswidget.ui" />
@@ -174,6 +177,8 @@
     <QtUi Include="controllerglobalsettingswidget.ui" />
     <QtUi Include="controllersettingsdialog.ui" />
     <QtUi Include="controllerbindingwidget_digital_controller.ui" />
+    <QtUi Include="emptygamelistwidget.ui" />
+    <QtUi Include="gamelistwidget.ui" />
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="qt5.natvis" />

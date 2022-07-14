@@ -17,8 +17,8 @@
 #include "dma.h"
 #include "fmt/chrono.h"
 #include "fmt/format.h"
-#include "gpu.h"
 #include "game_database.h"
+#include "gpu.h"
 #include "gte.h"
 #include "host.h"
 #include "host_display.h"
@@ -226,7 +226,7 @@ bool System::IsShutdown()
 
 bool System::IsValid()
 {
-  return s_state != State::Shutdown && s_state != State::Starting;
+  return s_state == State::Running || s_state == State::Paused;
 }
 
 bool System::IsStartupCancelled()
@@ -900,18 +900,15 @@ bool System::BootSystem(std::shared_ptr<SystemBootParameters> parameters)
 {
   Host::OnSystemStarting();
 
-  if (!parameters->state_stream)
-  {
-    if (parameters->filename.empty())
-      Log_InfoPrintf("Boot Filename: <BIOS/Shell>");
-    else
-      Log_InfoPrintf("Boot Filename: %s", parameters->filename.c_str());
-  }
+  if (parameters->filename.empty())
+    Log_InfoPrintf("Boot Filename: <BIOS/Shell>");
+  else
+    Log_InfoPrintf("Boot Filename: %s", parameters->filename.c_str());
 
   // In Challenge mode, do not allow loading a save state under any circumstances
   // If it's present, drop it
   if (Cheevos::IsChallengeModeActive())
-    parameters->state_stream.reset();
+    parameters->save_state.clear();
 
   if (!Host::AcquireHostDisplay())
   {
@@ -946,6 +943,29 @@ bool System::BootSystem(std::shared_ptr<SystemBootParameters> parameters)
   UpdateSoftwareCursor();
   g_spu.GetOutputStream()->PauseOutput(false);
   Host::OnSystemStarted();
+
+  if (!parameters->save_state.empty())
+  {
+    // try to load the state, if it fails, bail out
+    std::unique_ptr<ByteStream> stream =
+      ByteStream::OpenFile(parameters->save_state.c_str(), BYTESTREAM_OPEN_READ | BYTESTREAM_OPEN_STREAMED);
+    if (!stream)
+    {
+      Host::ReportErrorAsync(
+        Host::TranslateString("System", "Error"),
+        fmt::format(Host::TranslateString("System", "Failed to load save state file '{}' for booting.").GetCharArray(),
+                    parameters->save_state));
+      DestroySystem();
+      return false;
+    }
+
+    if (!DoLoadState(stream.get(), false, true))
+    {
+      DestroySystem();
+      return false;
+    }
+  }
+
   return true;
 }
 
@@ -999,34 +1019,26 @@ void System::DestroySystem()
 
 bool System::LoadState(const char* filename)
 {
+  if (!IsValid())
+    return false;
+
   std::unique_ptr<ByteStream> stream = ByteStream::OpenFile(filename, BYTESTREAM_OPEN_READ | BYTESTREAM_OPEN_STREAMED);
   if (!stream)
     return false;
 
   Host::AddFormattedOSDMessage(5.0f, Host::TranslateString("OSDMessage", "Loading state from '%s'..."), filename);
 
-  if (IsValid())
+  SaveUndoLoadState();
+
+  if (!InternalLoadState(stream.get()))
   {
-    SaveUndoLoadState();
+    Host::ReportFormattedErrorAsync(
+      "Load State Error", Host::TranslateString("OSDMessage", "Loading state from '%s' failed. Resetting."), filename);
 
-    if (!InternalLoadState(stream.get()))
-    {
-      Host::ReportFormattedErrorAsync("Load State Error",
-                                      Host::TranslateString("OSDMessage", "Loading state from '%s' failed. Resetting."),
-                                      filename);
+    if (m_undo_load_state)
+      UndoLoadState();
 
-      if (m_undo_load_state)
-        UndoLoadState();
-
-      return false;
-    }
-  }
-  else
-  {
-    auto boot_params = std::make_shared<SystemBootParameters>();
-    boot_params->state_stream = std::move(stream);
-    if (!BootSystem(std::move(boot_params)))
-      return false;
+    return false;
   }
 
   ResetPerformanceCounters();
@@ -1065,23 +1077,6 @@ bool System::InternalBoot(const SystemBootParameters& params)
   s_state = State::Starting;
   s_startup_cancelled.store(false);
   s_region = g_settings.region;
-
-  if (params.state_stream)
-  {
-    if (!DoLoadState(params.state_stream.get(), params.force_software_renderer, true))
-    {
-      InternalShutdown();
-      return false;
-    }
-
-    if (g_settings.start_paused || params.override_start_paused.value_or(false))
-    {
-      DebugAssert(s_state == State::Running);
-      s_state = State::Paused;
-    }
-
-    return true;
-  }
 
   // Load CD image up and detect region.
   Common::Error error;
@@ -1214,6 +1209,11 @@ bool System::InternalBoot(const SystemBootParameters& params)
 
   // Good to go.
   s_state = (g_settings.start_paused || params.override_start_paused.value_or(false)) ? State::Paused : State::Running;
+  if (s_state == State::Paused)
+    Host::OnSystemPaused();
+  else
+    Host::OnSystemResumed();
+
   return true;
 }
 
@@ -1406,10 +1406,15 @@ void System::RecreateSystem()
   DestroySystem();
 
   auto boot_params = std::make_shared<SystemBootParameters>();
-  boot_params->state_stream = std::move(stream);
   if (!BootSystem(std::move(boot_params)))
   {
     Host::ReportErrorAsync("Error", "Failed to boot system after recreation.");
+    return;
+  }
+
+  if (!DoLoadState(stream.get(), false, false))
+  {
+    DestroySystem();
     return;
   }
 
@@ -2742,7 +2747,7 @@ void System::UpdateRunningGame(const char* path, CDImage* image, bool force)
       s_running_game_code = entry->serial;
       s_running_game_title = entry->title;
     }
-    
+
     if (image && image->HasSubImages() && g_settings.memory_card_use_playlist_title)
     {
       std::string image_title(image->GetMetadata("title"));
@@ -3518,63 +3523,6 @@ bool System::SaveStateToSlot(bool global, s32 slot)
   std::string save_path = global ? GetGlobalSaveStateFileName(slot) : GetGameSaveStateFileName(code.c_str(), slot);
   RenameCurrentSaveStateToBackup(save_path.c_str());
   return SaveState(save_path.c_str());
-}
-
-bool System::CanResumeSystemFromFile(const char* filename)
-{
-  if (Host::GetBaseBoolSettingValue("Main", "SaveStateOnExit", true) && !Cheevos::IsChallengeModeActive())
-  {
-#if 0
-    const GameListEntry* entry = m_game_list->GetEntryForPath(filename);
-    if (entry)
-      return !entry->code.empty();
-    else
-      return !System::GetGameCodeForPath(filename, true).empty();
-#else
-    Panic("Fixme");
-#endif
-  }
-
-  return false;
-}
-
-bool System::ResumeSystemFromState(const char* filename, bool boot_on_failure)
-{
-  if (!BootSystem(std::make_shared<SystemBootParameters>(filename)))
-    return false;
-
-  const bool global = System::GetRunningCode().empty();
-  if (global)
-  {
-    Host::ReportErrorAsync("Error",
-                           fmt::format("Cannot resume system with undetectable game code from '{}'.", filename));
-    if (!boot_on_failure)
-    {
-      DestroySystem();
-      return true;
-    }
-  }
-  else
-  {
-    const std::string path = GetGameSaveStateFileName(System::GetRunningCode().c_str(), -1);
-    if (FileSystem::FileExists(path.c_str()))
-    {
-      if (!LoadState(path.c_str()) && !boot_on_failure)
-      {
-        DestroySystem();
-        return false;
-      }
-    }
-    else if (!boot_on_failure)
-    {
-      Host::ReportErrorAsync("Error", fmt::format("Resume save state not found for '{}' ('{}').",
-                                                  System::GetRunningCode(), System::GetRunningTitle()));
-      DestroySystem();
-      return false;
-    }
-  }
-
-  return true;
 }
 
 bool System::ResumeSystemFromMostRecentState()

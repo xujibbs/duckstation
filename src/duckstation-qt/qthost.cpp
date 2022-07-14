@@ -14,6 +14,7 @@
 #include "core/memory_card.h"
 #include "core/spu.h"
 #include "core/system.h"
+#include "displaywidget.h"
 #include "frontend-common/fullscreen_ui.h"
 #include "frontend-common/game_list.h"
 #include "frontend-common/imgui_manager.h"
@@ -23,9 +24,9 @@
 #include "frontend-common/vulkan_host_display.h"
 #include "imgui.h"
 #include "mainwindow.h"
-#include "qtdisplaywidget.h"
 #include "qtprogresscallback.h"
 #include "qtutils.h"
+#include "scmversion/scmversion.h"
 #include "util/audio_stream.h"
 #include "util/ini_settings_interface.h"
 #include <QtCore/QCoreApplication>
@@ -144,6 +145,22 @@ bool QtHost::InBatchMode()
 bool QtHost::InNoGUIMode()
 {
   return s_nogui_mode;
+}
+
+QString QtHost::GetAppNameAndVersion()
+{
+  return QStringLiteral("DuckStation %1 (%2)").arg(g_scm_tag_str).arg(g_scm_branch_str);
+}
+
+QString QtHost::GetAppConfigSuffix()
+{
+#if defined(_DEBUG)
+  return QStringLiteral(" [Debug]");
+#elif defined(_DEBUGFAST)
+  return QStringLiteral(" [DebugFast]");
+#else
+  return QString();
+#endif
 }
 
 bool QtHost::InitializeConfig()
@@ -459,7 +476,6 @@ void QtHostInterface::bootSystem(std::shared_ptr<SystemBootParameters> params)
     return;
   }
 
-  emit emulationStarting();
   if (!System::BootSystem(std::move(params)))
     return;
 
@@ -476,11 +492,14 @@ void QtHostInterface::resumeSystemFromState(const QString& filename, bool boot_o
     return;
   }
 
-  emit emulationStarting();
+  Panic("fixme");
+
+#if 0
   if (filename.isEmpty())
     System::ResumeSystemFromMostRecentState();
   else
     System::ResumeSystemFromState(filename.toStdString().c_str(), boot_on_failure);
+#endif
 }
 
 void QtHostInterface::resumeSystemFromMostRecentState()
@@ -503,14 +522,24 @@ void QtHostInterface::onDisplayWindowKeyEvent(int key, bool pressed)
                              GenericInputBinding::Unknown);
 }
 
-void QtHostInterface::onDisplayWindowMouseMoveEvent(float x, float y)
+void QtHostInterface::onDisplayWindowMouseMoveEvent(bool relative, float x, float y)
 {
   // display might be null here if the event happened after shutdown
   DebugAssert(isOnWorkerThread());
-  if (s_host_display)
-    s_host_display->SetMousePosition(static_cast<s32>(x), static_cast<s32>(y));
+  if (!relative)
+  {
+    if (s_host_display)
+      s_host_display->SetMousePosition(static_cast<s32>(x), static_cast<s32>(y));
 
-  InputManager::UpdatePointerAbsolutePosition(0, x, y);
+    InputManager::UpdatePointerAbsolutePosition(0, x, y);
+  }
+  else
+  {
+    if (x != 0.0f)
+      InputManager::UpdatePointerRelativeDelta(0, InputPointerAxis::X, x);
+    if (y != 0.0f)
+      InputManager::UpdatePointerRelativeDelta(0, InputPointerAxis::Y, y);
+  }
 }
 
 void QtHostInterface::onDisplayWindowMouseButtonEvent(int button, bool pressed)
@@ -563,18 +592,6 @@ void QtHostInterface::onDisplayWindowResized(int width, int height)
   }
 }
 
-void QtHostInterface::onDisplayWindowFocused()
-{
-  if (!s_host_display || !m_lost_exclusive_fullscreen)
-    return;
-
-  // try to restore exclusive fullscreen
-  m_lost_exclusive_fullscreen = false;
-  m_is_exclusive_fullscreen = true;
-  m_is_fullscreen = true;
-  updateDisplayState();
-}
-
 void QtHostInterface::redrawDisplayWindow()
 {
   if (!isOnWorkerThread())
@@ -597,42 +614,43 @@ void QtHostInterface::toggleFullscreen()
     return;
   }
 
-  SetFullscreen(!m_is_fullscreen);
+  setFullscreen(!m_is_fullscreen);
 }
 
-HostDisplay* QtHostInterface::acquireHostDisplay()
+void QtHostInterface::setFullscreen(bool fullscreen)
+{
+  if (!isOnWorkerThread())
+  {
+    QMetaObject::invokeMethod(this, "setFullscreen", Qt::QueuedConnection, Q_ARG(bool, fullscreen));
+    return;
+  }
+
+  if (!s_host_display || m_is_fullscreen == fullscreen)
+    return;
+
+  m_is_fullscreen = fullscreen;
+  updateDisplayRequested(fullscreen, m_is_rendering_to_main, m_is_surfaceless);
+}
+
+void QtHostInterface::setSurfaceless(bool surfaceless)
+{
+  if (!isOnWorkerThread())
+  {
+    QMetaObject::invokeMethod(this, "setSurfaceless", Qt::QueuedConnection, Q_ARG(bool, surfaceless));
+    return;
+  }
+
+  if (!s_host_display || m_is_surfaceless == surfaceless)
+    return;
+
+  m_is_surfaceless = surfaceless;
+  updateDisplayRequested(m_is_fullscreen, m_is_rendering_to_main, m_is_surfaceless);
+}
+
+static void createHostDisplay()
 {
   Assert(!s_host_display);
 
-  m_is_rendering_to_main = Host::GetBaseBoolSettingValue("Main", "RenderToMainWindow", true);
-
-  QtDisplayWidget* display_widget = createDisplayRequested(m_worker_thread, m_is_fullscreen, m_is_rendering_to_main);
-  if (!display_widget || !s_host_display->HasRenderDevice())
-  {
-    emit destroyDisplayRequested();
-    s_host_display.reset();
-    return nullptr;
-  }
-
-  if (!s_host_display->MakeRenderContextCurrent() ||
-      !s_host_display->InitializeRenderDevice(EmuFolders::Cache, g_settings.gpu_use_debug_device,
-                                              g_settings.gpu_threaded_presentation) ||
-      !ImGuiManager::Initialize() || !CommonHost::CreateHostDisplayResources())
-  {
-    ImGuiManager::Shutdown();
-    CommonHost::ReleaseHostDisplayResources();
-    s_host_display->DestroyRenderDevice();
-    emit destroyDisplayRequested();
-    s_host_display.reset();
-    return nullptr;
-  }
-
-  m_is_exclusive_fullscreen = s_host_display->IsFullscreen();
-  return s_host_display.get();
-}
-
-HostDisplay* QtHostInterface::createHostDisplay()
-{
   switch (g_settings.gpu_renderer)
   {
     case GPURenderer::HardwareVulkan:
@@ -657,23 +675,49 @@ HostDisplay* QtHostInterface::createHostDisplay()
       break;
 #endif
   }
+}
 
+HostDisplay* QtHostInterface::acquireHostDisplay()
+{
+  createHostDisplay();
+
+  m_is_rendering_to_main = Host::GetBaseBoolSettingValue("Main", "RenderToMainWindow", true);
+
+  DisplayWidget* display_widget = createDisplayRequested(m_is_fullscreen, m_is_rendering_to_main);
+  if (!display_widget || !s_host_display->HasRenderDevice())
+  {
+    emit destroyDisplayRequested();
+    s_host_display.reset();
+    return nullptr;
+  }
+
+  if (!s_host_display->MakeRenderContextCurrent() ||
+      !s_host_display->InitializeRenderDevice(EmuFolders::Cache, g_settings.gpu_use_debug_device,
+                                              g_settings.gpu_threaded_presentation) ||
+      !ImGuiManager::Initialize() || !CommonHost::CreateHostDisplayResources())
+  {
+    ImGuiManager::Shutdown();
+    CommonHost::ReleaseHostDisplayResources();
+    s_host_display->DestroyRenderDevice();
+    emit destroyDisplayRequested();
+    s_host_display.reset();
+    return nullptr;
+  }
+
+  m_is_exclusive_fullscreen = s_host_display->IsFullscreen();
   return s_host_display.get();
 }
 
-void QtHostInterface::connectDisplaySignals(QtDisplayWidget* widget)
+void QtHostInterface::connectDisplaySignals(DisplayWidget* widget)
 {
   widget->disconnect(this);
 
-  connect(widget, &QtDisplayWidget::windowFocusEvent, this, &QtHostInterface::onDisplayWindowFocused);
-  connect(widget, &QtDisplayWidget::windowResizedEvent, this, &QtHostInterface::onDisplayWindowResized);
-  connect(widget, &QtDisplayWidget::windowRestoredEvent, this, &QtHostInterface::redrawDisplayWindow);
-  connect(widget, &QtDisplayWidget::windowClosedEvent, this, &QtHostInterface::powerOffSystem,
-          Qt::BlockingQueuedConnection);
-  connect(widget, &QtDisplayWidget::windowKeyEvent, this, &QtHostInterface::onDisplayWindowKeyEvent);
-  connect(widget, &QtDisplayWidget::windowMouseMoveEvent, this, &QtHostInterface::onDisplayWindowMouseMoveEvent);
-  connect(widget, &QtDisplayWidget::windowMouseButtonEvent, this, &QtHostInterface::onDisplayWindowMouseButtonEvent);
-  connect(widget, &QtDisplayWidget::windowMouseWheelEvent, this, &QtHostInterface::onDisplayWindowMouseWheelEvent);
+  connect(widget, &DisplayWidget::windowResizedEvent, this, &QtHostInterface::onDisplayWindowResized);
+  connect(widget, &DisplayWidget::windowRestoredEvent, this, &QtHostInterface::redrawDisplayWindow);
+  connect(widget, &DisplayWidget::windowKeyEvent, this, &QtHostInterface::onDisplayWindowKeyEvent);
+  connect(widget, &DisplayWidget::windowMouseMoveEvent, this, &QtHostInterface::onDisplayWindowMouseMoveEvent);
+  connect(widget, &DisplayWidget::windowMouseButtonEvent, this, &QtHostInterface::onDisplayWindowMouseButtonEvent);
+  connect(widget, &DisplayWidget::windowMouseWheelEvent, this, &QtHostInterface::onDisplayWindowMouseWheelEvent);
 }
 
 void QtHostInterface::updateDisplayState()
@@ -684,7 +728,7 @@ void QtHostInterface::updateDisplayState()
   // this expects the context to get moved back to us afterwards
   s_host_display->DoneRenderContextCurrent();
 
-  QtDisplayWidget* display_widget =
+  DisplayWidget* display_widget =
     updateDisplayRequested(m_worker_thread, m_is_fullscreen, m_is_rendering_to_main && !m_is_fullscreen);
   if (!display_widget || !s_host_display->MakeRenderContextCurrent())
     Panic("Failed to make device context current after updating");
@@ -736,35 +780,48 @@ void QtHostInterface::RequestExit()
   emit exitRequested();
 }
 
-void QtHostInterface::onSystemStarted()
+void Host::OnSystemStarting()
 {
-  wakeThread();
-  stopBackgroundControllerPollTimer();
+  CommonHost::OnSystemStarting();
 
-  emit emulationStarted();
-  emit emulationPaused(false);
+  emit g_emu_thread->systemStarting();
 }
 
-void QtHostInterface::onSystemPaused()
+void Host::OnSystemStarted()
 {
-  emit emulationPaused(true);
-  startBackgroundControllerPollTimer();
-  renderDisplay();
+  CommonHost::OnSystemStarted();
+
+  g_emu_thread->wakeThread();
+  g_emu_thread->stopBackgroundControllerPollTimer();
+
+  emit g_emu_thread->systemStarted();
 }
 
-void QtHostInterface::onSystemResumed()
+void Host::OnSystemPaused()
 {
-  emit emulationPaused(false);
+  CommonHost::OnSystemPaused();
 
-  wakeThread();
-  stopBackgroundControllerPollTimer();
-  emit focusDisplayWidgetRequested();
+  emit g_emu_thread->systemPaused();
+  g_emu_thread->startBackgroundControllerPollTimer();
+  g_emu_thread->renderDisplay();
 }
 
-void QtHostInterface::onSystemDestroyed()
+void Host::OnSystemResumed()
 {
-  startBackgroundControllerPollTimer();
-  emit emulationStopped();
+  CommonHost::OnSystemResumed();
+
+  emit g_emu_thread->systemResumed();
+
+  g_emu_thread->wakeThread();
+  g_emu_thread->stopBackgroundControllerPollTimer();
+}
+
+void Host::OnSystemDestroyed()
+{
+  CommonHost::OnSystemDestroyed();
+
+  g_emu_thread->startBackgroundControllerPollTimer();
+  emit g_emu_thread->systemDestroyed();
 }
 
 #if 0
@@ -1322,9 +1379,6 @@ void QtHostInterface::loadState(const QString& filename)
     QMetaObject::invokeMethod(this, "loadState", Qt::QueuedConnection, Q_ARG(const QString&, filename));
     return;
   }
-
-  if (System::IsShutdown())
-    emit emulationStarting();
 
   System::LoadState(filename.toStdString().c_str());
 }
@@ -1908,36 +1962,6 @@ void Host::CheckForSettingsChanges(const Settings& old_settings)
 {
   CommonHost::CheckForSettingsChanges(old_settings);
   // TODO, e.g. render to main
-}
-
-void Host::OnSystemStarting()
-{
-  CommonHost::OnSystemStarting();
-  // g_emu_thread->onSystemStarting();
-}
-
-void Host::OnSystemStarted()
-{
-  CommonHost::OnSystemStarted();
-  g_emu_thread->onSystemStarted();
-}
-
-void Host::OnSystemPaused()
-{
-  CommonHost::OnSystemPaused();
-  g_emu_thread->onSystemPaused();
-}
-
-void Host::OnSystemResumed()
-{
-  CommonHost::OnSystemResumed();
-  g_emu_thread->onSystemResumed();
-}
-
-void Host::OnSystemDestroyed()
-{
-  CommonHost::OnSystemDestroyed();
-  g_emu_thread->onSystemDestroyed();
 }
 
 void Host::OnPerformanceMetricsUpdated()

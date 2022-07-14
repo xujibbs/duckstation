@@ -24,10 +24,10 @@ struct SystemBootParameters
   ~SystemBootParameters();
 
   std::string filename;
+  std::string save_state;
   std::optional<bool> override_fast_boot;
   std::optional<bool> override_fullscreen;
   std::optional<bool> override_start_paused;
-  std::unique_ptr<ByteStream> state_stream;
   u32 media_playlist_index = 0;
   bool load_image_to_ram = false;
   bool force_software_renderer = false;
@@ -334,12 +334,6 @@ std::optional<ExtendedSaveStateInfo> GetUndoSaveStateInfo();
 
 /// Undoes a load state, i.e. restores the state prior to the load.
 bool UndoLoadState();
-
-/// Returns true if the specified file/disc image is resumable.
-bool CanResumeSystemFromFile(const char* filename);
-
-/// Loads the resume save state for the given game. Optionally boots the game anyway if loading fails.
-bool ResumeSystemFromState(const char* filename, bool boot_on_failure);
 
 /// Loads the most recent resume save state. This may be global or per-game.
 bool ResumeSystemFromMostRecentState();

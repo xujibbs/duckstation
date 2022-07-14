@@ -7,7 +7,7 @@
 
 #include "controllersettingsdialog.h"
 #include "core/types.h"
-#include "qtdisplaywidget.h"
+#include "displaywidget.h"
 #include "settingsdialog.h"
 #include "ui_mainwindow.h"
 
@@ -59,8 +59,8 @@ public Q_SLOTS:
 private Q_SLOTS:
   void reportError(const QString& title, const QString& message);
   bool confirmMessage(const QString& title, const QString& message);
-  QtDisplayWidget* createDisplay(QThread* worker_thread, bool fullscreen, bool render_to_main);
-  QtDisplayWidget* updateDisplay(QThread* worker_thread, bool fullscreen, bool render_to_main);
+  DisplayWidget* createDisplay(bool fullscreen, bool render_to_main);
+  DisplayWidget* updateDisplay(bool fullscreen, bool render_to_main, bool surfaceless);
   void displaySizeRequested(qint32 width, qint32 height);
   void destroyDisplay();
   void focusDisplayWidget();
@@ -68,10 +68,11 @@ private Q_SLOTS:
   void updateMouseMode(bool paused);
 
   void onSettingsResetToDefault();
-  void onEmulationStarting();
-  void onEmulationStarted();
-  void onEmulationStopped();
-  void onEmulationPaused(bool paused);
+  void onSystemStarting();
+  void onSystemStarted();
+  void onSystemDestroyed();
+  void onSystemPaused();
+  void onSystemResumed();
   void onSystemPerformanceCountersUpdated(float speed, float fps, float vps, float average_frame_time,
                                           float worst_frame_time, GPURenderer renderer, quint32 render_width,
                                           quint32 render_height, bool render_interlaced);
@@ -124,26 +125,30 @@ protected:
   void dropEvent(QDropEvent* event) override;
 
 private:
-  ALWAYS_INLINE QWidget* getDisplayContainer() const
-  {
-    return (m_display_container ? static_cast<QWidget*>(m_display_container) : static_cast<QWidget*>(m_display_widget));
-  }
-
   void setTheme(const QString& theme);
   void setStyleFromSettings();
   void setIconThemeFromSettings();
   void setupAdditionalUi();
   void connectSignals();
   void addThemeToMenu(const QString& name, const QString& key);
+
   void updateEmulationActions(bool starting, bool running, bool cheevos_challenge_mode);
+  void updateStatusBarWidgetVisibility();
+  void updateWindowTitle();
+  void updateWindowState(bool force_visible = false);
 
   void setProgressBar(int current, int total);
   void clearProgressBar();
 
+  QWidget* getDisplayContainer() const;
   bool isShowingGameList() const;
+  bool isRenderingFullscreen() const;
+  bool isRenderingToMain() const;
+  bool shouldHideMouseCursor() const;
+  bool shouldHideMainWindow() const;
+
   void switchToGameListView();
   void switchToEmulationView();
-  void startGameOrChangeDiscs(const std::string& path);
   void saveStateToConfig();
   void restoreStateFromConfig();
   void saveDisplayWindowGeometryToConfig();
@@ -166,15 +171,17 @@ private:
   void setGameListEntryCoverImage(const GameList::Entry* entry);
   void recreate();
 
+  std::optional<bool> promptForResumeState(const QString& save_state_path);
+  void startGameListEntry(const GameList::Entry* entry, std::optional<s32> save_slot, std::optional<bool> fast_boot);
+
   Ui::MainWindow m_ui;
 
   QString m_unthemed_style_name;
 
   GameListWidget* m_game_list_widget = nullptr;
 
-  HostDisplay* m_host_display = nullptr;
-  QtDisplayWidget* m_display_widget = nullptr;
-  QtDisplayContainer* m_display_container = nullptr;
+  DisplayWidget* m_display_widget = nullptr;
+  DisplayContainer* m_display_container = nullptr;
 
   QProgressBar* m_status_progress_widget = nullptr;
   QLabel* m_status_speed_widget = nullptr;
@@ -191,13 +198,19 @@ private:
   CheatManagerDialog* m_cheat_manager_dialog = nullptr;
   DebuggerWindow* m_debugger_window = nullptr;
 
-  std::string m_running_game_code;
+  std::string m_current_game_title;
+  std::string m_current_game_code;
 
-  bool m_emulation_running = false;
   bool m_was_paused_by_focus_loss = false;
   bool m_open_debugger_on_start = false;
   bool m_relative_mouse_mode = false;
   bool m_mouse_cursor_hidden = false;
+
+  bool m_display_created = false;
+  bool m_save_states_invalidated = false;
+  bool m_was_paused_on_surface_loss = false;
+  bool m_was_disc_change_request = false;
+  bool m_is_closing = false;
 
   GDBServer* m_gdb_server = nullptr;
 };

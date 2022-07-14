@@ -20,13 +20,6 @@
    <iconset resource="resources/resources.qrc">
     <normaloff>:/icons/duck.png</normaloff>:/icons/duck.png</iconset>
   </property>
-  <widget class="QStackedWidget" name="mainContainer">
-   <property name="currentIndex">
-    <number>0</number>
-   </property>
-   <widget class="QWidget" name="page"/>
-   <widget class="QWidget" name="page_2"/>
-  </widget>
   <widget class="QMenuBar" name="menuBar">
    <property name="geometry">
     <rect>
@@ -81,6 +74,7 @@
     <addaction name="actionStartFile"/>
     <addaction name="actionStartDisc"/>
     <addaction name="actionStartBios"/>
+    <addaction name="actionStartFullscreenUI"/>
     <addaction name="actionResumeLastState"/>
     <addaction name="separator"/>
     <addaction name="actionPowerOff"/>
@@ -254,6 +248,7 @@
    </attribute>
    <addaction name="actionStartFile"/>
    <addaction name="actionStartBios"/>
+   <addaction name="actionStartFullscreenUI2"/>
    <addaction name="separator"/>
    <addaction name="actionResumeLastState"/>
    <addaction name="actionReset"/>
@@ -867,6 +862,24 @@
    </property>
    <property name="text">
     <string>Power Off &amp;Without Saving</string>
+   </property>
+  </action>
+  <action name="actionStartFullscreenUI">
+   <property name="icon">
+    <iconset theme="tv-2-line">
+     <normaloff>.</normaloff>.</iconset>
+   </property>
+   <property name="text">
+    <string>Start Big Picture Mode</string>
+   </property>
+  </action>
+  <action name="actionStartFullscreenUI2">
+   <property name="icon">
+    <iconset theme="tv-2-line">
+     <normaloff>.</normaloff>.</iconset>
+   </property>
+   <property name="text">
+    <string>Big Picture</string>
    </property>
   </action>
  </widget>
