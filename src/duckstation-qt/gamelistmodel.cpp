@@ -3,6 +3,7 @@
 #include "common/path.h"
 #include "common/string_util.h"
 #include "core/system.h"
+#include "qtutils.h"
 #include <QtCore/QDate>
 #include <QtCore/QDateTime>
 #include <QtGui/QGuiApplication>
@@ -290,43 +291,18 @@ QVariant GameListModel::data(const QModelIndex& index, int role) const
       {
         case Column_Type:
         {
-          switch (ge->type)
-          {
-            case GameList::EntryType::Disc:
-              return (/*(ge.settings.GetUserSettingsCount() > 0)*/ false ? m_type_disc_with_settings_pixmap :
-                                                                           m_type_disc_pixmap);
-            case GameList::EntryType::Playlist:
-              return m_type_playlist_pixmap;
-            case GameList::EntryType::PSF:
-              return m_type_psf_pixmap;
-            case GameList::EntryType::PSExe:
-            default:
-              return m_type_exe_pixmap;
-          }
+          // TODO: Test for settings
+          return m_type_pixmaps[static_cast<u32>(ge->type)];
         }
 
         case Column_Region:
         {
-          switch (ge->region)
-          {
-            case DiscRegion::NTSC_J:
-              return m_region_jp_pixmap;
-            case DiscRegion::NTSC_U:
-              return m_region_us_pixmap;
-            case DiscRegion::Other:
-              return m_region_other_pixmap;
-            case DiscRegion::PAL:
-            default:
-              return m_region_eu_pixmap;
-          }
+          return m_region_pixmaps[static_cast<u32>(ge->region)];
         }
 
         case Column_Compatibility:
         {
-          return m_compatibiliy_pixmaps[static_cast<int>(
-            (ge->compatibility >= GameDatabase::CompatibilityRating::Count) ?
-              GameDatabase::CompatibilityRating::Unknown :
-              ge->compatibility)];
+          return m_compatibiliy_pixmaps[static_cast<u32>(ge->compatibility)];
         }
 
         case Column_Cover:
@@ -514,16 +490,11 @@ bool GameListModel::lessThan(const QModelIndex& left_index, const QModelIndex& r
 
 void GameListModel::loadCommonImages()
 {
-  // TODO: Use svg instead of png
-  m_type_disc_pixmap = QIcon(QStringLiteral(":/icons/media-optical-24.png")).pixmap(QSize(24, 24));
-  m_type_disc_with_settings_pixmap = QIcon(QStringLiteral(":/icons/media-optical-gear-24.png")).pixmap(QSize(24, 24));
-  m_type_exe_pixmap = QIcon(QStringLiteral(":/icons/applications-system-24.png")).pixmap(QSize(24, 24));
-  m_type_playlist_pixmap = QIcon(QStringLiteral(":/icons/address-book-new-22.png")).pixmap(QSize(22, 22));
-  m_type_psf_pixmap = QIcon(QStringLiteral(":/icons/multimedia-player.png")).pixmap(QSize(22, 22));
-  m_region_eu_pixmap = QIcon(QStringLiteral(":/icons/flag-eu.png")).pixmap(QSize(42, 30));
-  m_region_jp_pixmap = QIcon(QStringLiteral(":/icons/flag-jp.png")).pixmap(QSize(42, 30));
-  m_region_us_pixmap = QIcon(QStringLiteral(":/icons/flag-uc.png")).pixmap(QSize(42, 30));
-  m_region_other_pixmap = QIcon(QStringLiteral(":/icons/flag-other.png")).pixmap(QSize(42, 30));
+  for (u32 i = 0; i < static_cast<u32>(GameList::EntryType::Count); i++)
+    m_type_pixmaps[i] = QtUtils::GetIconForEntryType(static_cast<GameList::EntryType>(i)).pixmap(QSize(24, 24));
+
+  for (u32 i = 0; i < static_cast<u32>(DiscRegion::Count); i++)
+    m_region_pixmaps[i] = QtUtils::GetIconForRegion(static_cast<DiscRegion>(i)).pixmap(42, 30);
 
   for (int i = 0; i < static_cast<int>(GameDatabase::CompatibilityRating::Count); i++)
     m_compatibiliy_pixmaps[i].load(QStringLiteral(":/icons/star-%1.png").arg(i));

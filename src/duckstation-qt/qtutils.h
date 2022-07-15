@@ -3,6 +3,7 @@
 #include <QtCore/QByteArray>
 #include <QtCore/QMetaType>
 #include <QtCore/QString>
+#include <QtGui/QIcon>
 #include <functional>
 #include <initializer_list>
 #include <optional>
@@ -20,6 +21,12 @@ class QTreeView;
 class QVariant;
 class QWidget;
 class QUrl;
+
+enum class ConsoleRegion;
+enum class DiscRegion : u8;
+namespace GameList {
+enum class EntryType;
+}
 
 namespace QtUtils {
 
@@ -61,9 +68,6 @@ QVariant GetMSAAModeValue(uint multisamples, bool ssaa);
 void DecodeMSAAModeValue(const QVariant& userdata, uint* multisamples, bool* ssaa);
 void FillComboBoxWithMSAAModes(QComboBox* cb);
 
-/// Fills a combo box with emulation speed options.
-void FillComboBoxWithEmulationSpeeds(QComboBox* cb);
-
 /// Prompts for an address in hex.
 std::optional<unsigned> PromptForAddress(QWidget* parent, const QString& title, const QString& label, bool code);
 
@@ -78,5 +82,12 @@ void SetWindowResizeable(QWidget* widget, bool resizeable);
 
 /// Adjusts the fixed size for a window if it's not resizeable.
 void ResizePotentiallyFixedSizeWindow(QWidget* widget, int width, int height);
+
+/// Returns icon for region.
+QIcon GetIconForRegion(ConsoleRegion region);
+QIcon GetIconForRegion(DiscRegion region);
+
+/// Returns icon for entry type.
+QIcon GetIconForEntryType(GameList::EntryType type);
 
 } // namespace QtUtils

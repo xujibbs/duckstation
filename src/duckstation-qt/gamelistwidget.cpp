@@ -89,8 +89,17 @@ void GameListWidget::initialize()
   m_sort_model->setSourceModel(m_model);
 
   m_ui.setupUi(this);
+  for (u32 type = 0; type < static_cast<u32>(GameList::EntryType::Count); type++)
+  {
+    m_ui.filterType->addItem(
+      QtUtils::GetIconForEntryType(static_cast<GameList::EntryType>(type)),
+      qApp->translate("GameList", GameList::GetEntryTypeDisplayName(static_cast<GameList::EntryType>(type))));
+  }
   for (u32 region = 0; region < static_cast<u32>(DiscRegion::Count); region++)
-    m_ui.filterRegion->addItem(QString::fromUtf8(Settings::GetDiscRegionDisplayName(static_cast<DiscRegion>(region))));
+  {
+    m_ui.filterRegion->addItem(QtUtils::GetIconForRegion(static_cast<DiscRegion>(region)),
+                               QString::fromUtf8(Settings::GetDiscRegionName(static_cast<DiscRegion>(region))));
+  }
 
   connect(m_ui.viewGameList, &QPushButton::clicked, this, &GameListWidget::showGameList);
   connect(m_ui.viewGameGrid, &QPushButton::clicked, this, &GameListWidget::showGameGrid);
@@ -107,7 +116,7 @@ void GameListWidget::initialize()
           [this](const QString& text) { m_sort_model->setFilterName(text); });
 
   // Works around a strange bug where after hiding the game list, the cursor for the whole window changes to a beam..
-  //m_ui.searchText->setCursor(QCursor(Qt::ArrowCursor));
+  // m_ui.searchText->setCursor(QCursor(Qt::ArrowCursor));
 
   m_table_view = new QTableView(m_ui.stack);
   m_table_view->setModel(m_sort_model);
@@ -347,7 +356,10 @@ void GameListWidget::refreshGridCovers()
 void GameListWidget::showGameList()
 {
   if (m_ui.stack->currentIndex() == 0 || m_model->rowCount() == 0)
+  {
+    updateToolbar();
     return;
+  }
 
   Host::SetBaseBoolSettingValue("UI", "GameListGridView", false);
   m_ui.stack->setCurrentIndex(0);
@@ -359,7 +371,10 @@ void GameListWidget::showGameList()
 void GameListWidget::showGameGrid()
 {
   if (m_ui.stack->currentIndex() == 1 || m_model->rowCount() == 0)
+  {
+    updateToolbar();
     return;
+  }
 
   Host::SetBaseBoolSettingValue("UI", "GameListGridView", true);
   m_ui.stack->setCurrentIndex(1);
@@ -370,7 +385,10 @@ void GameListWidget::showGameGrid()
 void GameListWidget::setShowCoverTitles(bool enabled)
 {
   if (m_model->getShowCoverTitles() == enabled)
+  {
+    updateToolbar();
     return;
+  }
 
   Host::SetBaseBoolSettingValue("UI", "GameListShowCoverTitles", enabled);
   m_model->setShowCoverTitles(enabled);

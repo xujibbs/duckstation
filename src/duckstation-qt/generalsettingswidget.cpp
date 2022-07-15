@@ -13,20 +13,30 @@ GeneralSettingsWidget::GeneralSettingsWidget(SettingsDialog* dialog, QWidget* pa
 
   m_ui.setupUi(this);
 
-  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.pauseOnStart, "Main", "StartPaused", false);
-  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.pauseOnFocusLoss, "Main", "PauseOnFocusLoss", false);
-  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.startFullscreen, "Main", "StartFullscreen", false);
-  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.hideCursorInFullscreen, "Main", "HideCursorInFullscreen",
-                                               true);
   SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.inhibitScreensaver, "Main", "InhibitScreensaver", true);
-  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.renderToMain, "Main", "RenderToMainWindow", true);
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.pauseOnFocusLoss, "Main", "PauseOnFocusLoss", false);
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.pauseOnStart, "Main", "StartPaused", false);
   SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.saveStateOnExit, "Main", "SaveStateOnExit", true);
   SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.confirmPowerOff, "Main", "ConfirmPowerOff", true);
   SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.loadDevicesFromSaveStates, "Main", "LoadDevicesFromSaveStates",
                                                false);
   SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.applyGameSettings, "Main", "ApplyGameSettings", true);
   SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.autoLoadCheats, "Main", "AutoLoadCheats", true);
-  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.enableFullscreenUI, "Main", "EnableFullscreenUI", false);
+
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.startFullscreen, "Main", "StartFullscreen", false);
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.doubleClickTogglesFullscreen, "Main",
+                                               "DoubleClickTogglesFullscreen", true);
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.renderToSeparateWindow, "Main", "RenderToSeparateWindow",
+                                               false);
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.hideMainWindow, "Main", "HideMainWindowWhenRunning", false);
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.disableWindowResizing, "Main", "DisableWindowResize", false);
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.hideMouseCursor, "Main", "HideCursorInFullscreen", true);
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.createSaveStateBackups, "Main", "CreateSaveStateBackups",
+                                               false);
+  connect(m_ui.renderToSeparateWindow, &QCheckBox::stateChanged, this,
+          &GeneralSettingsWidget::onRenderToSeparateWindowChanged);
+
+  onRenderToSeparateWindowChanged();
 
   dialog->registerWidgetHelp(
     m_ui.confirmPowerOff, tr("Confirm Power Off"), tr("Checked"),
@@ -37,15 +47,15 @@ GeneralSettingsWidget::GeneralSettingsWidget(SettingsDialog* dialog, QWidget* pa
                                 "resume directly from where you left off next time."));
   dialog->registerWidgetHelp(m_ui.startFullscreen, tr("Start Fullscreen"), tr("Unchecked"),
                              tr("Automatically switches to fullscreen mode when a game is started."));
-  dialog->registerWidgetHelp(m_ui.hideCursorInFullscreen, tr("Hide Cursor In Fullscreen"), tr("Checked"),
+  dialog->registerWidgetHelp(m_ui.hideMouseCursor, tr("Hide Cursor In Fullscreen"), tr("Checked"),
                              tr("Hides the mouse pointer/cursor when the emulator is in fullscreen mode."));
   dialog->registerWidgetHelp(
     m_ui.inhibitScreensaver, tr("Inhibit Screensaver"), tr("Checked"),
     tr("Prevents the screen saver from activating and the host from sleeping while emulation is running."));
   dialog->registerWidgetHelp(
-    m_ui.renderToMain, tr("Render To Main Window"), tr("Checked"),
+    m_ui.renderToSeparateWindow, tr("Render To Separate Window"), tr("Checked"),
     tr("Renders the display of the simulated console to the main window of the application, over "
-       "the game list. If unchecked, the display will render in a separate window."));
+       "the game list. If checked, the display will render in a separate window."));
   dialog->registerWidgetHelp(m_ui.pauseOnStart, tr("Pause On Start"), tr("Unchecked"),
                              tr("Pauses the emulator when a game is started."));
   dialog->registerWidgetHelp(m_ui.pauseOnFocusLoss, tr("Pause On Focus Loss"), tr("Unchecked"),
@@ -62,23 +72,17 @@ GeneralSettingsWidget::GeneralSettingsWidget(SettingsDialog* dialog, QWidget* pa
        "leave this option enabled except when testing enhancements with incompatible games."));
   dialog->registerWidgetHelp(m_ui.autoLoadCheats, tr("Automatically Load Cheats"), tr("Unchecked"),
                              tr("Automatically loads and applies cheats on game start."));
-  dialog->registerWidgetHelp(
-    m_ui.enableFullscreenUI, tr("Enable Fullscreen UI"), tr("Unchecked"),
-    tr("Enables the fullscreen UI mode, suitable for controller operation which is used in the NoGUI frontend."));
 
-  // Since this one is compile-time selected, we don't put it in the .ui file.
-  int current_col = 0;
-  int current_row = m_ui.formLayout_4->rowCount() - current_col;
 #ifdef WITH_DISCORD_PRESENCE
   {
-    QCheckBox* enableDiscordPresence = new QCheckBox(tr("Enable Discord Presence"), m_ui.groupBox_4);
-    SettingWidgetBinder::BindWidgetToBoolSetting(sif, enableDiscordPresence, "Main", "EnableDiscordPresence", false);
-    m_ui.formLayout_4->addWidget(enableDiscordPresence, current_row, current_col);
-    dialog->registerWidgetHelp(enableDiscordPresence, tr("Enable Discord Presence"), tr("Unchecked"),
+    SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.enableDiscordPresence, "Main", "EnableDiscordPresence",
+                                                 false);
+    dialog->registerWidgetHelp(m_ui.enableDiscordPresence, tr("Enable Discord Presence"), tr("Unchecked"),
                                tr("Shows the game you are currently playing as part of your profile in Discord."));
-    current_col++;
-    current_row += (current_col / 2);
-    current_col %= 2;
+  }
+#else
+  {
+    m_ui.enableDiscordPresence->setEnabled(false);
   }
 #endif
   if (AutoUpdaterDialog::isSupported())
@@ -94,9 +98,6 @@ GeneralSettingsWidget::GeneralSettingsWidget(SettingsDialog* dialog, QWidget* pa
 
     m_ui.autoUpdateCurrentVersion->setText(tr("%1 (%2)").arg(g_scm_tag_str).arg(g_scm_date_str));
     connect(m_ui.checkForUpdates, &QPushButton::clicked, [this]() { g_main_window->checkForUpdates(true); });
-    current_col++;
-    current_row += (current_col / 2);
-    current_col %= 2;
   }
   else
   {
@@ -106,3 +107,8 @@ GeneralSettingsWidget::GeneralSettingsWidget(SettingsDialog* dialog, QWidget* pa
 }
 
 GeneralSettingsWidget::~GeneralSettingsWidget() = default;
+
+void GeneralSettingsWidget::onRenderToSeparateWindowChanged()
+{
+  m_ui.hideMainWindow->setEnabled(m_ui.renderToSeparateWindow->isChecked());
+}

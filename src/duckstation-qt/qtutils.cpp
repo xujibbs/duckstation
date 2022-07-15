@@ -1,6 +1,8 @@
 #include "qtutils.h"
 #include "common/byte_stream.h"
 #include "common/make_array.h"
+#include "core/system.h"
+#include "frontend-common/game_list.h"
 #include <QtCore/QCoreApplication>
 #include <QtCore/QMetaObject>
 #include <QtGui/QDesktopServices>
@@ -730,22 +732,6 @@ void FillComboBoxWithMSAAModes(QComboBox* cb)
     cb->addItem(qApp->translate("GPUSettingsWidget", "%1x SSAA").arg(i), GetMSAAModeValue(i, true));
 }
 
-void FillComboBoxWithEmulationSpeeds(QComboBox* cb)
-{
-  cb->addItem(qApp->translate("GeneralSettingsWidget", "Unlimited"), QVariant(0.0f));
-
-  static constexpr auto speeds = make_array(10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 125, 150, 175, 200, 250, 300, 350,
-                                            400, 450, 500, 600, 700, 800, 900, 1000);
-  for (const int speed : speeds)
-  {
-    cb->addItem(qApp->translate("GeneralSettingsWidget", "%1% [%2 FPS (NTSC) / %3 FPS (PAL)]")
-                  .arg(speed)
-                  .arg((60 * speed) / 100)
-                  .arg((50 * speed) / 100),
-                QVariant(static_cast<float>(speed) / 100.0f));
-  }
-}
-
 std::optional<unsigned> PromptForAddress(QWidget* parent, const QString& title, const QString& label, bool code)
 {
   const QString address_str(
@@ -823,4 +809,53 @@ void ResizePotentiallyFixedSizeWindow(QWidget* widget, int width, int height)
 
   widget->resize(width, height);
 }
+
+QIcon GetIconForRegion(ConsoleRegion region)
+{
+  switch (region)
+  {
+    case ConsoleRegion::NTSC_J:
+      return QIcon(QStringLiteral(":/icons/flag-jp.png"));
+    case ConsoleRegion::PAL:
+      return QIcon(QStringLiteral(":/icons/flag-eu.png"));
+    case ConsoleRegion::NTSC_U:
+      return QIcon(QStringLiteral(":/icons/flag-uc.png"));
+    default:
+      return QIcon(QStringLiteral(":/icons/applications-other.png"));
+  }
+}
+
+QIcon GetIconForRegion(DiscRegion region)
+{
+  switch (region)
+  {
+    case DiscRegion::NTSC_J:
+      return QIcon(QStringLiteral(":/icons/flag-jp.png"));
+    case DiscRegion::PAL:
+      return QIcon(QStringLiteral(":/icons/flag-eu.png"));
+    case DiscRegion::NTSC_U:
+      return QIcon(QStringLiteral(":/icons/flag-uc.png"));
+    case DiscRegion::Other:
+    default:
+      return QIcon(QStringLiteral(":/icons/applications-other.png"));
+  }
+}
+
+QIcon GetIconForEntryType(GameList::EntryType type)
+{
+  switch (type)
+  {
+    case GameList::EntryType::Disc:
+      return QIcon(
+        QStringLiteral(":/icons/media-optical-24.png")); // QIcon(QStringLiteral(":/icons/media-optical-gear-24.png"))
+    case GameList::EntryType::Playlist:
+      return QIcon(QStringLiteral(":/icons/address-book-new-22.png"));
+    case GameList::EntryType::PSF:
+      return QIcon(QStringLiteral(":/icons/multimedia-player.png"));
+    case GameList::EntryType::PSExe:
+    default:
+      return QIcon(QStringLiteral(":/icons/applications-system-24.png"));
+  }
+}
+
 } // namespace QtUtils

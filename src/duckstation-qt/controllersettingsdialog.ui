@@ -81,7 +81,7 @@
           <string>New Profile</string>
          </property>
          <property name="icon">
-          <iconset theme="file-add-line">
+          <iconset theme="PostProcessingAdd">
            <normaloff>.</normaloff>.</iconset>
          </property>
         </widget>
@@ -92,7 +92,7 @@
           <string>Load Profile</string>
          </property>
          <property name="icon">
-          <iconset theme="folder-open-line"/>
+          <iconset theme="LoadState"/>
          </property>
         </widget>
        </item>
@@ -102,7 +102,7 @@
           <string>Delete Profile</string>
          </property>
          <property name="icon">
-          <iconset theme="file-reduce-line">
+          <iconset theme="PostProcessingRemove">
            <normaloff>.</normaloff>.</iconset>
          </property>
         </widget>
@@ -113,7 +113,7 @@
           <string>Restore Defaults</string>
          </property>
          <property name="icon">
-          <iconset theme="restart-line"/>
+          <iconset theme="Reset"/>
          </property>
         </widget>
        </item>

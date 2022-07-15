@@ -71,17 +71,8 @@ private:
 
   std::array<QString, Column_Count> m_column_display_names;
 
-  QPixmap m_type_disc_pixmap;
-  QPixmap m_type_disc_with_settings_pixmap;
-  QPixmap m_type_exe_pixmap;
-  QPixmap m_type_playlist_pixmap;
-  QPixmap m_type_psf_pixmap;
-
-  QPixmap m_region_jp_pixmap;
-  QPixmap m_region_eu_pixmap;
-  QPixmap m_region_us_pixmap;
-  QPixmap m_region_other_pixmap;
-
+  std::array<QPixmap, static_cast<int>(GameList::EntryType::Count)> m_type_pixmaps;
+  std::array<QPixmap, static_cast<int>(DiscRegion::Count)> m_region_pixmaps;
   std::array<QPixmap, static_cast<int>(GameDatabase::CompatibilityRating::Count)> m_compatibiliy_pixmaps;
   mutable UnorderedStringMap<QPixmap> m_cover_pixmap_cache;
 };

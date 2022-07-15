@@ -10,6 +10,7 @@
 
 #include "IconsFontAwesome5.h"
 #include "common/assert.h"
+#include "common/file_system.h"
 #include "common/log.h"
 #include "common/string_util.h"
 #include "common/timer.h"
@@ -30,7 +31,6 @@ namespace ImGuiManager {
 static void SetStyle();
 static void SetKeyMap();
 static bool LoadFontData();
-static void UnloadFontData();
 static bool AddImGuiFonts(bool fullscreen_fonts);
 static ImFont* AddTextFont(float size);
 static ImFont* AddFixedFont(float size);
@@ -42,6 +42,9 @@ static void DrawPerformanceOverlay();
 } // namespace ImGuiManager
 
 static float s_global_scale = 1.0f;
+
+static std::string s_font_path;
+static const ImWchar* s_font_range = nullptr;
 
 static ImFont* s_standard_font;
 static ImFont* s_fixed_font;
@@ -60,6 +63,18 @@ static std::atomic_bool s_imgui_wants_mouse{false};
 
 // mapping of host key -> imgui key
 static std::unordered_map<u32, ImGuiKey> s_imgui_key_map;
+
+void ImGuiManager::SetFontPath(std::string path)
+{
+  s_font_path = std::move(path);
+  s_standard_font_data = {};
+}
+
+void ImGuiManager::SetFontRange(const u16* range)
+{
+  s_font_range = range;
+  s_standard_font_data = {};
+}
 
 bool ImGuiManager::Initialize()
 {
@@ -102,7 +117,6 @@ bool ImGuiManager::Initialize()
     Panic("Failed to create ImGui device context");
     display->DestroyImGuiContext();
     ImGui::DestroyContext();
-    UnloadFontData();
     return false;
   }
 
@@ -111,7 +125,6 @@ bool ImGuiManager::Initialize()
     Panic("Failed to create ImGui font text");
     display->DestroyImGuiContext();
     ImGui::DestroyContext();
-    UnloadFontData();
     return false;
   }
 
@@ -137,8 +150,6 @@ void ImGuiManager::Shutdown()
   s_medium_font = nullptr;
   s_large_font = nullptr;
   ImGuiFullscreen::SetFonts(nullptr, nullptr, nullptr);
-
-  UnloadFontData();
 }
 
 void ImGuiManager::WindowResized()
@@ -387,7 +398,9 @@ bool ImGuiManager::LoadFontData()
 {
   if (s_standard_font_data.empty())
   {
-    std::optional<std::vector<u8>> font_data = Host::ReadResourceFile("fonts/Roboto-Regular.ttf");
+    std::optional<std::vector<u8>> font_data = s_font_path.empty() ?
+                                                 Host::ReadResourceFile("fonts/Roboto-Regular.ttf") :
+                                                 FileSystem::ReadBinaryFile(s_font_path.c_str());
     if (!font_data.has_value())
       return false;
 
@@ -415,13 +428,6 @@ bool ImGuiManager::LoadFontData()
   return true;
 }
 
-void ImGuiManager::UnloadFontData()
-{
-  std::vector<u8>().swap(s_standard_font_data);
-  std::vector<u8>().swap(s_fixed_font_data);
-  std::vector<u8>().swap(s_icon_font_data);
-}
-
 ImFont* ImGuiManager::AddTextFont(float size)
 {
   static const ImWchar default_ranges[] = {
@@ -446,8 +452,9 @@ ImFont* ImGuiManager::AddTextFont(float size)
 
   ImFontConfig cfg;
   cfg.FontDataOwnedByAtlas = false;
-  return ImGui::GetIO().Fonts->AddFontFromMemoryTTF(
-    s_standard_font_data.data(), static_cast<int>(s_standard_font_data.size()), size, &cfg, default_ranges);
+  return ImGui::GetIO().Fonts->AddFontFromMemoryTTF(s_standard_font_data.data(),
+                                                    static_cast<int>(s_standard_font_data.size()), size, &cfg,
+                                                    s_font_range ? s_font_range : default_ranges);
 }
 
 ImFont* ImGuiManager::AddFixedFont(float size)
@@ -815,7 +822,7 @@ void ImGuiManager::DrawPerformanceOverlay()
     if (g_settings.display_show_status_indicators)
     {
       const bool rewinding = System::IsRewinding();
-      if (rewinding /*|| IsFastForwardEnabled() || IsTurboEnabled()*/)
+      if (rewinding || System::IsFastForwardEnabled() || System::IsTurboEnabled())
       {
         text.Assign(rewinding ? ICON_FA_FAST_BACKWARD : ICON_FA_FAST_FORWARD);
         DRAW_LINE(s_fixed_font, text, IM_COL32(255, 255, 255, 255));

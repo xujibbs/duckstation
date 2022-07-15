@@ -25,7 +25,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>754</width>
+     <width>800</width>
      <height>22</height>
     </rect>
    </property>
@@ -38,7 +38,8 @@
       <string>Change Disc</string>
      </property>
      <property name="icon">
-      <iconset theme="ChangeDisc"/>
+      <iconset theme="ChangeDisc">
+       <normaloff>.</normaloff>.</iconset>
      </property>
      <actiongroup name="actionGroupChangeDiscSubImages"/>
      <addaction name="actionChangeDiscFromFile"/>
@@ -52,7 +53,8 @@
       <string>Cheats</string>
      </property>
      <property name="icon">
-       <iconset theme="Cheats"/>
+      <iconset theme="Cheats">
+       <normaloff>.</normaloff>.</iconset>
      </property>
     </widget>
     <widget class="QMenu" name="menuLoadState">
@@ -60,7 +62,8 @@
       <string>Load State</string>
      </property>
      <property name="icon">
-      <iconset theme="LoadState"/>
+      <iconset theme="LoadState">
+       <normaloff>.</normaloff>.</iconset>
      </property>
     </widget>
     <widget class="QMenu" name="menuSaveState">
@@ -68,7 +71,8 @@
       <string>Save State</string>
      </property>
      <property name="icon">
-       <iconset theme="SaveState"/>
+      <iconset theme="SaveState">
+       <normaloff>.</normaloff>.</iconset>
      </property>
     </widget>
     <addaction name="actionStartFile"/>
@@ -99,27 +103,35 @@
      <property name="title">
       <string>Theme</string>
      </property>
+     <property name="icon">
+      <iconset theme="Clear"/>
+     </property>
     </widget>
     <widget class="QMenu" name="menuSettingsLanguage">
      <property name="title">
       <string>Language</string>
      </property>
+     <property name="icon">
+      <iconset theme="Language"/>
+     </property>
     </widget>
     <addaction name="separator"/>
     <addaction name="actionGeneralSettings"/>
+    <addaction name="actionGameListSettings"/>
     <addaction name="actionBIOSSettings"/>
     <addaction name="actionConsoleSettings"/>
     <addaction name="actionEmulationSettings"/>
-    <addaction name="actionGameListSettings"/>
-    <addaction name="actionHotkeySettings"/>
-    <addaction name="actionControllerSettings"/>
     <addaction name="actionMemoryCardSettings"/>
     <addaction name="actionDisplaySettings"/>
     <addaction name="actionEnhancementSettings"/>
     <addaction name="actionPostProcessingSettings"/>
     <addaction name="actionAudioSettings"/>
     <addaction name="actionAchievementSettings"/>
+    <addaction name="actionFolderSettings"/>
     <addaction name="actionAdvancedSettings"/>
+    <addaction name="separator"/>
+    <addaction name="actionControllerSettings"/>
+    <addaction name="actionHotkeySettings"/>
     <addaction name="separator"/>
     <addaction name="actionAddGameDirectory"/>
     <addaction name="actionScanForNewGames"/>
@@ -266,7 +278,8 @@
   <widget class="QStatusBar" name="statusBar"/>
   <action name="actionStartFile">
    <property name="icon">
-    <iconset theme="StartfileSettings"/>
+    <iconset theme="StartfileSettings">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
     <string>Start &amp;File...</string>
@@ -274,7 +287,8 @@
   </action>
   <action name="actionStartDisc">
    <property name="icon">
-     <iconset theme="StartdiscSettings"/>
+    <iconset theme="StartdiscSettings">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
     <string>Start &amp;Disc...</string>
@@ -282,7 +296,8 @@
   </action>
   <action name="actionStartBios">
    <property name="icon">
-     <iconset theme="BIOSSettings"/>
+    <iconset theme="BIOSSettings">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
     <string>Start &amp;BIOS</string>
@@ -290,7 +305,8 @@
   </action>
   <action name="actionScanForNewGames">
    <property name="icon">
-     <iconset theme="ScanForGames"/>
+    <iconset theme="ScanForGames">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
     <string>&amp;Scan For New Games</string>
@@ -298,7 +314,8 @@
   </action>
   <action name="actionRescanAllGames">
    <property name="icon">
-     <iconset theme="RescanAllGames"/>
+    <iconset theme="RescanAllGames">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
     <string>&amp;Rescan All Games</string>
@@ -306,7 +323,8 @@
   </action>
   <action name="actionPowerOff">
    <property name="icon">
-     <iconset theme="PowerOff"/>
+    <iconset theme="PowerOff">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
     <string>Power &amp;Off</string>
@@ -314,7 +332,8 @@
   </action>
   <action name="actionReset">
    <property name="icon">
-     <iconset theme="Reset"/>
+    <iconset theme="Reset">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
     <string>&amp;Reset</string>
@@ -325,7 +344,8 @@
     <bool>true</bool>
    </property>
    <property name="icon">
-    <iconset theme="Pause"/>
+    <iconset theme="Pause">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
     <string>&amp;Pause</string>
@@ -333,7 +353,8 @@
   </action>
   <action name="actionLoadState">
    <property name="icon">
-    <iconset theme="LoadState"/>
+    <iconset theme="LoadState">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
     <string>&amp;Load State</string>
@@ -341,7 +362,8 @@
   </action>
   <action name="actionSaveState">
    <property name="icon">
-    <iconset theme="SaveState"/>
+    <iconset theme="SaveState">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
     <string>&amp;Save State</string>
@@ -349,7 +371,8 @@
   </action>
   <action name="actionExit">
    <property name="icon">
-    <iconset theme="Exit"/>
+    <iconset theme="Exit">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
     <string>E&amp;xit</string>
@@ -357,71 +380,80 @@
   </action>
   <action name="actionBIOSSettings">
    <property name="icon">
-    <iconset theme="BIOSSettings"/>
+    <iconset theme="BIOSSettings">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
-    <string>B&amp;IOS Settings...</string>
+    <string>B&amp;IOS</string>
    </property>
   </action>
   <action name="actionConsoleSettings">
    <property name="icon">
-    <iconset theme="ConsoleSettings"/>
+    <iconset theme="ConsoleSettings">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
-    <string>C&amp;onsole Settings...</string>
+    <string>C&amp;onsole</string>
    </property>
   </action>
   <action name="actionEmulationSettings">
    <property name="icon">
-    <iconset theme="EmulationSettings"/>
+    <iconset theme="EmulationSettings">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
-    <string>E&amp;mulation Settings...</string>
+    <string>E&amp;mulation</string>
    </property>
   </action>
   <action name="actionControllerSettings">
    <property name="icon">
-    <iconset theme="ControllerSettings"/>
+    <iconset theme="ControllerSettings">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
-    <string>&amp;Controller Settings...</string>
+    <string>&amp;Controllers</string>
    </property>
   </action>
   <action name="actionHotkeySettings">
    <property name="icon">
-    <iconset theme="HotkeySettings"/>
+    <iconset theme="HotkeySettings">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
-    <string>&amp;Hotkey Settings...</string>
+    <string>&amp;Hotkeys</string>
    </property>
   </action>
   <action name="actionDisplaySettings">
    <property name="icon">
-    <iconset theme="DisplaySettings"/>
+    <iconset theme="DisplaySettings">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
-    <string>&amp;Display Settings...</string>
+    <string>&amp;Display</string>
    </property>
   </action>
   <action name="actionEnhancementSettings">
    <property name="icon">
-    <iconset theme="EnhancementSettings"/>
+    <iconset theme="EnhancementSettings">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
-    <string>&amp;Enhancement Settings...</string>
+    <string>&amp;Enhancements</string>
    </property>
   </action>
   <action name="actionPostProcessingSettings">
    <property name="icon">
-    <iconset theme="PostprocessingSettings"/>
+    <iconset theme="PostprocessingSettings">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
-    <string>&amp;Post-Processing Settings...</string>
+    <string>&amp;Post-Processing</string>
    </property>
   </action>
   <action name="actionFullscreen">
    <property name="icon">
-    <iconset theme="Fullscreen"/>
+    <iconset theme="Fullscreen">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
     <string>Fullscreen</string>
@@ -488,7 +520,8 @@
   </action>
   <action name="actionChangeDisc">
    <property name="icon">
-    <iconset theme="ChangeDisc"/>
+    <iconset theme="ChangeDisc">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
     <string>Change Disc...</string>
@@ -496,7 +529,8 @@
   </action>
   <action name="actionCheats">
    <property name="icon">
-    <iconset theme="Cheats"/>
+    <iconset theme="Cheats">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
     <string>Cheats...</string>
@@ -504,47 +538,62 @@
   </action>
   <action name="actionAudioSettings">
    <property name="icon">
-    <iconset theme="AudioSettings"/>
+    <iconset theme="AudioSettings">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
-    <string>Audio Settings...</string>
+    <string>Audio</string>
    </property>
   </action>
   <action name="actionAchievementSettings">
    <property name="icon">
-    <iconset theme="AchievementsSettings"/>
+    <iconset theme="AchievementsSettings">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
-    <string>Achievement Settings...</string>
+    <string>Achievements</string>
+   </property>
+  </action>
+  <action name="actionFolderSettings">
+   <property name="icon">
+    <iconset theme="Options">
+     <normaloff>.</normaloff>.</iconset>
+   </property>
+   <property name="text">
+    <string>Folders</string>
    </property>
   </action>
   <action name="actionGameListSettings">
    <property name="icon">
-    <iconset theme="GamelistSettings"/>
+    <iconset theme="GamelistSettings">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
-    <string>Game List Settings...</string>
+    <string>Game List</string>
    </property>
   </action>
   <action name="actionGeneralSettings">
    <property name="icon">
-    <iconset theme="GeneralSettings"/>
+    <iconset theme="GeneralSettings">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
-    <string>General Settings...</string>
+    <string>General</string>
    </property>
   </action>
   <action name="actionAdvancedSettings">
    <property name="icon">
-    <iconset theme="AdvancedSettings"/>
+    <iconset theme="AdvancedSettings">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
-    <string>Advanced Settings...</string>
+    <string>Advanced</string>
    </property>
   </action>
   <action name="actionAddGameDirectory">
    <property name="icon">
-    <iconset theme="AddGameDirectory"/>
+    <iconset theme="AddGameDirectory">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
     <string>Add Game Directory...</string>
@@ -552,7 +601,8 @@
   </action>
   <action name="actionSettings">
    <property name="icon">
-    <iconset theme="GeneralSettings"/>
+    <iconset theme="GeneralSettings">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
     <string>&amp;Settings...</string>
@@ -709,7 +759,8 @@
   </action>
   <action name="actionScreenshot">
    <property name="icon">
-    <iconset theme="Screenshot"/>
+    <iconset theme="Screenshot">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
     <string>&amp;Screenshot</string>
@@ -717,15 +768,17 @@
   </action>
   <action name="actionMemoryCardSettings">
    <property name="icon">
-    <iconset theme="MemorycardSettings"/>
+    <iconset theme="MemorycardSettings">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
-    <string>&amp;Memory Card Settings...</string>
+    <string>&amp;Memory Cards</string>
    </property>
   </action>
   <action name="actionResumeLastState">
    <property name="icon">
-    <iconset theme="Resume"/>
+    <iconset theme="Resume">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
     <string>Resume</string>
@@ -769,7 +822,8 @@
   </action>
   <action name="actionViewGameList">
    <property name="icon">
-    <iconset theme="GameList"/>
+    <iconset theme="GameList">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
     <string>Game &amp;List</string>
@@ -808,7 +862,8 @@
   </action>
   <action name="actionViewGameGrid">
    <property name="icon">
-    <iconset theme="GameGrid"/>
+    <iconset theme="GameGrid">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
     <string>Game &amp;Grid</string>
@@ -858,7 +913,8 @@
   </action>
   <action name="actionPowerOffWithoutSaving">
    <property name="icon">
-    <iconset theme="PoweroffWsaving"/>
+    <iconset theme="PoweroffWsaving">
+     <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
     <string>Power Off &amp;Without Saving</string>
@@ -866,7 +922,7 @@
   </action>
   <action name="actionStartFullscreenUI">
    <property name="icon">
-    <iconset theme="tv-2-line">
+    <iconset theme="DisplaySettings">
      <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">
@@ -875,7 +931,7 @@
   </action>
   <action name="actionStartFullscreenUI2">
    <property name="icon">
-    <iconset theme="tv-2-line">
+    <iconset theme="DisplaySettings">
      <normaloff>.</normaloff>.</iconset>
    </property>
    <property name="text">

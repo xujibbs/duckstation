@@ -14,14 +14,10 @@ public:
   explicit ConsoleSettingsWidget(SettingsDialog* dialog, QWidget* parent);
   ~ConsoleSettingsWidget();
 
-Q_SIGNALS:
-  void multitapModeChanged();
-
 private Q_SLOTS:
   void onEnableCPUClockSpeedControlChecked(int state);
   void onCPUClockSpeedValueChanged(int value);
   void updateCPUClockSpeedLabel();
-  void onCDROMReadSpeedupValueChanged(int value);
 
 private:
   void calculateCPUClockValue();

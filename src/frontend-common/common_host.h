@@ -11,7 +11,7 @@ bool ParseCommandLineParameters(int argc, char* argv[], std::unique_ptr<SystemBo
 /// Initializes configuration.
 void UpdateLogSettings();
 
-bool Initialize();
+void Initialize();
 void Shutdown();
 
 void SetDefaultSettings(SettingsInterface& si);

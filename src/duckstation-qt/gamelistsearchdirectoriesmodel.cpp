@@ -4,7 +4,7 @@
 #include "qtutils.h"
 #include <QtCore/QUrl>
 
-GameListSearchDirectoriesModel::GameListSearchDirectoriesModel(QtHostInterface* host_interface)
+GameListSearchDirectoriesModel::GameListSearchDirectoriesModel(EmuThread* host_interface)
   : m_host_interface(host_interface)
 {
   loadFromSettings();

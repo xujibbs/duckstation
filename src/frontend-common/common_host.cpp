@@ -77,6 +77,8 @@ std::unique_ptr<AudioStream> CreateXAudio2AudioStream();
 Log_SetChannel(CommonHostInterface);
 
 namespace CommonHost {
+static void SetDefaultControllerSettings(SettingsInterface& si);
+static void SetDefaultHotkeyBindings(SettingsInterface& si);
 #ifdef WITH_DISCORD_PRESENCE
 static void SetDiscordPresenceEnabled(bool enabled);
 static void InitializeDiscordPresence();
@@ -102,7 +104,7 @@ std::string m_discord_presence_cheevos_string;
 #endif
 #endif
 
-bool CommonHost::Initialize()
+void CommonHost::Initialize()
 {
   // This will call back to Host::LoadSettings() -> ReloadSources().
   System::LoadSettings(false);
@@ -116,8 +118,6 @@ bool CommonHost::Initialize()
 
   CommonHost::UpdateCheevosActive(*Host::GetSettingsInterface());
 #endif
-
-  return true;
 }
 
 void CommonHost::Shutdown()
@@ -510,6 +510,8 @@ void CommonHost::OnGameChanged(const std::string& disc_path, const std::string& 
 void CommonHost::SetDefaultSettings(SettingsInterface& si)
 {
   InputManager::SetDefaultConfig(si);
+  SetDefaultControllerSettings(si);
+  SetDefaultHotkeyBindings(si);
 
 #ifdef WITH_DISCORD_PRESENCE
   si.SetBoolValue("Main", "EnableDiscordPresence", false);
@@ -527,6 +529,47 @@ void CommonHost::SetDefaultSettings(SettingsInterface& si)
   si.SetBoolValue("Cheevos", "UseRAIntegration", false);
 #endif
 #endif
+}
+
+void CommonHost::SetDefaultControllerSettings(SettingsInterface& si)
+{
+  // Global Settings
+  si.SetStringValue("ControllerPorts", "MultitapMode", Settings::GetMultitapModeName(Settings::DEFAULT_MULTITAP_MODE));
+  si.SetFloatValue("ControllerPorts", "PointerXScale", 8.0f);
+  si.SetFloatValue("ControllerPorts", "PointerYScale", 8.0f);
+  si.SetBoolValue("ControllerPorts", "PointerXInvert", false);
+  si.SetBoolValue("ControllerPorts", "PointerYInvert", false);
+
+  // Default pad types and parameters.
+  for (u32 i = 0; i < NUM_CONTROLLER_AND_CARD_PORTS; i++)
+  {
+    const std::string section(Controller::GetSettingsSection(i));
+    si.ClearSection(section.c_str());
+    si.SetStringValue(section.c_str(), "Type", Controller::GetDefaultPadType(i));
+    si.SetFloatValue(section.c_str(), "Deadzone", Controller::DEFAULT_STICK_DEADZONE);
+    si.SetFloatValue(section.c_str(), "AxisScale", Controller::DEFAULT_STICK_SCALE);
+    si.SetFloatValue(section.c_str(), "LargeMotorScale", Controller::DEFAULT_MOTOR_SCALE);
+    si.SetFloatValue(section.c_str(), "SmallMotorScale", Controller::DEFAULT_MOTOR_SCALE);
+  }
+
+  // Use the automapper to set this up.
+  InputManager::MapController(si, 0, InputManager::GetGenericBindingMapping("Keyboard"));
+}
+
+void CommonHost::SetDefaultHotkeyBindings(SettingsInterface& si)
+{
+  si.ClearSection("Hotkeys");
+
+  si.SetStringValue("Hotkeys", "FastForward", "Keyboard/Tab");
+  si.SetStringValue("Hotkeys", "TogglePause", "Keyboard/Space");
+  si.SetStringValue("Hotkeys", "ToggleFullscreen", "Keyboard/Alt+Return");
+  si.SetStringValue("Hotkeys", "Screenshot", "Keyboard/F10");
+
+  si.SetStringValue("Hotkeys", "PowerOff", "Keyboard/Escape");
+  si.SetStringValue("Hotkeys", "LoadSelectedSaveState", "Keyboard/F1");
+  si.SetStringValue("Hotkeys", "SaveSelectedSaveState", "Keyboard/F2");
+  si.SetStringValue("Hotkeys", "SelectPreviousSaveStateSlot", "Keyboard/F3");
+  si.SetStringValue("Hotkeys", "SelectNextSaveStateSlot", "Keyboard/F4");
 }
 
 void CommonHost::LoadSettings(SettingsInterface& si, std::unique_lock<std::mutex>& lock)

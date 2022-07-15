@@ -50,7 +50,7 @@ AchievementSettingsWidget::AchievementSettingsWidget(SettingsDialog* dialog, QWi
   connect(m_ui.loginButton, &QPushButton::clicked, this, &AchievementSettingsWidget::onLoginLogoutPressed);
   connect(m_ui.viewProfile, &QPushButton::clicked, this, &AchievementSettingsWidget::onViewProfilePressed);
   connect(m_ui.challengeMode, &QCheckBox::toggled, this, &AchievementSettingsWidget::onChallengeModeToggled);
-  connect(g_emu_thread, &QtHostInterface::achievementsLoaded, this, &AchievementSettingsWidget::onAchievementsLoaded);
+  connect(g_emu_thread, &EmuThread::achievementsLoaded, this, &AchievementSettingsWidget::onAchievementsLoaded);
 
   updateEnableState();
   updateLoginState();
@@ -98,7 +98,7 @@ void AchievementSettingsWidget::onLoginLogoutPressed()
 {
   if (!Host::GetBaseStringSettingValue("Cheevos", "Username").empty())
   {
-    g_emu_thread->executeOnEmulationThread([]() { Cheevos::Logout(); }, true);
+    Host::RunOnCPUThread([]() { Cheevos::Logout(); }, true);
     updateLoginState();
     return;
   }

@@ -21,7 +21,7 @@ private Q_SLOTS:
   void updateRewind();
 
 private:
-  bool runaheadEnabled() { return m_ui.runaheadFrames->currentIndex() > 0; }
+  void fillComboBoxWithEmulationSpeeds(QComboBox* cb, float global_value);
 
   Ui::EmulationSettingsWidget m_ui;
 

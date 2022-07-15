@@ -21,18 +21,24 @@ ControllerGlobalSettingsWidget::ControllerGlobalSettingsWidget(QWidget* parent, 
 #else
   m_ui.enableRawInput->setEnabled(false);
 #endif
-  ControllerSettingWidgetBinder::BindWidgetToInputProfileBool(sif, m_ui.multitapPort1, "Pad", "MultitapPort1", false);
-  ControllerSettingWidgetBinder::BindWidgetToInputProfileBool(sif, m_ui.multitapPort2, "Pad", "MultitapPort2", false);
-  ControllerSettingWidgetBinder::BindWidgetToInputProfileBool(sif, m_ui.pointerXInvert, "Pad", "PointerXInvert", false);
-  ControllerSettingWidgetBinder::BindWidgetToInputProfileBool(sif, m_ui.pointerYInvert, "Pad", "PointerYInvert", false);
-  ControllerSettingWidgetBinder::BindWidgetToInputProfileFloat(sif, m_ui.pointerXScale, "Pad", "PointerXScale", 8.0f);
-  ControllerSettingWidgetBinder::BindWidgetToInputProfileFloat(sif, m_ui.pointerYScale, "Pad", "PointerYScale", 8.0f);
+  SettingWidgetBinder::BindWidgetToEnumSetting(sif, m_ui.multitapMode, "ControllerPorts", "MultitapMode",
+                                               &Settings::ParseMultitapModeName, &Settings::GetMultitapModeName,
+                                               Settings::DEFAULT_MULTITAP_MODE);
+  ControllerSettingWidgetBinder::BindWidgetToInputProfileBool(sif, m_ui.pointerXInvert, "ControllerPorts",
+                                                              "PointerXInvert", false);
+  ControllerSettingWidgetBinder::BindWidgetToInputProfileBool(sif, m_ui.pointerYInvert, "ControllerPorts",
+                                                              "PointerYInvert", false);
+  ControllerSettingWidgetBinder::BindWidgetToInputProfileFloat(sif, m_ui.pointerXScale, "ControllerPorts",
+                                                               "PointerXScale", 8.0f);
+  ControllerSettingWidgetBinder::BindWidgetToInputProfileFloat(sif, m_ui.pointerYScale, "ControllerPorts",
+                                                               "PointerYScale", 8.0f);
 
   if (dialog->isEditingProfile())
   {
-    m_ui.useProfileHotkeyBindings->setChecked(m_dialog->getBoolValue("Pad", "UseProfileHotkeyBindings", false));
+    m_ui.useProfileHotkeyBindings->setChecked(
+      m_dialog->getBoolValue("ControllerPorts", "UseProfileHotkeyBindings", false));
     connect(m_ui.useProfileHotkeyBindings, &QCheckBox::stateChanged, this, [this](int new_state) {
-      m_dialog->setBoolValue("Pad", "UseProfileHotkeyBindings", (new_state == Qt::Checked));
+      m_dialog->setBoolValue("ControllerPorts", "UseProfileHotkeyBindings", (new_state == Qt::Checked));
       emit bindingSetupChanged();
     });
   }
@@ -46,8 +52,7 @@ ControllerGlobalSettingsWidget::ControllerGlobalSettingsWidget(QWidget* parent, 
 
   connect(m_ui.enableSDLSource, &QCheckBox::stateChanged, this,
           &ControllerGlobalSettingsWidget::updateSDLOptionsEnabled);
-  for (QCheckBox* cb : {m_ui.multitapPort1, m_ui.multitapPort2})
-    connect(cb, &QCheckBox::stateChanged, this, [this]() { emit bindingSetupChanged(); });
+  connect(m_ui.multitapMode, &QComboBox::currentIndexChanged, this, [this]() { emit bindingSetupChanged(); });
 
   connect(m_ui.pointerXScale, &QSlider::valueChanged, this,
           [this](int value) { m_ui.pointerXScaleLabel->setText(QStringLiteral("%1").arg(value)); });

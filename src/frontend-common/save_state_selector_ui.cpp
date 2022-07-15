@@ -309,14 +309,14 @@ void SaveStateSelectorUI::Draw()
 void SaveStateSelectorUI::LoadCurrentSlot()
 {
   const auto slot_info = GetSlotTypeFromSelection(m_current_selection);
-  System::LoadStateFromSlot(slot_info.second, slot_info.first);
+  //System::LoadStateFromSlot(slot_info.second, slot_info.first);
   Close();
 }
 
 void SaveStateSelectorUI::SaveCurrentSlot()
 {
   const auto slot_info = GetSlotTypeFromSelection(m_current_selection);
-  System::SaveStateToSlot(slot_info.second, slot_info.first);
+  //System::SaveStateToSlot(slot_info.second, slot_info.first);
   Close();
 }
 

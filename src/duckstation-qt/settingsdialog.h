@@ -8,7 +8,9 @@
 
 class SettingsInterface;
 
-namespace GameList {
+enum class DiscRegion : u8;
+
+namespace GameDatabase {
 struct Entry;
 }
 
@@ -23,6 +25,7 @@ class EnhancementSettingsWidget;
 class PostProcessingSettingsWidget;
 class AudioSettingsWidget;
 class AchievementSettingsWidget;
+class FolderSettingsWidget;
 class AdvancedSettingsWidget;
 
 class SettingsDialog final : public QDialog
@@ -30,27 +33,12 @@ class SettingsDialog final : public QDialog
   Q_OBJECT
 
 public:
-  enum class Category
-  {
-    GeneralSettings,
-    BIOSSettings,
-    ConsoleSettings,
-    EmulationSettings,
-    GameListSettings,
-    MemoryCardSettings,
-    DisplaySettings,
-    EnhancementSettings,
-    PostProcessingSettings,
-    AudioSettings,
-    AchievementSettings,
-    AdvancedSettings,
-    Count
-  };
-
   explicit SettingsDialog(QWidget* parent);
-  SettingsDialog(QWidget* parent, std::unique_ptr<SettingsInterface> sif, const GameList::Entry* game,
-                 std::string serial);
+  SettingsDialog(const std::string& path, const std::string& serial, DiscRegion region,
+                 const GameDatabase::Entry* entry, std::unique_ptr<SettingsInterface> sif, QWidget* parent);
   ~SettingsDialog();
+
+  static void openGamePropertiesDialog(const std::string& path, const std::string& serial, DiscRegion region);
 
   ALWAYS_INLINE bool isPerGameSettings() const { return static_cast<bool>(m_sif); }
   ALWAYS_INLINE SettingsInterface* getSettingsInterface() const { return m_sif.get(); }
@@ -66,6 +54,7 @@ public:
   ALWAYS_INLINE AudioSettingsWidget* getAudioSettingsWidget() const { return m_audio_settings; }
   ALWAYS_INLINE AchievementSettingsWidget* getAchievementSettingsWidget() const { return m_achievement_settings; }
   ALWAYS_INLINE AdvancedSettingsWidget* getAdvancedSettingsWidget() const { return m_advanced_settings; }
+  ALWAYS_INLINE FolderSettingsWidget* getFolderSettingsWidget() const { return m_folder_settings; }
   ALWAYS_INLINE PostProcessingSettingsWidget* getPostProcessingSettingsWidget() { return m_post_processing_settings; }
 
   void registerWidgetHelp(QObject* object, QString title, QString recommended_value, QString text);
@@ -93,15 +82,20 @@ Q_SIGNALS:
   void settingsResetToDefaults();
 
 public Q_SLOTS:
-  void setCategory(Category category);
+  void setCategory(const char* category);
 
 private Q_SLOTS:
   void onCategoryCurrentRowChanged(int row);
   void onRestoreDefaultsClicked();
 
 private:
-  void setupUi(const GameList::Entry* game);
-  void setCategoryHelpTexts();
+  enum : u32
+  {
+    MAX_SETTINGS_WIDGETS = 13
+  };
+
+  void addPages();
+  void addWidget(QWidget* widget, QString title, QString icon, QString help_text);
 
   Ui::SettingsDialog m_ui;
 
@@ -118,10 +112,13 @@ private:
   PostProcessingSettingsWidget* m_post_processing_settings = nullptr;
   AudioSettingsWidget* m_audio_settings = nullptr;
   AchievementSettingsWidget* m_achievement_settings = nullptr;
+  FolderSettingsWidget* m_folder_settings = nullptr;
   AdvancedSettingsWidget* m_advanced_settings = nullptr;
 
-  std::array<QString, static_cast<int>(Category::Count)> m_category_help_text;
+  std::array<QString, MAX_SETTINGS_WIDGETS> m_category_help_text;
 
   QObject* m_current_help_widget = nullptr;
   QMap<QObject*, QString> m_widget_help_text_map;
+
+  std::string m_game_serial;
 };

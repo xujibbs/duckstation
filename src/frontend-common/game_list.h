@@ -49,7 +49,8 @@ struct Entry
   static_assert(sizeof(std::time_t) == sizeof(u64));
 };
 
-const char* EntryTypeToString(EntryType type);
+const char* GetEntryTypeName(EntryType type);
+const char* GetEntryTypeDisplayName(EntryType type);
 
 bool IsScannableFilename(const std::string_view& path);
 

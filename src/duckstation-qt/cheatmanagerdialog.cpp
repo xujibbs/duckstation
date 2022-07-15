@@ -188,7 +188,7 @@ void CheatManagerDialog::connectUi()
   connect(m_ui.scanTable, &QTableWidget::itemChanged, this, &CheatManagerDialog::scanItemChanged);
   connect(m_ui.watchTable, &QTableWidget::itemChanged, this, &CheatManagerDialog::watchItemChanged);
 
-  connect(g_emu_thread, &QtHostInterface::cheatEnabled, this,
+  connect(g_emu_thread, &EmuThread::cheatEnabled, this,
           &CheatManagerDialog::setCheatCheckState);
 }
 
@@ -351,7 +351,7 @@ CheatList* CheatManagerDialog::getCheatList() const
   }
   if (!list)
   {
-    g_emu_thread->executeOnEmulationThread(
+    Host::RunOnCPUThread(
       []() { System::SetCheatList(std::make_unique<CheatList>()); }, true);
     list = System::GetCheatList();
   }
@@ -417,7 +417,7 @@ void CheatManagerDialog::fillItemForCheatCode(QTreeWidgetItem* item, u32 index, 
 
 void CheatManagerDialog::saveCheatList()
 {
-  g_emu_thread->executeOnEmulationThread([]() { System::SaveCheatList(); });
+  Host::RunOnCPUThread([]() { System::SaveCheatList(); });
 }
 
 void CheatManagerDialog::cheatListCurrentItemChanged(QTreeWidgetItem* current, QTreeWidgetItem* previous)
@@ -479,7 +479,7 @@ void CheatManagerDialog::cheatListItemChanged(QTreeWidgetItem* item, int column)
   if (cc.enabled == new_enabled)
     return;
 
-  g_emu_thread->executeOnEmulationThread([index, new_enabled]() {
+  Host::RunOnCPUThread([index, new_enabled]() {
     System::GetCheatList()->SetCodeEnabled(static_cast<u32>(index), new_enabled);
     System::SaveCheatList();
   });
@@ -501,7 +501,7 @@ void CheatManagerDialog::activateCheat(u32 index)
   const bool new_enabled = !cc.enabled;
   setCheatCheckState(index, new_enabled);
 
-  g_emu_thread->executeOnEmulationThread([index, new_enabled]() {
+  Host::RunOnCPUThread([index, new_enabled]() {
     System::GetCheatList()->SetCodeEnabled(index, new_enabled);
     System::SaveCheatList();
   });
@@ -551,7 +551,7 @@ void CheatManagerDialog::addCodeClicked()
     fillItemForCheatCode(item, list->GetCodeCount(), new_code);
     group_item->setExpanded(true);
 
-    g_emu_thread->executeOnEmulationThread(
+    Host::RunOnCPUThread(
       [this, &new_code]() {
         System::GetCheatList()->AddCode(std::move(new_code));
         System::SaveCheatList();
@@ -597,7 +597,7 @@ void CheatManagerDialog::editCodeClicked()
       updateCheatList();
     }
 
-    g_emu_thread->executeOnEmulationThread(
+    Host::RunOnCPUThread(
       [index, &new_code]() {
         System::GetCheatList()->SetCode(static_cast<u32>(index), std::move(new_code));
         System::SaveCheatList();
@@ -623,7 +623,7 @@ void CheatManagerDialog::deleteCodeClicked()
     return;
   }
 
-  g_emu_thread->executeOnEmulationThread(
+  Host::RunOnCPUThread(
     [index]() {
       System::GetCheatList()->RemoveCode(static_cast<u32>(index));
       System::SaveCheatList();
@@ -663,7 +663,7 @@ void CheatManagerDialog::importFromFileTriggered()
     return;
   }
 
-  g_emu_thread->executeOnEmulationThread(
+  Host::RunOnCPUThread(
     [&new_cheats]() {
       DebugAssert(System::HasCheatList());
       System::GetCheatList()->MergeList(new_cheats);
@@ -686,7 +686,7 @@ void CheatManagerDialog::importFromTextTriggered()
     return;
   }
 
-  g_emu_thread->executeOnEmulationThread(
+  Host::RunOnCPUThread(
     [&new_cheats]() {
       DebugAssert(System::HasCheatList());
       System::GetCheatList()->MergeList(new_cheats);
@@ -716,7 +716,7 @@ void CheatManagerDialog::clearClicked()
     return;
   }
 
-  g_emu_thread->executeOnEmulationThread([] { System::ClearCheatList(true); }, true);
+  Host::RunOnCPUThread([] { System::ClearCheatList(true); }, true);
   updateCheatList();
 }
 
@@ -731,7 +731,7 @@ void CheatManagerDialog::resetClicked()
     return;
   }
 
-  g_emu_thread->executeOnEmulationThread([] { System::DeleteCheatList(); }, true);
+  Host::RunOnCPUThread([] { System::DeleteCheatList(); }, true);
   updateCheatList();
 }
 

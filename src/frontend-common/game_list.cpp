@@ -58,6 +58,20 @@ static std::unique_ptr<ByteStream> m_cache_write_stream;
 
 static bool m_game_list_loaded = false;
 
+const char* GameList::GetEntryTypeName(EntryType type)
+{
+  static std::array<const char*, static_cast<int>(EntryType::Count)> names = {{"Disc", "PSExe", "Playlist", "PSF"}};
+  return names[static_cast<int>(type)];
+}
+
+const char* GameList::GetEntryTypeDisplayName(EntryType type)
+{
+  static std::array<const char*, static_cast<int>(EntryType::Count)> names = {
+    {TRANSLATABLE("GameList", "Disc"), TRANSLATABLE("GameList", "PS-EXE"), TRANSLATABLE("GameList", "Playlist"),
+     TRANSLATABLE("GameList", "PSF")}};
+  return names[static_cast<int>(type)];
+}
+
 bool GameList::IsGameListLoaded()
 {
   return m_game_list_loaded;

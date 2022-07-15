@@ -29,8 +29,8 @@ void GDBServer::incomingConnection(qintptr descriptor)
 {
   Log_InfoPrint("Accepted connection on GDB server");
   GDBConnection *thread = new GDBConnection(this, descriptor);
-  connect(g_emu_thread, &QtHostInterface::systemPaused, thread, &GDBConnection::onEmulationPaused);
-  connect(g_emu_thread, &QtHostInterface::systemResumed, thread, &GDBConnection::onEmulationResumed);
+  connect(g_emu_thread, &EmuThread::systemPaused, thread, &GDBConnection::onEmulationPaused);
+  connect(g_emu_thread, &EmuThread::systemResumed, thread, &GDBConnection::onEmulationResumed);
   thread->start();
   m_connections.push_back(thread);
 }

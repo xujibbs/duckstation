@@ -22,7 +22,7 @@ ControllerBindingWidget::ControllerBindingWidget(QWidget* parent, ControllerSett
 {
   m_ui.setupUi(this);
   populateControllerTypes();
-  onTypeChanged();
+  populateBindingWidget();
 
   connect(m_ui.controllerType, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
           &ControllerBindingWidget::onTypeChanged);
@@ -96,12 +96,15 @@ void ControllerBindingWidget::onTypeChanged()
 
   SettingsInterface* sif = m_dialog->getProfileSettingsInterface();
   if (sif)
+  {
     sif->SetStringValue(m_config_section.c_str(), "Type", Settings::GetControllerTypeName(m_controller_type));
+    g_emu_thread->reloadGameSettings();
+  }
   else
+  {
     Host::SetBaseStringSettingValue(m_config_section.c_str(), "Type", Settings::GetControllerTypeName(m_controller_type));
-
-  // TODO: reloadInputProfile() ?
-  g_emu_thread->applySettings();
+    g_emu_thread->applySettings();
+  }
 
   populateBindingWidget();
 }
@@ -197,7 +200,7 @@ ControllerBindingWidget_Base::~ControllerBindingWidget_Base() {}
 
 QIcon ControllerBindingWidget_Base::getIcon() const
 {
-  return QIcon::fromTheme("artboard-2-line");
+  return QIcon::fromTheme("BIOSSettings");
 }
 
 void ControllerBindingWidget_Base::initBindingWidgets()
@@ -304,7 +307,7 @@ ControllerBindingWidget_DigitalController::~ControllerBindingWidget_DigitalContr
 
 QIcon ControllerBindingWidget_DigitalController::getIcon() const
 {
-  return QIcon::fromTheme("gamepad-line");
+  return QIcon::fromTheme("ControllerSettings");
 }
 
 ControllerBindingWidget_Base* ControllerBindingWidget_DigitalController::createInstance(ControllerBindingWidget* parent)
@@ -325,7 +328,7 @@ ControllerBindingWidget_AnalogController::~ControllerBindingWidget_AnalogControl
 
 QIcon ControllerBindingWidget_AnalogController::getIcon() const
 {
-  return QIcon::fromTheme("gamepad-line");
+  return QIcon::fromTheme("ControllerSettings");
 }
 
 ControllerBindingWidget_Base* ControllerBindingWidget_AnalogController::createInstance(ControllerBindingWidget* parent)

@@ -121,6 +121,7 @@ bool IsStartupCancelled();
 void CancelPendingStartup();
 
 ConsoleRegion GetRegion();
+DiscRegion GetDiscRegion();
 bool IsPALRegion();
 
 ALWAYS_INLINE TickCount GetTicksPerSecond()
@@ -188,17 +189,10 @@ bool ReloadGameSettings(bool display_osd_messages);
 bool BootSystem(std::shared_ptr<SystemBootParameters> parameters);
 void PauseSystem(bool paused);
 void ResetSystem();
-void DestroySystem();
 
 /// Loads state from the specified filename.
 bool LoadState(const char* filename);
-bool SaveState(const char* filename);
-
-/// Loads the current emulation state from file. Specifying a slot of -1 loads the "resume" game state.
-bool LoadStateFromSlot(bool global, s32 slot);
-
-/// Saves the current emulation state to a file. Specifying a slot of -1 saves the "resume" save state.
-bool SaveStateToSlot(bool global, s32 slot);
+bool SaveState(const char* filename, bool backup_existing_save);
 
 /// Runs the VM until the CPU execution is canceled.
 void Execute();
@@ -309,7 +303,7 @@ void DoFrameStep();
 void DoToggleCheats();
 
 /// Returns the path to a save state file. Specifying an index of -1 is the "resume" save state.
-std::string GetGameSaveStateFileName(const char* game_code, s32 slot);
+std::string GetGameSaveStateFileName(const std::string_view& game_code, s32 slot);
 
 /// Returns the path to a save state file. Specifying an index of -1 is the "resume" save state.
 std::string GetGlobalSaveStateFileName(s32 slot);
@@ -324,7 +318,7 @@ std::string GetMostRecentResumeSaveStatePath();
 std::string GetCheatFileName();
 
 /// Powers off the system, optionally saving the resume state.
-void PowerOffSystem(bool save_resume_state);
+void ShutdownSystem(bool save_resume_state);
 
 /// Returns true if an undo load state exists.
 bool CanUndoLoadState();
@@ -337,9 +331,6 @@ bool UndoLoadState();
 
 /// Loads the most recent resume save state. This may be global or per-game.
 bool ResumeSystemFromMostRecentState();
-
-/// Saves the resume save state, call when shutting down.
-bool SaveResumeSaveState();
 
 /// Returns a list of save states for the specified game code.
 std::vector<SaveStateInfo> GetAvailableSaveStates(const char* game_code);
@@ -408,9 +399,6 @@ void ReloadPostProcessingShaders();
 
 /// Toggle Widescreen Hack and Aspect Ratio
 void ToggleWidescreen();
-
-/// Returns true if the state should be saved on shutdown.
-bool ShouldSaveResumeState();
 
 /// Returns true if fast forwarding or slow motion is currently active.
 bool IsRunningAtNonStandardSpeed();
@@ -488,9 +476,6 @@ void PumpMessagesOnCPUThread();
 
 /// Requests a specific display window size.
 void RequestResizeHostDisplay(s32 width, s32 height);
-
-/// Safely executes a function on the VM thread.
-// void RunOnCPUThread(std::function<void()> function, bool block = false);
 
 /// Asynchronously starts refreshing the game list.
 // void RefreshGameListAsync(bool invalidate_cache);

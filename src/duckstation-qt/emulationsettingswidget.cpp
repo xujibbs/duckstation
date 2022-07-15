@@ -1,4 +1,5 @@
 #include "emulationsettingswidget.h"
+#include "common/make_array.h"
 #include "core/system.h"
 #include "qtutils.h"
 #include "settingsdialog.h"
@@ -14,30 +15,52 @@ EmulationSettingsWidget::EmulationSettingsWidget(SettingsDialog* dialog, QWidget
   m_ui.setupUi(this);
 
   SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.rewindEnable, "Main", "RewindEnable", false);
-  SettingWidgetBinder::BindWidgetToFloatSetting(sif, m_ui.rewindSaveFrequency, "Main", "RewindFrequency",
-                                                10.0f);
+  SettingWidgetBinder::BindWidgetToFloatSetting(sif, m_ui.rewindSaveFrequency, "Main", "RewindFrequency", 10.0f);
   SettingWidgetBinder::BindWidgetToIntSetting(sif, m_ui.rewindSaveSlots, "Main", "RewindSaveSlots", 10);
   SettingWidgetBinder::BindWidgetToIntSetting(sif, m_ui.runaheadFrames, "Main", "RunaheadFrameCount", 0);
 
-  QtUtils::FillComboBoxWithEmulationSpeeds(m_ui.emulationSpeed);
-  const int emulation_speed_index =
-    m_ui.emulationSpeed->findData(QVariant(m_dialog->getEffectiveFloatValue("Main", "EmulationSpeed", 1.0f)));
-  if (emulation_speed_index >= 0)
-    m_ui.emulationSpeed->setCurrentIndex(emulation_speed_index);
+  const float effective_emulation_speed = m_dialog->getEffectiveFloatValue("Main", "EmulationSpeed", 1.0f);
+  fillComboBoxWithEmulationSpeeds(m_ui.emulationSpeed, effective_emulation_speed);
+  if (m_dialog->isPerGameSettings() && !m_dialog->getFloatValue("Main", "EmulationSpeed", std::nullopt).has_value())
+  {
+    m_ui.emulationSpeed->setCurrentIndex(0);
+  }
+  else
+  {
+    const int emulation_speed_index = m_ui.emulationSpeed->findData(QVariant(effective_emulation_speed));
+    if (emulation_speed_index >= 0)
+      m_ui.emulationSpeed->setCurrentIndex(emulation_speed_index);
+  }
   connect(m_ui.emulationSpeed, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
           &EmulationSettingsWidget::onEmulationSpeedIndexChanged);
-  QtUtils::FillComboBoxWithEmulationSpeeds(m_ui.fastForwardSpeed);
-  const int fast_forward_speed_index =
-    m_ui.fastForwardSpeed->findData(QVariant(m_dialog->getEffectiveFloatValue("Main", "FastForwardSpeed", 0.0f)));
-  if (fast_forward_speed_index >= 0)
-    m_ui.fastForwardSpeed->setCurrentIndex(fast_forward_speed_index);
+
+  const float effective_fast_forward_speed = m_dialog->getEffectiveFloatValue("Main", "FastForwardSpeed", 0.0f);
+  fillComboBoxWithEmulationSpeeds(m_ui.fastForwardSpeed, effective_fast_forward_speed);
+  if (m_dialog->isPerGameSettings() && !m_dialog->getFloatValue("Main", "FastForwardSpeed", std::nullopt).has_value())
+  {
+    m_ui.emulationSpeed->setCurrentIndex(0);
+  }
+  else
+  {
+    const int fast_forward_speed_index = m_ui.fastForwardSpeed->findData(QVariant(effective_fast_forward_speed));
+    if (fast_forward_speed_index >= 0)
+      m_ui.fastForwardSpeed->setCurrentIndex(fast_forward_speed_index);
+  }
   connect(m_ui.fastForwardSpeed, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
           &EmulationSettingsWidget::onFastForwardSpeedIndexChanged);
-  QtUtils::FillComboBoxWithEmulationSpeeds(m_ui.turboSpeed);
-  const int turbo_speed_index =
-    m_ui.turboSpeed->findData(QVariant(m_dialog->getEffectiveFloatValue("Main", "TurboSpeed", 0.0f)));
-  if (turbo_speed_index >= 0)
-    m_ui.turboSpeed->setCurrentIndex(turbo_speed_index);
+
+  const float effective_turbo_speed = m_dialog->getEffectiveFloatValue("Main", "TurboSpeed", 0.0f);
+  fillComboBoxWithEmulationSpeeds(m_ui.turboSpeed, effective_turbo_speed);
+  if (m_dialog->isPerGameSettings() && !m_dialog->getFloatValue("Main", "TurboSpeed", std::nullopt).has_value())
+  {
+    m_ui.emulationSpeed->setCurrentIndex(0);
+  }
+  else
+  {
+    const int turbo_speed_index = m_ui.turboSpeed->findData(QVariant(effective_turbo_speed));
+    if (turbo_speed_index >= 0)
+      m_ui.turboSpeed->setCurrentIndex(turbo_speed_index);
+  }
   connect(m_ui.turboSpeed, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
           &EmulationSettingsWidget::onTurboSpeedIndexChanged);
 
@@ -77,8 +100,35 @@ EmulationSettingsWidget::EmulationSettingsWidget(SettingsDialog* dialog, QWidget
 
 EmulationSettingsWidget::~EmulationSettingsWidget() = default;
 
+void EmulationSettingsWidget::fillComboBoxWithEmulationSpeeds(QComboBox* cb, float global_value)
+{
+  if (m_dialog->isPerGameSettings())
+  {
+    if (global_value == 0.0f)
+      cb->addItem(tr("Use Global Setting [Unlimited]"));
+    else
+      cb->addItem(tr("Use Global Setting [%1%]").arg(static_cast<u32>(global_value * 100.0f)));
+  }
+
+  cb->addItem(tr("Unlimited"), QVariant(0.0f));
+
+  static constexpr auto speeds = make_array(10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 125, 150, 175, 200, 250, 300, 350,
+                                            400, 450, 500, 600, 700, 800, 900, 1000);
+  for (const int speed : speeds)
+  {
+    cb->addItem(tr("%1% [%2 FPS (NTSC) / %3 FPS (PAL)]").arg(speed).arg((60 * speed) / 100).arg((50 * speed) / 100),
+                QVariant(static_cast<float>(speed) / 100.0f));
+  }
+}
+
 void EmulationSettingsWidget::onEmulationSpeedIndexChanged(int index)
 {
+  if (m_dialog->isPerGameSettings() && index == 0)
+  {
+    m_dialog->removeSettingValue("Main", "EmulationSpeed");
+    return;
+  }
+
   bool okay;
   const float value = m_ui.emulationSpeed->currentData().toFloat(&okay);
   m_dialog->setFloatSettingValue("Main", "EmulationSpeed", okay ? value : 1.0f);
@@ -86,6 +136,12 @@ void EmulationSettingsWidget::onEmulationSpeedIndexChanged(int index)
 
 void EmulationSettingsWidget::onFastForwardSpeedIndexChanged(int index)
 {
+  if (m_dialog->isPerGameSettings() && index == 0)
+  {
+    m_dialog->removeSettingValue("Main", "FastForwardSpeed");
+    return;
+  }
+
   bool okay;
   const float value = m_ui.fastForwardSpeed->currentData().toFloat(&okay);
   m_dialog->setFloatSettingValue("Main", "FastForwardSpeed", okay ? value : 0.0f);
@@ -93,6 +149,12 @@ void EmulationSettingsWidget::onFastForwardSpeedIndexChanged(int index)
 
 void EmulationSettingsWidget::onTurboSpeedIndexChanged(int index)
 {
+  if (m_dialog->isPerGameSettings() && index == 0)
+  {
+    m_dialog->removeSettingValue("Main", "TurboSpeed");
+    return;
+  }
+
   bool okay;
   const float value = m_ui.turboSpeed->currentData().toFloat(&okay);
   m_dialog->setFloatSettingValue("Main", "TurboSpeed", okay ? value : 0.0f);
@@ -100,9 +162,11 @@ void EmulationSettingsWidget::onTurboSpeedIndexChanged(int index)
 
 void EmulationSettingsWidget::updateRewind()
 {
-  m_ui.rewindEnable->setEnabled(!runaheadEnabled());
+  const bool rewind_enabled = m_dialog->getEffectiveBoolValue("Main", "RewindEnable", false);
+  const bool runahead_enabled = m_dialog->getIntValue("Main", "RunaheadFrameCount", 0) > 0;
+  m_ui.rewindEnable->setEnabled(!runahead_enabled);
 
-  if (m_ui.rewindEnable->isEnabled() && m_ui.rewindEnable->isChecked())
+  if (!runahead_enabled && rewind_enabled)
   {
     const u32 frames = static_cast<u32>(m_ui.rewindSaveSlots->value());
     const float frequency = static_cast<float>(m_ui.rewindSaveFrequency->value());
@@ -122,7 +186,7 @@ void EmulationSettingsWidget::updateRewind()
   }
   else
   {
-    if (!m_ui.rewindEnable->isEnabled())
+    if (runahead_enabled)
     {
       m_ui.rewindSummary->setText(tr(
         "Rewind is disabled because runahead is enabled. Runahead will significantly increase system requirements."));

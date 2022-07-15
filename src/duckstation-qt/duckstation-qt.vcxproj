@@ -20,6 +20,7 @@
     <ClCompile Include="debuggermodels.cpp" />
     <ClCompile Include="debuggerwindow.cpp" />
     <ClCompile Include="enhancementsettingswidget.cpp" />
+    <ClCompile Include="foldersettingswidget.cpp" />
     <ClCompile Include="gamelistmodel.cpp" />
     <ClCompile Include="gamelistsearchdirectoriesmodel.cpp" />
     <ClCompile Include="generalsettingswidget.cpp" />
@@ -32,10 +33,10 @@
     <ClCompile Include="gamelistsettingswidget.cpp" />
     <ClCompile Include="gamelistrefreshthread.cpp" />
     <ClCompile Include="gamelistwidget.cpp" />
+    <ClCompile Include="gamesummarywidget.cpp" />
     <ClCompile Include="gamepropertiesdialog.cpp" />
     <ClCompile Include="gdbconnection.cpp" />
     <ClCompile Include="gdbserver.cpp" />
-    <ClCompile Include="main.cpp" />
     <ClCompile Include="mainwindow.cpp" />
     <ClCompile Include="memorycardsettingswidget.cpp" />
     <ClCompile Include="memorycardeditordialog.cpp" />
@@ -86,6 +87,7 @@
     <QtMoc Include="gamelistrefreshthread.h" />
     <QtMoc Include="gamelistwidget.h" />
     <QtMoc Include="gamepropertiesdialog.h" />
+    <QtMoc Include="gamesummarywidget.h" />
     <QtMoc Include="gdbconnection.h" />
     <QtMoc Include="gdbserver.h" />
     <QtMoc Include="postprocessingchainconfigwidget.h" />
@@ -93,6 +95,7 @@
     <QtMoc Include="postprocessingsettingswidget.h" />
     <QtMoc Include="mainwindow.h" />
     <QtMoc Include="qthost.h" />
+    <QtMoc Include="foldersettingswidget.h" />
     <ClInclude Include="qtutils.h" />
     <QtMoc Include="settingsdialog.h" />
   </ItemGroup>
@@ -187,6 +190,12 @@
     <QtUi Include="gamelistwidget.ui">
       <FileType>Document</FileType>
     </QtUi>
+    <QtUi Include="gamesummarywidget.ui">
+      <FileType>Document</FileType>
+    </QtUi>
+    <QtUi Include="foldersettingswidget.ui">
+      <FileType>Document</FileType>
+    </QtUi>
   </ItemGroup>
   <ItemGroup>
     <QtResource Include="resources\resources.qrc">
@@ -211,12 +220,14 @@
     <ClCompile Include="$(IntDir)moc_displaywidget.cpp" />
     <ClCompile Include="$(IntDir)moc_emulationsettingswidget.cpp" />
     <ClCompile Include="$(IntDir)moc_enhancementsettingswidget.cpp" />
+    <ClCompile Include="$(IntDir)moc_foldersettingswidget.cpp" />
     <ClCompile Include="$(IntDir)moc_gamelistmodel.cpp" />
     <ClCompile Include="$(IntDir)moc_gamelistrefreshthread.cpp" />
     <ClCompile Include="$(IntDir)moc_gamelistsearchdirectoriesmodel.cpp" />
     <ClCompile Include="$(IntDir)moc_gamelistsettingswidget.cpp" />
     <ClCompile Include="$(IntDir)moc_gamelistwidget.cpp" />
     <ClCompile Include="$(IntDir)moc_gamepropertiesdialog.cpp" />
+    <ClCompile Include="$(IntDir)moc_gamesummarywidget.cpp" />
     <ClCompile Include="$(IntDir)moc_gdbconnection.cpp" />
     <ClCompile Include="$(IntDir)moc_gdbserver.cpp" />
     <ClCompile Include="$(IntDir)moc_generalsettingswidget.cpp" />
@@ -310,9 +321,10 @@
   <ItemDefinitionGroup>
     <Link>
       <AdditionalDependencies>$(RootBuildDir)frontend-common\frontend-common.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(QtEntryPointLib);%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <ClCompile>
-      <DisableSpecificWarnings Condition="'$(Configuration)|$(Platform)'=='DebugFast|x64'">4127;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+      <DisableSpecificWarnings>4127;%(DisableSpecificWarnings)</DisableSpecificWarnings>
     </ClCompile>
   </ItemDefinitionGroup>
   <Import Project="..\..\dep\msvc\vsprops\Targets.props" />

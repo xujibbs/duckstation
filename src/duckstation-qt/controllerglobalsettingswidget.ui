@@ -239,7 +239,7 @@
      <property name="title">
       <string>Controller Multitap</string>
      </property>
-     <layout class="QGridLayout" name="gridLayout_4">
+     <layout class="QFormLayout" name="formLayout">
       <item row="0" column="0" colspan="2">
        <widget class="QLabel" name="label">
         <property name="text">
@@ -251,17 +251,34 @@
        </widget>
       </item>
       <item row="1" column="0">
-       <widget class="QCheckBox" name="multitapPort1">
+       <widget class="QLabel" name="label_8">
         <property name="text">
-         <string>Multitap on Console Port 1</string>
+         <string>Multitap Mode:</string>
         </property>
        </widget>
       </item>
       <item row="1" column="1">
-       <widget class="QCheckBox" name="multitapPort2">
-        <property name="text">
-         <string>Multitap on Console Port 2</string>
-        </property>
+       <widget class="QComboBox" name="multitapMode">
+        <item>
+         <property name="text">
+          <string>Disabled</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>Enable on Port 1 Only</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>Enable on Port 2 Only</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>Enable on Ports 1 and 2</string>
+         </property>
+        </item>
        </widget>
       </item>
      </layout>

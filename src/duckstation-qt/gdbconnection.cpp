@@ -13,7 +13,7 @@ GDBConnection::GDBConnection(QObject* parent, int descriptor) : QThread(parent),
 
   if (m_socket.setSocketDescriptor(m_descriptor))
   {
-    g_emu_thread->pauseSystem(true, true);
+    g_emu_thread->setSystemPaused(true, true);
   }
   else
   {
@@ -42,13 +42,13 @@ void GDBConnection::receivedData()
       if (GDBProtocol::IsPacketInterrupt(m_readBuffer))
       {
         Log_DebugPrintf("(%u) > Interrupt request", m_descriptor);
-        g_emu_thread->pauseSystem(true, true);
+        g_emu_thread->setSystemPaused(true, true);
         m_readBuffer.erase();
       }
       else if (GDBProtocol::IsPacketContinue(m_readBuffer))
       {
         Log_DebugPrintf("(%u) > Continue request", m_descriptor);
-        g_emu_thread->pauseSystem(false, false);
+        g_emu_thread->setSystemPaused(false, false);
         m_readBuffer.erase();
       }
       else if (GDBProtocol::IsPacketComplete(m_readBuffer))

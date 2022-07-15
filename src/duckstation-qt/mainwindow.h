@@ -16,15 +16,16 @@ class QThread;
 class QProgressBar;
 
 class GameListWidget;
-class QtHostInterface;
+class EmuThread;
 class AutoUpdaterDialog;
 class MemoryCardEditorDialog;
 class CheatManagerDialog;
 class DebuggerWindow;
+class MainWindow;
 
 class HostDisplay;
 namespace GameList {
-struct GameListEntry;
+struct Entry;
 }
 
 class GDBServer;
@@ -34,11 +35,38 @@ class MainWindow final : public QMainWindow
   Q_OBJECT
 
 public:
+  /// This class is a scoped lock on the VM, which prevents it from running while
+  /// the object exists. Its purpose is to be used for blocking/modal popup boxes,
+  /// where the VM needs to exit fullscreen temporarily.
+  class SystemLock
+  {
+  public:
+    SystemLock(SystemLock&& lock);
+    SystemLock(const SystemLock&) = delete;
+    ~SystemLock();
+
+    /// Returns the parent widget, which can be used for any popup dialogs.
+    ALWAYS_INLINE QWidget* getDialogParent() const { return m_dialog_parent; }
+
+    /// Cancels any pending unpause/fullscreen transition.
+    /// Call when you're going to destroy the VM anyway.
+    void cancelResume();
+
+  private:
+    SystemLock(QWidget* dialog_parent, bool was_paused, bool was_fullscreen);
+    friend MainWindow;
+
+    QWidget* m_dialog_parent;
+    bool m_was_paused;
+    bool m_was_fullscreen;
+  };
+
+public:
   explicit MainWindow();
   ~MainWindow();
 
   /// Initializes the window. Call once at startup.
-  void initializeAndShow();
+  void initialize();
 
   /// Performs update check if enabled in settings.
   void startupUpdateCheck();
@@ -49,11 +77,20 @@ public:
   /// Updates the state of the controls which should be disabled by achievements challenge mode.
   void onAchievementsChallengeModeToggled(bool enabled);
 
+  /// Locks the VM by pausing it, while a popup dialog is displayed.
+  SystemLock pauseAndLockSystem();
+
 public Q_SLOTS:
   /// Updates debug menu visibility (hides if disabled).
   void updateDebugMenuVisibility();
 
   void refreshGameList(bool invalidate_cache);
+
+  void runOnUIThread(const std::function<void()>& func);
+  bool requestShutdown(bool allow_confirm = true, bool allow_save_to_state = true, bool block_until_done = false);
+  void requestExit();
+  void checkForSettingChanges();
+
   void checkForUpdates(bool display_message);
 
 private Q_SLOTS:
@@ -158,7 +195,7 @@ private:
   bool shouldHideCursorInFullscreen() const;
 
   SettingsDialog* getSettingsDialog();
-  void doSettings(SettingsDialog::Category category = SettingsDialog::Category::Count);
+  void doSettings(const char* category = nullptr);
 
   ControllerSettingsDialog* getControllerSettingsDialog();
   void doControllerSettings(ControllerSettingsDialog::Category category = ControllerSettingsDialog::Category::Count);
@@ -171,8 +208,11 @@ private:
   void setGameListEntryCoverImage(const GameList::Entry* entry);
   void recreate();
 
-  std::optional<bool> promptForResumeState(const QString& save_state_path);
-  void startGameListEntry(const GameList::Entry* entry, std::optional<s32> save_slot, std::optional<bool> fast_boot);
+  /// Fills menu with save state info and handlers.
+  void populateGameListContextMenu(const GameList::Entry* entry, QWidget* parent_window, QMenu* menu);
+
+  std::optional<bool> promptForResumeState(const std::string& save_state_path);
+  void startGameListEntry(const GameList::Entry* entry, std::optional<std::string> save_path, std::optional<bool> fast_boot);
 
   Ui::MainWindow m_ui;
 

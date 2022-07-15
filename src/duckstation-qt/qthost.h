@@ -1,5 +1,4 @@
 #pragma once
-#include "common/event.h"
 #include "core/host.h"
 #include "core/host_settings.h"
 #include "core/system.h"
@@ -9,6 +8,7 @@
 #include "qtutils.h"
 #include <QtCore/QByteArray>
 #include <QtCore/QObject>
+#include <QtCore/QSemaphore>
 #include <QtCore/QSettings>
 #include <QtCore/QString>
 #include <QtCore/QThread>
@@ -40,49 +40,34 @@ Q_DECLARE_METATYPE(std::shared_ptr<SystemBootParameters>);
 Q_DECLARE_METATYPE(GPURenderer);
 Q_DECLARE_METATYPE(InputBindingKey);
 
-class QtHostInterface final : public QObject
+class EmuThread : public QThread
 {
   Q_OBJECT
 
 public:
-  explicit QtHostInterface(QObject* parent = nullptr);
-  ~QtHostInterface();
+  explicit EmuThread(QThread* ui_thread);
+  ~EmuThread();
 
-  bool Initialize();
-  void Shutdown();
+  static void start();
+  static void stop();
 
-  void RunLater(std::function<void()> func);
+  ALWAYS_INLINE bool isOnThread() const { return QThread::currentThread() == this; }
 
-public:
-  ALWAYS_INLINE void requestExit() { RequestExit(); }
-
-  ALWAYS_INLINE bool isOnWorkerThread() const { return QThread::currentThread() == m_worker_thread; }
-
-  ALWAYS_INLINE QEventLoop* getEventLoop() const { return m_worker_thread_event_loop; }
+  ALWAYS_INLINE QEventLoop* getEventLoop() const { return m_event_loop; }
 
   ALWAYS_INLINE bool isFullscreen() const { return m_is_fullscreen; }
   ALWAYS_INLINE bool isRenderingToMain() const { return m_is_rendering_to_main; }
   ALWAYS_INLINE bool isSurfaceless() const { return m_is_surfaceless; }
   ALWAYS_INLINE bool isRunningFullscreenUI() const { return m_run_fullscreen_ui; }
 
-  void reinstallTranslator();
-
   void populateLoadStateMenu(const char* game_code, QMenu* menu);
   void populateSaveStateMenu(const char* game_code, QMenu* menu);
-
-  /// Fills menu with save state info and handlers.
-  void populateGameListContextMenu(const GameList::Entry* entry, QWidget* parent_window, QMenu* menu);
 
   /// Fills menu with the current playlist entries. The disc index is marked as checked.
   void populateChangeDiscSubImageMenu(QMenu* menu, QActionGroup* action_group);
 
   /// Fills menu with the current cheat options.
   void populateCheatsMenu(QMenu* menu);
-
-  void saveInputProfile(const QString& profile_path);
-
-  /// Returns a list of supported languages and codes (suffixes for translation files).
-  static std::vector<std::pair<QString, QString>> getAvailableLanguageList();
 
   /// Called back from the GS thread when the display state changes (e.g. fullscreen, render to main).
   HostDisplay* acquireHostDisplay();
@@ -93,6 +78,13 @@ public:
   void startBackgroundControllerPollTimer();
   void stopBackgroundControllerPollTimer();
   void wakeThread();
+
+  bool shouldRenderToMain() const;
+  void loadSettings(SettingsInterface& si);
+  void setInitialState();
+  void checkForSettingsChanges(const Settings& old_settings);
+
+  void bootOrLoadState(std::string path);
 
 Q_SIGNALS:
   void errorReported(const QString& title, const QString& message);
@@ -118,7 +110,6 @@ Q_SIGNALS:
                                         GPURenderer renderer, quint32 render_width, quint32 render_height,
                                         bool render_interlaced);
   void runningGameChanged(const QString& filename, const QString& game_code, const QString& game_title);
-  void exitRequested();
   void inputProfileLoaded();
   void mouseModeRequested(bool relative, bool hide_cursor);
   void achievementsLoaded(quint32 id, const QString& game_info_string, quint32 total, quint32 points);
@@ -127,20 +118,16 @@ Q_SIGNALS:
 public Q_SLOTS:
   void setDefaultSettings();
   void applySettings(bool display_osd_messages = false);
-  void reloadGameSettings();
-  void applyInputProfile(const QString& profile_path);
+  void reloadGameSettings(bool display_osd_messages = false);
   void reloadInputSources();
   void reloadInputBindings();
   void enumerateInputDevices();
   void enumerateVibrationMotors();
   void bootSystem(std::shared_ptr<SystemBootParameters> params);
-  void resumeSystemFromState(const QString& filename, bool boot_on_failure);
   void resumeSystemFromMostRecentState();
-  void powerOffSystem();
-  void powerOffSystemWithoutSaving();
-  void synchronousPowerOffSystem();
+  void shutdownSystem(bool save_state = true);
   void resetSystem();
-  void pauseSystem(bool paused, bool wait_until_paused = false);
+  void setSystemPaused(bool paused, bool wait_until_paused = false);
   void changeDisc(const QString& new_disc_filename);
   void changeDiscFromPlaylist(quint32 index);
   void loadState(const QString& filename);
@@ -161,80 +148,39 @@ public Q_SLOTS:
   void toggleFullscreen();
   void setFullscreen(bool fullscreen);
   void setSurfaceless(bool surfaceless);
+  void requestDisplaySize(float scale);
   void loadCheatList(const QString& filename);
   void setCheatEnabled(quint32 index, bool enabled);
   void applyCheat(quint32 index);
   void reloadPostProcessingShaders();
-  void requestRenderWindowScale(qreal scale);
-  void executeOnEmulationThread(std::function<void()> callback, bool wait = false);
 
 private Q_SLOTS:
-  void doStopThread();
+  void stopInThread();
   void onDisplayWindowMouseMoveEvent(bool relative, float x, float y);
   void onDisplayWindowMouseButtonEvent(int button, bool pressed);
   void onDisplayWindowMouseWheelEvent(const QPoint& delta_angle);
   void onDisplayWindowResized(int width, int height);
   void onDisplayWindowKeyEvent(int key, bool pressed);
   void doBackgroundControllerPoll();
+  void runOnEmuThread(std::function<void()> callback);
 
 protected:
-  bool IsFullscreen() const;
-  bool SetFullscreen(bool enabled);
-
-  void RequestExit();
+  void run() override;
 
 private:
-  enum : u32
-  {
-    BACKGROUND_CONTROLLER_POLLING_INTERVAL =
-      100, /// Interval at which the controllers are polled when the system is not active.
-  };
-
   using InputButtonHandler = std::function<void(bool)>;
   using InputAxisHandler = std::function<void(float)>;
 
-  class Thread : public QThread
-  {
-  public:
-    Thread(QtHostInterface* parent);
-    ~Thread();
-
-    void setInitResult(bool result);
-    bool waitForInit();
-
-  protected:
-    void run() override;
-
-  private:
-    QtHostInterface* m_parent;
-    std::atomic_bool m_init_result{false};
-    Common::Event m_init_event;
-  };
-
   void createBackgroundControllerPollTimer();
   void destroyBackgroundControllerPollTimer();
-
-  void setImGuiFont();
-
-  void createThread();
-  void stopThread();
-  void threadEntryPoint();
-  bool initializeOnThread();
-  void shutdownOnThread();
-  void installTranslator();
-  void checkRenderToMainState();
   void updateDisplayState();
-  void queueSettingsSave();
 
-  QThread* m_original_thread = nullptr;
-  Thread* m_worker_thread = nullptr;
-  QEventLoop* m_worker_thread_event_loop = nullptr;
-  Common::Event m_worker_thread_sync_execute_done;
+  QThread* m_ui_thread;
+  QSemaphore m_started_semaphore;
+  QEventLoop* m_event_loop = nullptr;
+  QTimer* m_background_controller_polling_timer = nullptr;
 
   std::atomic_bool m_shutdown_flag{false};
-
-  QTimer* m_background_controller_polling_timer = nullptr;
-  std::vector<QTranslator*> m_translators;
 
   bool m_run_fullscreen_ui = false;
   bool m_is_rendering_to_main = false;
@@ -243,14 +189,19 @@ private:
   bool m_lost_exclusive_fullscreen = false;
   bool m_is_surfaceless = false;
   bool m_save_state_on_shutdown = false;
-  bool m_pause_on_focus_loss = false;
 
   bool m_was_paused_by_focus_loss = false;
 };
 
-extern QtHostInterface* g_emu_thread;
+extern EmuThread* g_emu_thread;
 
 namespace QtHost {
+/// Startup, creates the thread and loads config.
+bool Initialize();
+
+/// Execute before exiting, stops the thread and saves settings.
+void Shutdown();
+
 /// Sets batch mode (exit after game shutdown).
 bool InBatchMode();
 
@@ -259,6 +210,12 @@ bool InNoGUIMode();
 
 /// Executes a function on the UI thread.
 void RunOnUIThread(const std::function<void()>& func, bool block = false);
+
+/// Returns a list of supported languages and codes (suffixes for translation files).
+std::vector<std::pair<QString, QString>> GetAvailableLanguageList();
+
+/// Call when the language changes.
+void ReinstallTranslator();
 
 /// Returns the application name and version, optionally including debug/devel config indicator.
 QString GetAppNameAndVersion();

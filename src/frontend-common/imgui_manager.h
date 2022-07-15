@@ -16,71 +16,76 @@
 #pragma once
 
 #include "common/types.h"
+#include <string>
 
 struct ImFont;
 
 union InputBindingKey;
 enum class GenericInputBinding : u8;
 
-namespace ImGuiManager
-{
-	/// Initializes ImGui, creates fonts, etc.
-	bool Initialize();
+namespace ImGuiManager {
+/// Sets the path to the font to use. Empty string means to use the default.
+void SetFontPath(std::string path);
 
-	/// Frees all ImGui resources.
-	void Shutdown();
+/// Sets the glyph range to use when loading fonts.
+void SetFontRange(const u16* range);
 
-	/// Updates internal state when the window is size.
-	void WindowResized();
+/// Initializes ImGui, creates fonts, etc.
+bool Initialize();
 
-	/// Updates scaling of the on-screen elements.
-	void UpdateScale();
+/// Frees all ImGui resources.
+void Shutdown();
 
-	/// Call at the beginning of the frame to set up ImGui state.
-	void NewFrame();
+/// Updates internal state when the window is size.
+void WindowResized();
 
-	/// Renders any on-screen display elements.
-	void RenderOSD();
+/// Updates scaling of the on-screen elements.
+void UpdateScale();
 
-	/// Returns the scale of all on-screen elements.
-	float GetGlobalScale();
+/// Call at the beginning of the frame to set up ImGui state.
+void NewFrame();
 
-	/// Returns true if fullscreen fonts are present.
-	bool HasFullscreenFonts();
+/// Renders any on-screen display elements.
+void RenderOSD();
 
-	/// Allocates/adds fullscreen fonts if they're not loaded.
-	bool AddFullscreenFontsIfMissing();
+/// Returns the scale of all on-screen elements.
+float GetGlobalScale();
 
-	/// Returns the standard font for external drawing.
-	ImFont* GetStandardFont();
+/// Returns true if fullscreen fonts are present.
+bool HasFullscreenFonts();
 
-	/// Returns the fixed-width font for external drawing.
-	ImFont* GetFixedFont();
+/// Allocates/adds fullscreen fonts if they're not loaded.
+bool AddFullscreenFontsIfMissing();
 
-	/// Returns the medium font for external drawing, scaled by ImGuiFullscreen.
-	/// This font is allocated on demand.
-	ImFont* GetMediumFont();
+/// Returns the standard font for external drawing.
+ImFont* GetStandardFont();
 
-	/// Returns the large font for external drawing, scaled by ImGuiFullscreen.
-	/// This font is allocated on demand.
-	ImFont* GetLargeFont();
+/// Returns the fixed-width font for external drawing.
+ImFont* GetFixedFont();
 
-	/// Called on the UI or CPU thread in response to mouse movement.
-	void UpdateMousePosition(float x, float y);
+/// Returns the medium font for external drawing, scaled by ImGuiFullscreen.
+/// This font is allocated on demand.
+ImFont* GetMediumFont();
 
-	/// Called on the CPU thread in response to a mouse button press.
-	/// Returns true if ImGui intercepted the event, and regular handlers should not execute.
-	bool ProcessPointerButtonEvent(InputBindingKey key, float value);
+/// Returns the large font for external drawing, scaled by ImGuiFullscreen.
+/// This font is allocated on demand.
+ImFont* GetLargeFont();
 
-	/// Called on the CPU thread in response to a mouse wheel movement.
-	/// Returns true if ImGui intercepted the event, and regular handlers should not execute.
-	bool ProcessPointerAxisEvent(InputBindingKey key, float value);
+/// Called on the UI or CPU thread in response to mouse movement.
+void UpdateMousePosition(float x, float y);
 
-	/// Called on the CPU thread in response to a key press.
-	/// Returns true if ImGui intercepted the event, and regular handlers should not execute.
-	bool ProcessHostKeyEvent(InputBindingKey key, float value);
+/// Called on the CPU thread in response to a mouse button press.
+/// Returns true if ImGui intercepted the event, and regular handlers should not execute.
+bool ProcessPointerButtonEvent(InputBindingKey key, float value);
 
-	/// Called on the CPU thread when any input event fires. Allows imgui to take over controller navigation.
-	bool ProcessGenericInputEvent(GenericInputBinding key, float value);
+/// Called on the CPU thread in response to a mouse wheel movement.
+/// Returns true if ImGui intercepted the event, and regular handlers should not execute.
+bool ProcessPointerAxisEvent(InputBindingKey key, float value);
+
+/// Called on the CPU thread in response to a key press.
+/// Returns true if ImGui intercepted the event, and regular handlers should not execute.
+bool ProcessHostKeyEvent(InputBindingKey key, float value);
+
+/// Called on the CPU thread when any input event fires. Allows imgui to take over controller navigation.
+bool ProcessGenericInputEvent(GenericInputBinding key, float value);
 } // namespace ImGuiManager
-

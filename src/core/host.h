@@ -3,6 +3,7 @@
 #include "common/string.h"
 #include "common/types.h"
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -104,4 +105,7 @@ void SetPadVibrationIntensity(u32 pad_index, float large_or_single_motor_intensi
 
 /// Enables "relative" mouse mode, locking the cursor position and returning relative coordinates.
 void SetMouseMode(bool relative, bool hide_cursor);
+
+/// Safely executes a function on the VM thread.
+void RunOnCPUThread(std::function<void()> function, bool block = false);
 } // namespace Host

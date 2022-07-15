@@ -1,18 +1,3 @@
-/*  PCSX2 - PS2 Emulator for PCs
- *  Copyright (C) 2002-2022  PCSX2 Dev Team
- *
- *  PCSX2 is free software: you can redistribute it and/or modify it under the terms
- *  of the GNU Lesser General Public License as published by the Free Software Found-
- *  ation, either version 3 of the License, or (at your option) any later version.
- *
- *  PCSX2 is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
- *  without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
- *  PURPOSE.  See the GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License along with PCSX2.
- *  If not, see <http://www.gnu.org/licenses/>.
- */
-
 #include "input_manager.h"
 #include "common/assert.h"
 #include "common/log.h"
@@ -849,46 +834,10 @@ bool InputManager::HasPointerAxisBinds()
 void InputManager::SetDefaultConfig(SettingsInterface& si)
 {
   si.ClearSection("InputSources");
-  si.ClearSection("Hotkeys");
-  si.ClearSection("Pad");
-
-  // Global Settings
   si.SetBoolValue("InputSources", "SDL", true);
   si.SetBoolValue("InputSources", "SDLControllerEnhancedMode", false);
   si.SetBoolValue("InputSources", "XInput", false);
   si.SetBoolValue("InputSources", "RawInput", false);
-  si.SetBoolValue("Pad", "MultitapPort1", false);
-  si.SetBoolValue("Pad", "MultitapPort2", false);
-  si.SetFloatValue("Pad", "PointerXScale", 8.0f);
-  si.SetFloatValue("Pad", "PointerYScale", 8.0f);
-  si.SetBoolValue("Pad", "PointerXInvert", false);
-  si.SetBoolValue("Pad", "PointerYInvert", false);
-
-  // Default pad types and parameters.
-  for (u32 i = 0; i < NUM_CONTROLLER_AND_CARD_PORTS; i++)
-  {
-    const std::string section(Controller::GetSettingsSection(i));
-    si.ClearSection(section.c_str());
-    si.SetStringValue(section.c_str(), "Type", Controller::GetDefaultPadType(i));
-    si.SetFloatValue(section.c_str(), "Deadzone", Controller::DEFAULT_STICK_DEADZONE);
-    si.SetFloatValue(section.c_str(), "AxisScale", Controller::DEFAULT_STICK_SCALE);
-    si.SetFloatValue(section.c_str(), "LargeMotorScale", Controller::DEFAULT_MOTOR_SCALE);
-    si.SetFloatValue(section.c_str(), "SmallMotorScale", Controller::DEFAULT_MOTOR_SCALE);
-  }
-
-  // Use the automapper to set this up.
-  MapController(si, 0, GetGenericBindingMapping("Keyboard"));
-
-  si.SetStringValue("Hotkeys", "FastForward", "Keyboard/Tab");
-  si.SetStringValue("Hotkeys", "TogglePause", "Keyboard/Space");
-  si.SetStringValue("Hotkeys", "ToggleFullscreen", "Keyboard/Alt+Return");
-  si.SetStringValue("Hotkeys", "Screenshot", "Keyboard/F10");
-
-  si.SetStringValue("Hotkeys", "PowerOff", "Keyboard/Escape");
-  si.SetStringValue("Hotkeys", "LoadSelectedSaveState", "Keyboard/F1");
-  si.SetStringValue("Hotkeys", "SaveSelectedSaveState", "Keyboard/F2");
-  si.SetStringValue("Hotkeys", "SelectPreviousSaveStateSlot", "Keyboard/F3");
-  si.SetStringValue("Hotkeys", "SelectNextSaveStateSlot", "Keyboard/F4");
 }
 
 void InputManager::ClearPortBindings(SettingsInterface& si, u32 port)
@@ -909,10 +858,7 @@ void InputManager::CopyConfiguration(SettingsInterface* dest_si, const SettingsI
                                      bool copy_hotkey_bindings /*= true*/)
 {
   if (copy_pad_config)
-  {
-    dest_si->CopyBoolValue(src_si, "Pad", "MultitapPort1");
-    dest_si->CopyBoolValue(src_si, "Pad", "MultitapPort2");
-  }
+    dest_si->CopyStringValue(src_si, "ControllerPorts", "MultitapMode");
 
   for (u32 port = 0; port < NUM_CONTROLLER_AND_CARD_PORTS; port++)
   {
@@ -1220,7 +1166,7 @@ void InputManager::ReloadBindings(SettingsInterface& si, SettingsInterface& bind
   s_pad_vibration_array.clear();
 
   // Hotkeys use the base configuration, except if the custom hotkeys option is enabled.
-  const bool use_profile_hotkeys = si.GetBoolValue("Pad", "UseProfileHotkeyBindings", false);
+  const bool use_profile_hotkeys = si.GetBoolValue("ControllerPorts", "UseProfileHotkeyBindings", false);
   AddHotkeyBindings(use_profile_hotkeys ? binding_si : si);
 
   // If there's an input profile, we load pad bindings from it alone, rather than

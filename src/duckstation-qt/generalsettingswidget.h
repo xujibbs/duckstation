@@ -14,6 +14,9 @@ public:
   explicit GeneralSettingsWidget(SettingsDialog* dialog, QWidget* parent);
   ~GeneralSettingsWidget();
 
+private Q_SLOTS:
+  void onRenderToSeparateWindowChanged();
+
 private:
   Ui::GeneralSettingsWidget m_ui;
 

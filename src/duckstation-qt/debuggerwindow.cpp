@@ -84,7 +84,7 @@ void DebuggerWindow::onPauseActionToggled(bool paused)
     setUIEnabled(false);
   }
 
-  g_emu_thread->pauseSystem(paused);
+  g_emu_thread->setSystemPaused(paused);
 }
 
 void DebuggerWindow::onRunToCursorTriggered()
@@ -97,7 +97,7 @@ void DebuggerWindow::onRunToCursorTriggered()
   }
 
   CPU::AddBreakpoint(addr.value(), true, true);
-  g_emu_thread->pauseSystem(false);
+  g_emu_thread->setSystemPaused(false);
 }
 
 void DebuggerWindow::onGoToPCTriggered()
@@ -195,7 +195,7 @@ void DebuggerWindow::onStepOverActionTriggered()
 
   // unpause to let it run to the breakpoint
   m_registers_model->saveCurrentValues();
-  g_emu_thread->pauseSystem(false);
+  g_emu_thread->setSystemPaused(false);
 }
 
 void DebuggerWindow::onStepOutActionTriggered()
@@ -209,7 +209,7 @@ void DebuggerWindow::onStepOutActionTriggered()
 
   // unpause to let it run to the breakpoint
   m_registers_model->saveCurrentValues();
-  g_emu_thread->pauseSystem(false);
+  g_emu_thread->setSystemPaused(false);
 }
 
 void DebuggerWindow::onCodeViewItemActivated(QModelIndex index)
@@ -355,9 +355,9 @@ void DebuggerWindow::onMemorySearchStringChanged(const QString&)
 void DebuggerWindow::closeEvent(QCloseEvent* event)
 {
   QMainWindow::closeEvent(event);
-  g_emu_thread->pauseSystem(true, true);
+  g_emu_thread->setSystemPaused(true, true);
   CPU::ClearBreakpoints();
-  g_emu_thread->pauseSystem(false);
+  g_emu_thread->setSystemPaused(false);
   emit closed();
 }
 
@@ -383,10 +383,10 @@ void DebuggerWindow::setupAdditionalUi()
 
 void DebuggerWindow::connectSignals()
 {
-  QtHostInterface* hi = g_emu_thread;
-  connect(hi, &QtHostInterface::systemPaused, this, &DebuggerWindow::onEmulationPaused);
-  connect(hi, &QtHostInterface::systemResumed, this, &DebuggerWindow::onEmulationResumed);
-  connect(hi, &QtHostInterface::debuggerMessageReported, this, &DebuggerWindow::onDebuggerMessageReported);
+  EmuThread* hi = g_emu_thread;
+  connect(hi, &EmuThread::systemPaused, this, &DebuggerWindow::onEmulationPaused);
+  connect(hi, &EmuThread::systemResumed, this, &DebuggerWindow::onEmulationResumed);
+  connect(hi, &EmuThread::debuggerMessageReported, this, &DebuggerWindow::onDebuggerMessageReported);
 
   connect(m_ui.actionPause, &QAction::toggled, this, &DebuggerWindow::onPauseActionToggled);
   connect(m_ui.actionRunToCursor, &QAction::triggered, this, &DebuggerWindow::onRunToCursorTriggered);
@@ -415,7 +415,7 @@ void DebuggerWindow::connectSignals()
 
 void DebuggerWindow::disconnectSignals()
 {
-  QtHostInterface* hi = g_emu_thread;
+  EmuThread* hi = g_emu_thread;
   hi->disconnect(this);
 }
 

@@ -128,8 +128,8 @@ void MemoryCardSettingsWidget::createPortSettingsUi(SettingsDialog* dialog, int 
 
   QHBoxLayout* memory_card_layout = new QHBoxLayout();
   ui->memory_card_path = new QLineEdit(ui->container);
-  SettingWidgetBinder::BindWidgetToStringSetting(m_dialog->getSettingsInterface(), ui->memory_card_path, "MemoryCards",
-                                                 StringUtil::StdStringFromFormat("Card%dPath", index + 1));
+  updateMemoryCardPath(index);
+  connect(ui->memory_card_path, &QLineEdit::textChanged, this, [this, index]() { onMemoryCardPathChanged(index); });
   if (ui->memory_card_path->text().isEmpty())
   {
     QSignalBlocker sb(ui->memory_card_path);
@@ -138,11 +138,13 @@ void MemoryCardSettingsWidget::createPortSettingsUi(SettingsDialog* dialog, int 
   memory_card_layout->addWidget(ui->memory_card_path);
 
   QPushButton* memory_card_path_browse = new QPushButton(tr("Browse..."), ui->container);
-  connect(memory_card_path_browse, &QPushButton::clicked, [this, index]() { onBrowseMemoryCardPathClicked(index); });
+  connect(memory_card_path_browse, &QPushButton::clicked, this,
+          [this, index]() { onBrowseMemoryCardPathClicked(index); });
   memory_card_layout->addWidget(memory_card_path_browse);
 
   QPushButton* memory_card_path_reset = new QPushButton(tr("Reset"), ui->container);
-  connect(memory_card_path_reset, &QPushButton::clicked, [this, index]() { onResetMemoryCardPathClicked(index); });
+  connect(memory_card_path_reset, &QPushButton::clicked, this,
+          [this, index]() { onResetMemoryCardPathClicked(index); });
   memory_card_layout->addWidget(memory_card_path_reset);
 
   ui->layout->addWidget(new QLabel(tr("Shared Memory Card Path:"), ui->container));
@@ -161,14 +163,33 @@ void MemoryCardSettingsWidget::onBrowseMemoryCardPathClicked(int index)
   m_port_ui[index].memory_card_path->setText(path);
 }
 
+void MemoryCardSettingsWidget::onMemoryCardPathChanged(int index)
+{
+  const auto key = TinyString::FromFormat("Card%dPath", index + 1);
+  std::string relative_path(
+    Path::MakeRelative(m_port_ui[index].memory_card_path->text().toStdString(), EmuFolders::MemoryCards));
+  m_dialog->setStringSettingValue("MemoryCards", key, relative_path.c_str());
+}
+
 void MemoryCardSettingsWidget::onResetMemoryCardPathClicked(int index)
 {
-  m_dialog->removeSettingValue("MemoryCards", TinyString::FromFormat("Card%dPath", index + 1));
+  const auto key = TinyString::FromFormat("Card%dPath", index + 1);
+  if (m_dialog->isPerGameSettings())
+    m_dialog->removeSettingValue("MemoryCards", key);
+  else
+    m_dialog->setStringSettingValue("MemoryCards", key, Settings::GetDefaultSharedMemoryCardName(index).c_str());
 
-  Panic("Fixme");
-#if 0
+  updateMemoryCardPath(index);
+}
+
+void MemoryCardSettingsWidget::updateMemoryCardPath(int index)
+{
+  const auto key = TinyString::FromFormat("Card%dPath", index + 1);
+  std::string path(
+    m_dialog->getEffectiveStringValue("MemoryCards", key, Settings::GetDefaultSharedMemoryCardName(index).c_str()));
+  if (!Path::IsAbsolute(path))
+    path = Path::Combine(EmuFolders::MemoryCards, path);
+
   QSignalBlocker db(m_port_ui[index].memory_card_path);
-  m_port_ui[index].memory_card_path->setText(
-    QString::fromStdString(g_emu_thread->GetSharedMemoryCardPath(index)));
-#endif
+  m_port_ui[index].memory_card_path->setText(QString::fromStdString(path));
 }

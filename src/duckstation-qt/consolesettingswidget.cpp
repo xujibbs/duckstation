@@ -25,12 +25,6 @@ ConsoleSettingsWidget::ConsoleSettingsWidget(SettingsDialog* dialog, QWidget* pa
       qApp->translate("CPUExecutionMode", Settings::GetCPUExecutionModeDisplayName(static_cast<CPUExecutionMode>(i))));
   }
 
-  for (u32 i = 0; i < static_cast<u32>(MultitapMode::Count); i++)
-  {
-    m_ui.multitapMode->addItem(
-      qApp->translate("MultitapMode", Settings::GetMultitapModeDisplayName(static_cast<MultitapMode>(i))));
-  }
-
   static constexpr float TIME_PER_SECTOR_DOUBLE_SPEED = 1000.0f / 150.0f;
   m_ui.cdromReadaheadSectors->addItem(tr("Disabled (Synchronous)"));
   for (u32 i = 1; i <= 32; i++)
@@ -55,9 +49,7 @@ ConsoleSettingsWidget::ConsoleSettingsWidget(SettingsDialog* dialog, QWidget* pa
   SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.cdromLoadImageToRAM, "CDROM", "LoadImageToRAM", false);
   SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.cdromLoadImagePatches, "CDROM", "LoadImagePatches", false);
   SettingWidgetBinder::BindWidgetToIntSetting(sif, m_ui.cdromSeekSpeedup, "CDROM", "SeekSpeedup", 1);
-  SettingWidgetBinder::BindWidgetToEnumSetting(sif, m_ui.multitapMode, "ControllerPorts", "MultitapMode",
-                                               &Settings::ParseMultitapModeName, &Settings::GetMultitapModeName,
-                                               Settings::DEFAULT_MULTITAP_MODE);
+  SettingWidgetBinder::BindWidgetToIntSetting(sif, m_ui.cdromReadSpeedup, "CDROM", "ReadSpeedup", 1, 1);
 
   dialog->registerWidgetHelp(m_ui.region, tr("Region"), tr("Auto-Detect"),
                              tr("Determines the emulated hardware type."));
@@ -99,21 +91,12 @@ ConsoleSettingsWidget::ConsoleSettingsWidget(SettingsDialog* dialog, QWidget* pa
   dialog->registerWidgetHelp(m_ui.cdromLoadImagePatches, tr("Apply Image Patches"), tr("Unchecked"),
                              tr("Automatically applies patches to disc images when they are present in the same "
                                 "directory. Currently only PPF patches are supported with this option."));
-  dialog->registerWidgetHelp(
-    m_ui.multitapMode, tr("Multitap"), tr("Disabled"),
-    tr("Enables multitap support on specified controller ports. Leave disabled for games that do "
-       "not support multitap input."));
 
   m_ui.cpuClockSpeed->setEnabled(m_ui.enableCPUClockSpeedControl->checkState() == Qt::Checked);
-  m_ui.cdromReadSpeedup->setCurrentIndex(m_dialog->getEffectiveIntValue("CDROM", "ReadSpeedup", 1) - 1);
 
   connect(m_ui.enableCPUClockSpeedControl, &QCheckBox::stateChanged, this,
           &ConsoleSettingsWidget::onEnableCPUClockSpeedControlChecked);
   connect(m_ui.cpuClockSpeed, &QSlider::valueChanged, this, &ConsoleSettingsWidget::onCPUClockSpeedValueChanged);
-  connect(m_ui.cdromReadSpeedup, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
-          &ConsoleSettingsWidget::onCDROMReadSpeedupValueChanged);
-  connect(m_ui.multitapMode, QOverload<int>::of(&QComboBox::currentIndexChanged),
-          [this](int index) { emit multitapModeChanged(); });
 
   calculateCPUClockValue();
 }
@@ -162,11 +145,6 @@ void ConsoleSettingsWidget::updateCPUClockSpeedLabel()
   const int percent = m_ui.enableCPUClockSpeedControl->isChecked() ? m_ui.cpuClockSpeed->value() : 100;
   const double frequency = (static_cast<double>(System::MASTER_CLOCK) * static_cast<double>(percent)) / 100.0;
   m_ui.cpuClockSpeedLabel->setText(tr("%1% (%2MHz)").arg(percent).arg(frequency / 1000000.0, 0, 'f', 2));
-}
-
-void ConsoleSettingsWidget::onCDROMReadSpeedupValueChanged(int value)
-{
-  m_dialog->setIntSettingValue("CDROM", "ReadSpeedup", value + 1);
 }
 
 void ConsoleSettingsWidget::calculateCPUClockValue()

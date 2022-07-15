@@ -56,7 +56,7 @@
            <string>Automatic binding</string>
           </property>
           <property name="icon">
-           <iconset theme="gamepad-line">
+           <iconset theme="ControllerSettings">
             <normaloff>.</normaloff>.</iconset>
           </property>
          </widget>
@@ -67,7 +67,7 @@
            <string>Clear Bindings</string>
           </property>
           <property name="icon">
-           <iconset theme="file-reduce-line">
+           <iconset theme="Clear">
             <normaloff>.</normaloff>.</iconset>
           </property>
          </widget>

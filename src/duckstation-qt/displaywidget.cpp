@@ -17,6 +17,10 @@
 #include <qpa/qplatformnativeinterface.h>
 #endif
 
+#ifdef _WIN32
+#include "common/windows_headers.h"
+#endif
+
 Log_SetChannel(DisplayWidget);
 
 DisplayWidget::DisplayWidget(QWidget* parent) : QWidget(parent)
@@ -288,7 +292,7 @@ bool DisplayWidget::event(QEvent* event)
       if (event->type() == QEvent::MouseButtonDblClick &&
           static_cast<const QMouseEvent*>(event)->button() == Qt::LeftButton &&
           !InputManager::HasAnyBindingsForKey(InputManager::MakePointerButtonKey(0, 0)) &&
-          Host::GetBoolSettingValue("UI", "DoubleClickTogglesFullscreen", true))
+          Host::GetBoolSettingValue("Main", "DoubleClickTogglesFullscreen", true))
       {
         g_emu_thread->toggleFullscreen();
       }

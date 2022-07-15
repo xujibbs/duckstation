@@ -849,7 +849,9 @@ static void BindWidgetToFolderSetting(SettingsInterface* sif, WidgetType* widget
   using Accessor = SettingAccessor<WidgetType>;
 
   std::string current_path(Host::GetBaseStringSettingValue(section.c_str(), key.c_str(), default_value.c_str()));
-  if (!Path::IsAbsolute(current_path))
+  if (current_path.empty())
+    current_path = default_value;
+  else if (!Path::IsAbsolute(current_path))
     current_path = Path::Combine(EmuFolders::DataRoot, current_path);
 
   const QString value(QString::fromStdString(current_path));

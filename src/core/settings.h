@@ -67,6 +67,7 @@ struct Settings
   bool pause_on_focus_loss = false;
   bool pause_on_menu = true;
   bool save_state_on_exit = true;
+  bool create_save_state_backups = false;
   bool confim_power_off = true;
   bool load_devices_from_save_states = false;
   bool apply_game_settings = true;
@@ -249,6 +250,7 @@ struct Settings
   bool HasAnyPerGameMemoryCards() const;
 
   /// Returns the default path to a memory card.
+  static std::string GetDefaultSharedMemoryCardName(u32 slot);
   std::string GetSharedMemoryCardPath(u32 slot) const;
 
   /// Returns the default path to a memory card for a specific game.

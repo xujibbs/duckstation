@@ -24,7 +24,7 @@ void AchievementLoginDialog::loginClicked()
   m_ui.status->setText(tr("Logging in..."));
   enableUI(false);
 
-  g_emu_thread->executeOnEmulationThread([this, username, password]() {
+  Host::RunOnCPUThread([this, username, password]() {
     const bool result = Cheevos::Login(username.toStdString().c_str(), password.toStdString().c_str());
     QMetaObject::invokeMethod(this, "processLoginResult", Qt::QueuedConnection, Q_ARG(bool, result));
   });

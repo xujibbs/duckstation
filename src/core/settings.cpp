@@ -165,6 +165,7 @@ void Settings::Load(SettingsInterface& si)
   pause_on_focus_loss = si.GetBoolValue("Main", "PauseOnFocusLoss", false);
   pause_on_menu = si.GetBoolValue("Main", "PauseOnMenu", true);
   save_state_on_exit = si.GetBoolValue("Main", "SaveStateOnExit", true);
+  create_save_state_backups = si.GetBoolValue("Main", "CreateSaveStateBackups", true);
   confim_power_off = si.GetBoolValue("Main", "ConfirmPowerOff", true);
   load_devices_from_save_states = si.GetBoolValue("Main", "LoadDevicesFromSaveStates", false);
   apply_game_settings = si.GetBoolValue("Main", "ApplyGameSettings", true);
@@ -363,6 +364,7 @@ void Settings::Save(SettingsInterface& si) const
   si.SetBoolValue("Main", "PauseOnFocusLoss", pause_on_focus_loss);
   si.SetBoolValue("Main", "PauseOnMenu", pause_on_menu);
   si.SetBoolValue("Main", "SaveStateOnExit", save_state_on_exit);
+  si.SetBoolValue("Main", "CreateSaveStateBackups", create_save_state_backups);
   si.SetBoolValue("Main", "ConfirmPowerOff", confim_power_off);
   si.SetBoolValue("Main", "LoadDevicesFromSaveStates", load_devices_from_save_states);
   si.SetBoolValue("Main", "ApplyGameSettings", apply_game_settings);
@@ -1058,12 +1060,17 @@ const char* Settings::GetMemoryCardTypeDisplayName(MemoryCardType type)
   return s_memory_card_type_display_names[static_cast<int>(type)];
 }
 
+std::string Settings::GetDefaultSharedMemoryCardName(u32 slot)
+{
+  return fmt::format("shared_card_{}.mcd", slot + 1);
+}
+
 std::string Settings::GetSharedMemoryCardPath(u32 slot) const
 {
   std::string ret;
 
   if (memory_card_paths[slot].empty())
-    ret = Path::Combine(EmuFolders::MemoryCards, fmt::format("shared_card_{}.mcd", slot + 1));
+    ret = Path::Combine(EmuFolders::MemoryCards, GetDefaultSharedMemoryCardName(slot));
   else if (!Path::IsAbsolute(memory_card_paths[slot]))
     ret = Path::Combine(EmuFolders::MemoryCards, memory_card_paths[slot]);
   else

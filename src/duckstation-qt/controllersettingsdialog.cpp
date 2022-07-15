@@ -5,10 +5,10 @@
 #include "controllerglobalsettingswidget.h"
 #include "core/controller.h"
 #include "core/host_settings.h"
-#include "util/ini_settings_interface.h"
 #include "frontend-common/input_manager.h"
 #include "hotkeysettingswidget.h"
 #include "qthost.h"
+#include "util/ini_settings_interface.h"
 
 #include <QtWidgets/QInputDialog>
 #include <QtWidgets/QMessageBox>
@@ -37,13 +37,12 @@ ControllerSettingsDialog::ControllerSettingsDialog(QWidget* parent /* = nullptr 
   connect(m_ui.deleteProfile, &QPushButton::clicked, this, &ControllerSettingsDialog::onDeleteProfileClicked);
   connect(m_ui.restoreDefaults, &QPushButton::clicked, this, &ControllerSettingsDialog::onRestoreDefaultsClicked);
 
-  connect(g_emu_thread, &QtHostInterface::onInputDevicesEnumerated, this,
+  connect(g_emu_thread, &EmuThread::onInputDevicesEnumerated, this,
           &ControllerSettingsDialog::onInputDevicesEnumerated);
-  connect(g_emu_thread, &QtHostInterface::onInputDeviceConnected, this,
-          &ControllerSettingsDialog::onInputDeviceConnected);
-  connect(g_emu_thread, &QtHostInterface::onInputDeviceDisconnected, this,
+  connect(g_emu_thread, &EmuThread::onInputDeviceConnected, this, &ControllerSettingsDialog::onInputDeviceConnected);
+  connect(g_emu_thread, &EmuThread::onInputDeviceDisconnected, this,
           &ControllerSettingsDialog::onInputDeviceDisconnected);
-  connect(g_emu_thread, &QtHostInterface::onVibrationMotorsEnumerated, this,
+  connect(g_emu_thread, &EmuThread::onVibrationMotorsEnumerated, this,
           &ControllerSettingsDialog::onVibrationMotorsEnumerated);
 
   // trigger a device enumeration to populate the device list
@@ -330,7 +329,7 @@ void ControllerSettingsDialog::createWidgets()
     // global settings
     QListWidgetItem* item = new QListWidgetItem();
     item->setText(tr("Global Settings"));
-    item->setIcon(QIcon::fromTheme("settings-3-line"));
+    item->setIcon(QIcon::fromTheme("GeneralSettings"));
     m_ui.settingsCategory->addItem(item);
     m_ui.settingsCategory->setCurrentRow(0);
     m_global_settings = new ControllerGlobalSettingsWidget(m_ui.settingsContainer, this);
@@ -342,8 +341,14 @@ void ControllerSettingsDialog::createWidgets()
   }
 
   // load mtap settings
+  const MultitapMode mtap_mode =
+    Settings::ParseMultitapModeName(
+      getStringValue("ControllerPorts", "MultitapMode", Settings::GetMultitapModeName(Settings::DEFAULT_MULTITAP_MODE))
+        .c_str())
+      .value_or(Settings::DEFAULT_MULTITAP_MODE);
   const std::array<bool, 2> mtap_enabled = {
-    {getBoolValue("Pad", "MultitapPort1", false), getBoolValue("Pad", "MultitapPort2", false)}};
+    {(mtap_mode == MultitapMode::Port1Only || mtap_mode == MultitapMode::BothPorts),
+     (mtap_mode == MultitapMode::Port2Only || mtap_mode == MultitapMode::BothPorts)}};
 
   // we reorder things a little to make it look less silly for mtap
   static constexpr const std::array<u32, MAX_PORTS> mtap_port_order = {{0, 2, 3, 4, 1, 5, 6, 7}};
@@ -373,11 +378,11 @@ void ControllerSettingsDialog::createWidgets()
   }
 
   // only add hotkeys if we're editing global settings
-  if (!m_profile_interface || m_profile_interface->GetBoolValue("Pad", "UseProfileHotkeyBindings", false))
+  if (!m_profile_interface || m_profile_interface->GetBoolValue("ControllerPorts", "UseProfileHotkeyBindings", false))
   {
     QListWidgetItem* item = new QListWidgetItem();
     item->setText(tr("Hotkeys"));
-    item->setIcon(QIcon::fromTheme("keyboard-line"));
+    item->setIcon(QIcon::fromTheme("HotkeySettings"));
     m_ui.settingsCategory->addItem(item);
     m_hotkey_settings = new HotkeySettingsWidget(m_ui.settingsContainer, this);
     m_ui.settingsContainer->addWidget(m_hotkey_settings);
@@ -397,7 +402,7 @@ void ControllerSettingsDialog::updateListDescription(u32 global_slot, Controller
     bool is_ok;
     if (item_data.toUInt(&is_ok) == global_slot && is_ok)
     {
-      //const bool is_mtap_port = Controller::PadIsMultitapSlot(global_slot);
+      // const bool is_mtap_port = Controller::PadIsMultitapSlot(global_slot);
       const auto [port, slot] = Controller::ConvertPadToPortAndSlot(global_slot);
       const bool mtap_enabled = getBoolValue("Pad", (port == 0) ? "MultitapPort1" : "MultitapPort2", false);
 

@@ -1,7 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <ClCompile Include="main.cpp" />
     <ClCompile Include="mainwindow.cpp" />
     <ClCompile Include="gamelistwidget.cpp" />
     <ClCompile Include="settingsdialog.cpp" />
@@ -21,7 +20,6 @@
     <ClCompile Include="$(IntDir)moc_inputbindingwidgets.cpp" />
     <ClCompile Include="audiosettingswidget.cpp" />
     <ClCompile Include="$(IntDir)moc_audiosettingswidget.cpp" />
-    <ClCompile Include="$(IntDir)moc_qtdisplaywidget.cpp" />
     <ClCompile Include="displaywidget.cpp" />
     <ClCompile Include="qtprogresscallback.cpp" />
     <ClCompile Include="$(IntDir)moc_qtprogresscallback.cpp" />
@@ -89,6 +87,11 @@
     <ClCompile Include="$(IntDir)moc_controllersettingsdialog.cpp" />
     <ClCompile Include="gamelistrefreshthread.cpp" />
     <ClCompile Include="$(IntDir)moc_gamelistrefreshthread.cpp" />
+    <ClCompile Include="foldersettingswidget.cpp" />
+    <ClCompile Include="gamesummarywidget.cpp" />
+    <ClCompile Include="$(IntDir)moc_displaywidget.cpp" />
+    <ClCompile Include="$(IntDir)moc_foldersettingswidget.cpp" />
+    <ClCompile Include="$(IntDir)moc_gamesummarywidget.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="qtutils.h" />
@@ -147,6 +150,8 @@
     <QtMoc Include="controllerglobalsettingswidget.h" />
     <QtMoc Include="controllersettingsdialog.h" />
     <QtMoc Include="gamelistrefreshthread.h" />
+    <QtMoc Include="gamesummarywidget.h" />
+    <QtMoc Include="foldersettingswidget.h" />
   </ItemGroup>
   <ItemGroup>
     <QtUi Include="consolesettingswidget.ui" />
@@ -179,6 +184,8 @@
     <QtUi Include="controllerbindingwidget_digital_controller.ui" />
     <QtUi Include="emptygamelistwidget.ui" />
     <QtUi Include="gamelistwidget.ui" />
+    <QtUi Include="gamesummarywidget.ui" />
+    <QtUi Include="foldersettingswidget.ui" />
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="qt5.natvis" />

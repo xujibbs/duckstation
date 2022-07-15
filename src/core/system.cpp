@@ -76,7 +76,6 @@ struct MemorySaveState
 };
 
 namespace System {
-static bool InternalLoadState(ByteStream* state, bool update_display = true);
 static bool InternalSaveState(ByteStream* state, u32 screenshot_size = 256);
 static bool SaveMemoryState(MemorySaveState* mss);
 static bool LoadMemoryState(const MemorySaveState& mss);
@@ -97,6 +96,7 @@ static void StallCPU(TickCount ticks);
 static bool InternalBoot(const SystemBootParameters& params);
 static void InternalReset();
 static void InternalShutdown();
+static void DestroySystem();
 static bool DoLoadState(ByteStream* stream, bool force_software_renderer, bool update_display);
 static bool DoState(StateWrapper& sw, HostDisplayTexture** host_texture, bool update_display, bool is_memory_state);
 static void DoRunFrame();
@@ -243,6 +243,11 @@ void System::CancelPendingStartup()
 ConsoleRegion System::GetRegion()
 {
   return s_region;
+}
+
+DiscRegion System::GetDiscRegion()
+{
+  return g_cdrom.GetDiscRegion();
 }
 
 bool System::IsPALRegion()
@@ -825,7 +830,7 @@ void System::ApplySettings(bool display_osd_messages)
 
 bool System::ReloadGameSettings(bool display_osd_messages)
 {
-  if (!UpdateGameSettingsLayer())
+  if (!IsValid() || !UpdateGameSettingsLayer())
     return false;
 
   ApplySettings(display_osd_messages);
@@ -971,6 +976,9 @@ bool System::BootSystem(std::shared_ptr<SystemBootParameters> parameters)
 
 void System::ResetSystem()
 {
+  if (!IsValid())
+    return;
+
   InternalReset();
   ResetPerformanceCounters();
   ResetThrottler();
@@ -1030,7 +1038,7 @@ bool System::LoadState(const char* filename)
 
   SaveUndoLoadState();
 
-  if (!InternalLoadState(stream.get()))
+  if (!DoLoadState(stream.get(), false, true))
   {
     Host::ReportFormattedErrorAsync(
       "Load State Error", Host::TranslateString("OSDMessage", "Loading state from '%s' failed. Resetting."), filename);
@@ -1047,8 +1055,15 @@ bool System::LoadState(const char* filename)
   return true;
 }
 
-bool System::SaveState(const char* filename)
+bool System::SaveState(const char* filename, bool backup_existing_save)
 {
+  if (backup_existing_save && FileSystem::FileExists(filename))
+  {
+    const std::string backup_filename(Path::ReplaceExtension(filename, "bak"));
+    if (!FileSystem::RenamePath(filename, backup_filename.c_str()))
+      Log_ErrorPrintf("Failed to rename save state backup '%s'", backup_filename.c_str());
+  }
+
   std::unique_ptr<ByteStream> stream =
     ByteStream::OpenFile(filename, BYTESTREAM_OPEN_CREATE | BYTESTREAM_OPEN_WRITE | BYTESTREAM_OPEN_TRUNCATE |
                                      BYTESTREAM_OPEN_ATOMIC_UPDATE | BYTESTREAM_OPEN_STREAMED);
@@ -1137,19 +1152,6 @@ bool System::InternalBoot(const SystemBootParameters& params)
 
   Log_InfoPrintf("Console Region: %s", Settings::GetConsoleRegionDisplayName(s_region));
 
-  // Load BIOS image.
-  std::optional<BIOS::Image> bios_image(BIOS::GetBIOSImage(s_region));
-  if (!bios_image)
-  {
-    Host::ReportFormattedErrorAsync("Error", Host::TranslateString("System", "Failed to load %s BIOS."),
-                                    Settings::GetConsoleRegionName(s_region));
-    InternalShutdown();
-    return false;
-  }
-
-  // Notify change of disc.
-  UpdateRunningGame(media ? media->GetFileName().c_str() : params.filename.c_str(), media.get(), true);
-
   // Check for SBI.
   if (!CheckForSBIFile(media.get()))
   {
@@ -1162,6 +1164,19 @@ bool System::InternalBoot(const SystemBootParameters& params)
   {
     Host::ReportFormattedErrorAsync("Error", "Failed to switch to subimage %u in '%s': %s", params.media_playlist_index,
                                     params.filename.c_str(), error.GetCodeAndMessage().GetCharArray());
+    InternalShutdown();
+    return false;
+  }
+
+  // Notify change of disc.
+  UpdateRunningGame(media ? media->GetFileName().c_str() : params.filename.c_str(), media.get(), true);
+
+  // Load BIOS image.
+  std::optional<BIOS::Image> bios_image(BIOS::GetBIOSImage(s_region));
+  if (!bios_image)
+  {
+    Host::ReportFormattedErrorAsync("Error", Host::TranslateString("System", "Failed to load %s BIOS."),
+                                    Settings::GetConsoleRegionName(s_region));
     InternalShutdown();
     return false;
   }
@@ -1618,14 +1633,6 @@ void System::InternalReset()
   g_gpu->ResetGraphicsAPIState();
 }
 
-bool System::InternalLoadState(ByteStream* state, bool update_display)
-{
-  if (IsShutdown())
-    return false;
-
-  return DoLoadState(state, false, update_display);
-}
-
 bool System::DoLoadState(ByteStream* state, bool force_software_renderer, bool update_display)
 {
   SAVE_STATE_HEADER header;
@@ -1762,6 +1769,8 @@ bool System::DoLoadState(ByteStream* state, bool force_software_renderer, bool u
     s_state = State::Running;
 
   g_spu.GetOutputStream()->EmptyBuffers();
+  ResetPerformanceCounters();
+  ResetThrottler();
   return true;
 }
 
@@ -3412,22 +3421,16 @@ void System::SetRunaheadReplayFlag()
   s_runahead_replay_pending = true;
 }
 
-bool System::SaveResumeSaveState()
-{
-  if (System::IsShutdown())
-    return false;
-
-  const bool global = System::GetRunningCode().empty();
-  return SaveStateToSlot(global, -1);
-}
-
-void System::PowerOffSystem(bool save_resume_state)
+void System::ShutdownSystem(bool save_resume_state)
 {
   if (!IsValid())
     return;
 
-  if (save_resume_state)
-    SaveResumeSaveState();
+  if (save_resume_state && !s_running_game_code.empty())
+  {
+    std::string path(GetGameSaveStateFileName(s_running_game_code, -1));
+    SaveState(path.c_str(), false);
+  }
 
   DestroySystem();
 }
@@ -3465,16 +3468,13 @@ bool System::UndoLoadState()
   Assert(IsValid());
 
   m_undo_load_state->SeekAbsolute(0);
-  if (!InternalLoadState(m_undo_load_state.get()))
+  if (!DoLoadState(m_undo_load_state.get(), false, true))
   {
     Host::ReportErrorAsync("Error", "Failed to load undo state, resetting system.");
     m_undo_load_state.reset();
     ResetSystem();
     return false;
   }
-
-  ResetPerformanceCounters();
-  ResetThrottler();
 
   Log_InfoPrintf("Loaded undo save state.");
   m_undo_load_state.reset();
@@ -3498,33 +3498,6 @@ bool System::SaveUndoLoadState()
   return true;
 }
 
-bool System::LoadStateFromSlot(bool global, s32 slot)
-{
-  if (!global && (System::IsShutdown() || System::GetRunningCode().empty()))
-  {
-    Host::ReportErrorAsync("Error", "Can't save per-game state without a running game code.");
-    return false;
-  }
-
-  std::string save_path =
-    global ? GetGlobalSaveStateFileName(slot) : GetGameSaveStateFileName(System::GetRunningCode().c_str(), slot);
-  return LoadState(save_path.c_str());
-}
-
-bool System::SaveStateToSlot(bool global, s32 slot)
-{
-  const std::string& code = System::GetRunningCode();
-  if (!global && code.empty())
-  {
-    Host::ReportErrorAsync("Error", "Can't save per-game state without a running game code.");
-    return false;
-  }
-
-  std::string save_path = global ? GetGlobalSaveStateFileName(slot) : GetGameSaveStateFileName(code.c_str(), slot);
-  RenameCurrentSaveStateToBackup(save_path.c_str());
-  return SaveState(save_path.c_str());
-}
-
 bool System::ResumeSystemFromMostRecentState()
 {
   const std::string path = GetMostRecentResumeSaveStatePath();
@@ -3535,11 +3508,6 @@ bool System::ResumeSystemFromMostRecentState()
   }
 
   return LoadState(path.c_str());
-}
-
-bool System::ShouldSaveResumeState()
-{
-  return g_settings.save_state_on_exit;
 }
 
 bool System::IsRunningAtNonStandardSpeed()
@@ -3662,7 +3630,7 @@ bool System::SaveScreenshot(const char* filename /* = nullptr */, bool full_reso
   return true;
 }
 
-std::string System::GetGameSaveStateFileName(const char* game_code, s32 slot)
+std::string System::GetGameSaveStateFileName(const std::string_view& game_code, s32 slot)
 {
   if (slot < 0)
     return Path::Combine(EmuFolders::SaveStates, fmt::format("{}_resume.sav", game_code));
@@ -3676,24 +3644,6 @@ std::string System::GetGlobalSaveStateFileName(s32 slot)
     return Path::Combine(EmuFolders::SaveStates, "resume.sav");
   else
     return Path::Combine(EmuFolders::SaveStates, fmt::format("savestate_{}.sav", slot));
-}
-
-void System::RenameCurrentSaveStateToBackup(const char* filename)
-{
-  if (!Host::GetBaseBoolSettingValue("General", "CreateSaveStateBackups", false))
-    return;
-
-  if (!FileSystem::FileExists(filename))
-    return;
-
-  const std::string backup_filename(Path::ReplaceExtension(filename, "bak"));
-  if (!FileSystem::RenamePath(filename, backup_filename.c_str()))
-  {
-    Log_ErrorPrintf("Failed to rename save state backup '%s'", backup_filename.c_str());
-    return;
-  }
-
-  Log_InfoPrintf("Renamed save state '%s' to '%s'", filename, backup_filename.c_str());
 }
 
 std::vector<SaveStateInfo> System::GetAvailableSaveStates(const char* game_code)
